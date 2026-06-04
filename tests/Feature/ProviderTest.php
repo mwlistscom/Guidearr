@@ -131,6 +131,8 @@ class ProviderTest extends TestCase
         $this->assertSame('done', $job->fresh()->state);
         $this->assertSame('ok', $p->fresh()->last_status);
         $this->assertNotNull($p->fresh()->last_refresh_at);
+        $this->assertIsInt($job->fresh()->elapsed);
+        $this->assertGreaterThanOrEqual(0, $job->fresh()->elapsed);
     }
 
     public function test_trim_removes_old_logs(): void

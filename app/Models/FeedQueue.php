@@ -128,7 +128,7 @@ class FeedQueue extends Model
         $this->forceFill([
             'state'   => 'done',
             'dstop'   => now(),
-            'elapsed' => $this->dstart ? now()->diffInSeconds($this->dstart) : 0,
+            'elapsed' => $this->elapsedSeconds(),
         ])->save();
     }
 
@@ -138,8 +138,14 @@ class FeedQueue extends Model
             'state'   => 'error',
             'error'   => $code,
             'dstop'   => now(),
-            'elapsed' => $this->dstart ? now()->diffInSeconds($this->dstart) : 0,
+            'elapsed' => $this->elapsedSeconds(),
         ])->save();
+    }
+
+    /** Whole, non-negative seconds since dstart (Carbon 3 diff is a signed float). */
+    private function elapsedSeconds(): int
+    {
+        return $this->dstart ? (int) abs(now()->diffInSeconds($this->dstart)) : 0;
     }
 
     public function log(string $level, string $message): FeedLog
