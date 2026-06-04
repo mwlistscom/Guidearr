@@ -24,6 +24,32 @@ class User extends Authenticatable implements PasskeyUser, MustVerifyEmail
         return $this->hasMany(\App\Models\Provider::class);
     }
 
+    protected static function booted(): void
+    {
+        // When an account is deleted (self-service Settings or admin), the DB cascade
+        // removes providers + feed_queue but leaves the per-provider SQLite store FILES
+        // on disk (FK cascades don't touch the filesystem). Snapshot those file paths
+        // into the purge queue so `php artisan feed:purge` can delete them afterwards.
+        // feed_logs.user_id is nulled on delete, so clear the user's logs here first.
+        static::deleting(function (User $u) {
+            $payload = $u->providers()->get(['id', 'name'])
+                ->map(fn ($p) => [
+                    'id'   => $p->id,
+                    'name' => $p->name,
+                    'path' => \App\Services\ProviderStore::path($p->id),
+                ])->all();
+
+            \App\Models\PurgeJob::create([
+                'user_id' => $u->id,
+                'email'   => $u->email,
+                'payload' => $payload,
+                'state'   => 'queued',
+            ]);
+
+            \App\Models\FeedLog::where('user_id', $u->id)->delete();
+        });
+    }
+
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 

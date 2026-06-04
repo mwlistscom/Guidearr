@@ -490,6 +490,62 @@ class ProviderTest extends TestCase
         @unlink(\App\Services\ProviderStore::path($p->id));
     }
 
+    public function test_deleting_provider_removes_its_store_file_and_logs(): void
+    {
+        $owner = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $owner->id, 'name' => 'Del', 'type' => 'm3u', 'url' => 'http://h/d.m3u']);
+
+        $s = new \App\Services\ProviderStore($p->id);
+        $s->begin();
+        $s->upsertChannel(['name' => 'A', 'url' => 'http://h/a.ts', 'group' => 'G'], 'v1');
+        $s->commit();
+        \App\Models\FeedLog::create(['msgid' => 'm1', 'provider_id' => $p->id, 'user_id' => $owner->id, 'level' => 'info', 'message' => 'x']);
+
+        $path = \App\Services\ProviderStore::path($p->id);
+        $this->assertFileExists($path);
+
+        $this->actingAs($owner)->deleteJson("/providers/{$p->id}")->assertOk();
+
+        $this->assertFileDoesNotExist($path);
+        $this->assertDatabaseMissing('feed_logs', ['provider_id' => $p->id]);
+    }
+
+    public function test_account_deletion_enqueues_purge_and_feed_purge_removes_files(): void
+    {
+        $u = $this->user();
+        $p1 = \App\Models\Provider::create(['user_id' => $u->id, 'name' => 'P1', 'type' => 'm3u', 'url' => 'http://h/1.m3u']);
+        $p2 = \App\Models\Provider::create(['user_id' => $u->id, 'name' => 'P2', 'type' => 'm3u', 'url' => 'http://h/2.m3u']);
+
+        foreach ([$p1, $p2] as $p) {
+            $s = new \App\Services\ProviderStore($p->id);
+            $s->begin();
+            $s->upsertChannel(['name' => 'A', 'url' => "http://h/{$p->id}.ts", 'group' => 'G'], 'v1');
+            $s->commit();
+        }
+        $path1 = \App\Services\ProviderStore::path($p1->id);
+        $path2 = \App\Services\ProviderStore::path($p2->id);
+        $this->assertFileExists($path1);
+        $this->assertFileExists($path2);
+
+        $uid = $u->id;
+        $u->delete(); // simulates the Settings / admin account deletion (Eloquent delete)
+
+        // a purge job was queued capturing both store paths; provider rows cascaded away
+        $this->assertDatabaseHas('purge_queue', ['user_id' => $uid, 'state' => 'queued']);
+        $this->assertDatabaseMissing('providers', ['user_id' => $uid]);
+        $job = \App\Models\PurgeJob::where('user_id', $uid)->first();
+        $this->assertCount(2, $job->payload);
+
+        // files still on disk until the script runs
+        $this->assertFileExists($path1);
+
+        $this->artisan('feed:purge')->assertSuccessful();
+
+        $this->assertFileDoesNotExist($path1);
+        $this->assertFileDoesNotExist($path2);
+        $this->assertDatabaseHas('purge_queue', ['user_id' => $uid, 'state' => 'done']);
+    }
+
     public function test_validator_pure_logic(): void
     {
         $this->assertTrue(ProviderValidator::contentMatchesType("#EXTM3U\n#EXTINF:-1,Foo\nhttp://x", 'm3u'));

@@ -41,6 +41,20 @@ class Provider extends Model
                 $p->refresh_minute = random_int(0, 59);
             }
         });
+
+        // Direct provider deletes (e.g. the grid trash button) clean up the per-provider
+        // SQLite store file + any of its logs. feed_queue rows cascade via FK.
+        // NOTE: a DB-level cascade (when a User is deleted) does NOT fire this event —
+        // that path is handled by the purge queue snapshot in the User model.
+        static::deleting(function (Provider $p) {
+            $path = \App\Services\ProviderStore::path($p->id);
+            foreach (['', '-wal', '-shm'] as $suffix) {
+                if (is_file($path . $suffix)) {
+                    @unlink($path . $suffix);
+                }
+            }
+            \App\Models\FeedLog::where('provider_id', $p->id)->delete();
+        });
     }
 
     public function user(): BelongsTo
