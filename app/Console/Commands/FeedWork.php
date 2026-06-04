@@ -77,7 +77,11 @@ class FeedWork extends Command
                     $this->ingestM3u($job, $provider, $downloader);
                     return;
 
-                default: // xtream | xmltv — validation only until their ingest lands
+                case 'xtream':
+                    $this->ingestXtream($job, $provider);
+                    return;
+
+                default: // xmltv — validation only until its ingest lands
                     $job->log('info', strtoupper($provider->type) . ' validation only (ingest in a later build).');
                     $check = $validator->validate($provider->type, $provider->url, $provider->username, $provider->password);
                     if (! $check['ok']) { $this->failJob($job, $provider, $check['message']); return; }
@@ -141,6 +145,36 @@ class FeedWork extends Command
         $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
         $job->markDone();
         $job->log('info', 'Done.');
+    }
+
+    /** A recoverable failure: count it, disable+drop at the threshold, otherwise requeue for another attempt. */
+    private function ingestXtream(FeedQueue $job, Provider $provider): void
+    {
+        if (! $provider->url) { $this->failJob($job, $provider, 'No URL set.'); return; }
+        if (! $provider->username || ! $provider->password) {
+            $this->failJob($job, $provider, 'Xtream provider needs a username and password.');
+            return;
+        }
+
+        $version = substr($job->msgid, 0, 12);
+
+        try {
+            $r = (new \App\Services\XtreamImporter())->import(
+                $provider, $version, fn (string $m) => $job->log('info', $m)
+            );
+        } catch (\Throwable $e) {
+            $this->failJob($job, $provider, 'Xtream import failed: ' . $e->getMessage());
+            return;
+        }
+
+        if ($r['channels'] === 0) {
+            $this->failJob($job, $provider, 'No channels returned — not a valid Xtream API?');
+            return;
+        }
+
+        $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
+        $job->markDone();
+        $job->log('info', "Done. {$r['channels']} channels, {$r['groups']} groups, {$r['guide_channels']} guide channels, {$r['programmes']} programmes.");
     }
 
     /** A recoverable failure: count it, disable+drop at the threshold, otherwise requeue for another attempt. */

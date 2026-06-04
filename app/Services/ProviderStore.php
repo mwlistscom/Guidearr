@@ -15,7 +15,7 @@ use PDO;
  */
 class ProviderStore
 {
-    private const SCHEMA_VERSION = 3;
+    private const SCHEMA_VERSION = 4;
     private const EDITABLE = ['name', 'tvg_id', 'tvg_name', 'tvg_logo', 'group_title', 'type', 'url'];
 
     private const CHANNELS_DDL = 'CREATE TABLE channels (
@@ -32,6 +32,9 @@ class ProviderStore
     private int $added = 0;
     private ?\PDOStatement $channelStmt = null;
     private ?\PDOStatement $groupStmt = null;
+    private ?\PDOStatement $guideChStmt = null;
+    private ?\PDOStatement $guideProgStmt = null;
+    private int $guideProgCount = 0;
 
     public function __construct(public int $providerId)
     {
@@ -51,6 +54,111 @@ class ProviderStore
     public static function path(int $providerId): string
     {
         return storage_path('app/feeds/provider_' . $providerId . '.sqlite');
+    }
+
+    /** Temp file the XMLTV guide is streamed to (one per provider, deleted after parse). */
+    public static function xmltvPath(int $providerId): string
+    {
+        return storage_path('app/feeds/provider_' . $providerId . '.xmltv');
+    }
+
+    private static function guideChDdl(string $t): string
+    {
+        return "CREATE TABLE {$t} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tvg_id TEXT NOT NULL,
+            display_name TEXT,
+            icon TEXT,
+            UNIQUE(tvg_id)
+        )";
+    }
+
+    private static function guideDdl(string $t): string
+    {
+        // `descr` (not `desc`) avoids the SQLite reserved word.
+        return "CREATE TABLE {$t} (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tvg_id TEXT NOT NULL,
+            start INTEGER, stop INTEGER, timeshift TEXT,
+            title TEXT, sub_title TEXT, descr TEXT,
+            category TEXT, episode_num TEXT, icon TEXT, year TEXT, rating TEXT, info TEXT,
+            UNIQUE(start,stop,tvg_id)
+        )";
+    }
+
+    /** Begin an atomic guide reload: build into _new tables, swap on commit. Low-memory + no read lock on the live tables. */
+    public function guideReloadBegin(): void
+    {
+        $this->db->exec('DROP TABLE IF EXISTS guide_new');
+        $this->db->exec('DROP TABLE IF EXISTS guide_channels_new');
+        $this->db->exec(self::guideChDdl('guide_channels_new'));
+        $this->db->exec(self::guideDdl('guide_new'));
+
+        $this->guideChStmt = $this->db->prepare(
+            'INSERT INTO guide_channels_new (tvg_id,display_name,icon) VALUES (:t,:n,:i)
+             ON CONFLICT(tvg_id) DO UPDATE SET display_name=excluded.display_name, icon=excluded.icon'
+        );
+        $this->guideProgStmt = $this->db->prepare(
+            'INSERT INTO guide_new (tvg_id,start,stop,timeshift,title,sub_title,descr,category,episode_num,icon,year,rating,info)
+             VALUES (:tvg_id,:start,:stop,:timeshift,:title,:sub_title,:descr,:category,:episode_num,:icon,:year,:rating,:info)
+             ON CONFLICT(start,stop,tvg_id) DO NOTHING'
+        );
+        $this->guideProgCount = 0;
+        $this->db->beginTransaction();
+    }
+
+    public function guideChannel(string $tvgId, ?string $name, ?string $icon): void
+    {
+        if ($tvgId === '') {
+            return;
+        }
+        $this->guideChStmt->execute([':t' => $tvgId, ':n' => $name ?? '', ':i' => $icon ?? '']);
+    }
+
+    public function guideProgramme(array $p): void
+    {
+        $this->guideProgStmt->execute([
+            ':tvg_id' => $p['tvg_id'] ?? '', ':start' => (int) ($p['start'] ?? 0), ':stop' => (int) ($p['stop'] ?? 0),
+            ':timeshift' => $p['timeshift'] ?? '+0000', ':title' => $p['title'] ?? '', ':sub_title' => $p['sub_title'] ?? '',
+            ':descr' => $p['desc'] ?? '', ':category' => $p['category'] ?? '', ':episode_num' => $p['episode_num'] ?? '',
+            ':icon' => $p['icon'] ?? '', ':year' => $p['year'] ?? '', ':rating' => $p['rating'] ?? '', ':info' => $p['info'] ?? null,
+        ]);
+        if ((++$this->guideProgCount % 2000) === 0) {
+            $this->commit();
+            usleep(20000);
+            $this->db->beginTransaction();
+        }
+    }
+
+    /** Finish the reload: commit pending rows, then instantly swap _new tables over the live ones. */
+    public function guideReloadCommit(): array
+    {
+        $this->commit();
+
+        $this->db->exec('BEGIN');
+        $this->db->exec('DROP TABLE IF EXISTS guide');
+        $this->db->exec('ALTER TABLE guide_new RENAME TO guide');
+        $this->db->exec('DROP TABLE IF EXISTS guide_channels');
+        $this->db->exec('ALTER TABLE guide_channels_new RENAME TO guide_channels');
+        $this->db->exec('COMMIT');
+
+        $this->db->exec('CREATE INDEX IF NOT EXISTS guide_tvg_start ON guide(tvg_id,start)');
+        $this->db->exec('CREATE INDEX IF NOT EXISTS guide_stop ON guide(stop)');
+
+        $this->guideChStmt = null;
+        $this->guideProgStmt = null;
+
+        return $this->guideCounts();
+    }
+
+    public function guideCounts(): array
+    {
+        $has = fn (string $t) => (bool) $this->db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='" . $t . "'")->fetchColumn();
+
+        return [
+            'guide_channels' => $has('guide_channels') ? (int) $this->db->query('SELECT COUNT(*) FROM guide_channels')->fetchColumn() : 0,
+            'programmes'     => $has('guide') ? (int) $this->db->query('SELECT COUNT(*) FROM guide')->fetchColumn() : 0,
+        ];
     }
 
     public static function exists(int $providerId): bool
@@ -86,8 +194,8 @@ class ProviderStore
 
         if (! $hasChannels) {
             $this->db->exec(self::CHANNELS_DDL);
-        } elseif ($ver < self::SCHEMA_VERSION) {
-            // Rebuild channels keyed on URL (was url+name), keeping the latest row per URL.
+        } elseif ($ver < 2) {
+            // One-time rebuild: channels keyed on URL (was url+name), keeping the latest row per URL.
             $this->db->exec('BEGIN');
             $this->db->exec(str_replace('CREATE TABLE channels', 'CREATE TABLE channels_new', self::CHANNELS_DDL));
             $this->db->exec('INSERT OR IGNORE INTO channels_new
@@ -98,6 +206,12 @@ class ProviderStore
             $this->db->exec('ALTER TABLE channels_new RENAME TO channels');
             $this->db->exec('COMMIT');
         }
+
+        // Guide tables (EPG). Empty for m3u providers; populated by the Xtream importer.
+        $this->db->exec(str_replace('CREATE TABLE', 'CREATE TABLE IF NOT EXISTS', self::guideChDdl('guide_channels')));
+        $this->db->exec(str_replace('CREATE TABLE', 'CREATE TABLE IF NOT EXISTS', self::guideDdl('guide')));
+        $this->db->exec('CREATE INDEX IF NOT EXISTS guide_tvg_start ON guide(tvg_id,start)');
+        $this->db->exec('CREATE INDEX IF NOT EXISTS guide_stop ON guide(stop)');
 
         $this->db->exec('CREATE INDEX IF NOT EXISTS channels_group ON channels(group_title)');
         $this->db->exec('PRAGMA user_version = ' . self::SCHEMA_VERSION);
