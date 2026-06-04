@@ -205,9 +205,10 @@ class PlaylistStore
 
     // ---- editor: channel listing (global order via group join) ----
 
-    private function channelWhere(?string $search, ?string $group, bool $deleted): array
+    private function channelWhere(?string $search, ?string $group, string $mode): array
     {
-        $w = ['c.deleted = ' . ($deleted ? '1' : '0')];
+        $w = [];
+        if ($mode === 'hide') { $w[] = 'c.deleted = 0'; }   // 'all' = no deleted filter
         $b = [];
         if ($group !== null && $group !== '') { $w[] = 'c.group_title = :g'; $b[':g'] = $group; }
         if ($search !== null && $search !== '') {
@@ -215,12 +216,12 @@ class PlaylistStore
             $b[':s'] = '%' . $search . '%';
         }
 
-        return ['WHERE ' . implode(' AND ', $w), $b];
+        return [$w ? ('WHERE ' . implode(' AND ', $w)) : '', $b];
     }
 
-    public function channelCount(?string $search = null, ?string $group = null, bool $deleted = false): int
+    public function channelCount(?string $search = null, ?string $group = null, string $mode = 'hide'): int
     {
-        [$where, $bind] = $this->channelWhere($search, $group, $deleted);
+        [$where, $bind] = $this->channelWhere($search, $group, $mode);
         $stmt = $this->db->prepare("SELECT COUNT(*) FROM playlist_channels c $where");
         $stmt->execute($bind);
 
@@ -228,9 +229,9 @@ class PlaylistStore
     }
 
     /** Returns raw pointer rows in global order; the controller hydrates provider channel data. */
-    public function channels(int $limit, int $offset, ?string $search = null, ?string $group = null, bool $deleted = false): array
+    public function channels(int $limit, int $offset, ?string $search = null, ?string $group = null, string $mode = 'hide'): array
     {
-        [$where, $bind] = $this->channelWhere($search, $group, $deleted);
+        [$where, $bind] = $this->channelWhere($search, $group, $mode);
         $stmt = $this->db->prepare(
             "SELECT c.id, c.provider_id, c.channel_id, c.group_title, c.position_order, c.enabled, c.deleted,
                     c.name, c.url, c.tvg_id, c.tvg_logo, c.tvg_name
@@ -319,6 +320,27 @@ class PlaylistStore
     {
         if (! in_array($field, ['enabled', 'deleted'], true)) { return; }
         $this->db->prepare("UPDATE playlist_groups SET {$field} = ? WHERE id = ?")->execute([$on ? 1 : 0, $id]);
+    }
+
+    /** Rename a group and cascade the new title onto its channels (they key on group_title). */
+    public function renameGroup(int $id, string $newTitle): bool
+    {
+        $newTitle = trim($newTitle);
+        if ($newTitle === '') { return false; }
+        $cur = $this->db->prepare('SELECT group_title FROM playlist_groups WHERE id = ?');
+        $cur->execute([$id]);
+        $old = $cur->fetchColumn();
+        if ($old === false || $old === $newTitle) { return false; }
+        $ex = $this->db->prepare('SELECT COUNT(*) FROM playlist_groups WHERE group_title = ? AND id != ?');
+        $ex->execute([$newTitle, $id]);
+        if ((int) $ex->fetchColumn() > 0) { return false; }   // target title already used
+
+        $this->begin();
+        $this->db->prepare('UPDATE playlist_groups SET group_title = ? WHERE id = ?')->execute([$newTitle, $id]);
+        $this->db->prepare('UPDATE playlist_channels SET group_title = ? WHERE group_title = ?')->execute([$newTitle, $old]);
+        $this->commit();
+
+        return true;
     }
 
     public function updateChannel(int $id, array $fields): void

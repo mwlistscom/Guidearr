@@ -25,6 +25,24 @@
     .ple-act button:hover, .pl-x:hover { color:#fff; background:rgba(255,255,255,.08); }
     .ple-act svg, .pl-x svg { width:15px; height:15px; }
     .ple-split .tabulator-row.tabulator-selected { background:rgba(244,117,33,.16) !important; }
+    /* dragged row: high-contrast floating chip so it reads clearly against the dark grid */
+    .ple-split .tabulator-row.tabulator-moving {
+        background:#f6f7f9 !important; color:#15161a !important;
+        border:1px solid #f47521 !important; border-radius:5px;
+        box-shadow:0 10px 26px rgba(0,0,0,.6); z-index:60;
+    }
+    .ple-split .tabulator-row.tabulator-moving .tabulator-cell { color:#15161a !important; border-color:rgba(0,0,0,.12) !important; }
+    .ple-split .tabulator-row.tabulator-moving input[type=checkbox] { filter:none; }
+    /* placeholder gap where the row will drop */
+    .ple-split .tabulator-row.tabulator-moving + .tabulator-row,
+    .ple-split .tabulator-row.tabulator-rowMovingReceiver { box-shadow:inset 0 2px 0 #f47521; }
+    .ple-split .tabulator-row { cursor:grab; }
+    .ple-split .tabulator-row.tabulator-moving { cursor:grabbing; }
+    /* editable cells get a subtle affordance on hover */
+    .ple-split .tabulator-cell.tabulator-editable:hover { background:rgba(244,117,33,.10); outline:1px solid rgba(244,117,33,.35); outline-offset:-1px; }
+    .ple-split .tabulator-cell.tabulator-editing { box-shadow:inset 0 0 0 2px #f47521; padding:0 !important; }
+    .ple-split .tabulator-cell.tabulator-editing input,
+    .ple-split .tabulator-cell.tabulator-editing select { background:#0e0f13; color:#fff; border:none; height:100%; padding:.3rem .5rem; box-sizing:border-box; }
     .ple-split .tabulator-row .tabulator-row-handle { color:#6b7280; }
     .ple-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-start;
         justify-content:center; padding-top:8vh; z-index:70; }
@@ -151,10 +169,10 @@ window.GXPLE = (function () {
         grTable = new Tabulator('#pl-groups', {
             layout: 'fitColumns', height: '56vh', data: rows, movableRows: true, placeholder: 'No groups.',
             columns: [
-                { rowHandle: true, formatter: 'handle', headerSort: false, width: 26, frozen: true },
-                { title: 'Group', field: 'group_title', widthGrow: 3 },
+                { title: 'Group', field: 'group_title', widthGrow: 3, editor: 'input',
+                  cellEdited: cell => J('/playlists/' + plId + '/groups/' + cell.getRow().getData().id, 'PATCH', { group_title: cell.getValue() }).then(() => { loadGroups(); reloadChannels(); }) },
                 { title: 'Ch', field: 'channels', width: 46, hozAlign: 'right' },
-                { title: 'On', field: 'enabled', width: 44, hozAlign: 'center',
+                { title: 'On', field: 'enabled', width: 44, hozAlign: 'center', headerSort: false,
                   formatter: c => `<input type="checkbox" ${c.getValue() ? 'checked' : ''} style="pointer-events:none">` },
                 { title: '', field: '_d', width: 38, hozAlign: 'center', headerSort: false,
                   formatter: () => `<button class="pl-x" title="Delete group">${ICON.del}</button>` },
@@ -166,7 +184,7 @@ window.GXPLE = (function () {
             else if (f === '_d' && e.target.closest('button')) { if (confirm('Hide group "' + d.group_title + '" (and its channels) from the playlist?')) { J('/playlists/' + plId + '/groups/' + d.id, 'DELETE').then(() => { loadGroups(); reloadChannels(); }); } }
         });
         grTable.on('rowClick', (e, row) => {
-            if (e.target.closest('button') || e.target.closest('input') || e.target.closest('.tabulator-row-handle')) return;
+            if (e.target.closest('button') || e.target.closest('input') || e.target.closest('.tabulator-editing')) return;
             const t = row.getData().group_title;
             groupFilter = (groupFilter === t) ? null : t; setChip(); reloadChannels();
         });
@@ -177,36 +195,47 @@ window.GXPLE = (function () {
 
     function buildChannels() {
         if (chTable) { try { chTable.destroy(); } catch (e) {} chTable = null; }
+        const onEdit = (cell) => {
+            const f = cell.getField(); const body = {}; body[f] = cell.getValue();
+            J('/playlists/' + plId + '/channels/' + cell.getRow().getData().id, 'PATCH', body)
+                .then(() => { if (f === 'group_title') { loadGroups(); reloadChannels(); } });
+        };
         chTable = new Tabulator('#pl-channels', {
             layout: 'fitColumns', height: '56vh', movableRows: true,
             pagination: true, paginationMode: 'remote', paginationSize: SIZE,
             placeholder: 'No channels.',
             ajaxURL: '/playlists/' + plId + '/channels',
-            ajaxParams: () => ({ search: $('ple-search').value || '', group: groupFilter || '', deleted: showDeleted ? 1 : 0 }),
-            ajaxResponse: (u, p, r) => { $('ple-count').textContent = (r.total ?? 0) + (showDeleted ? ' deleted' : '') + ' channels'; return r; },
+            ajaxParams: () => ({ search: $('ple-search').value || '', group: groupFilter || '', deleted: showDeleted ? 'all' : '' }),
+            ajaxResponse: (u, p, r) => { $('ple-count').textContent = (r.total ?? 0) + ' channels' + (showDeleted ? ' (incl. deleted)' : ''); return r; },
+            rowFormatter: (row) => { const el = row.getElement(); if (row.getData().deleted) { el.style.opacity = '.42'; el.style.textDecoration = 'line-through'; } else { el.style.opacity = ''; el.style.textDecoration = ''; } },
             columns: [
-                { rowHandle: true, formatter: 'handle', headerSort: false, width: 26, frozen: true },
-                { title: '#', field: 'row', width: 52, hozAlign: 'right', headerSort: false },
-                { title: 'Logo', field: 'tvg_logo', width: 52, hozAlign: 'center', headerSort: false,
+                { title: '#', field: 'row', width: 48, hozAlign: 'right', headerSort: false },
+                { title: 'Logo', field: 'tvg_logo', width: 50, hozAlign: 'center', headerSort: false,
                   formatter: c => c.getValue() ? `<img class="ple-logo" src="${esc(c.getValue())}" onerror="this.style.display='none'">` : '' },
-                { title: 'Name', field: 'name', widthGrow: 2,
-                  formatter: c => { const d = c.getRow().getData(); return (d.missing ? '<span style="color:#f87171" title="source channel missing">⚠ </span>' : '') + esc(c.getValue()); } },
-                { title: 'tvg-name', field: 'tvg_name', widthGrow: 2 },
-                { title: 'Group', field: 'group_title', widthGrow: 1 },
-                { title: 'On', field: 'enabled', width: 44, hozAlign: 'center',
+                { title: 'On', field: 'enabled', width: 40, hozAlign: 'center', headerSort: false,
                   formatter: c => `<input type="checkbox" ${c.getValue() ? 'checked' : ''} style="pointer-events:none">` },
-                { title: '', field: '_a', width: 92, hozAlign: 'center', headerSort: false,
-                  formatter: () => `<span class="ple-act"><button data-a="move" title="Move to row">${ICON.move}</button><button data-a="edit" title="Edit">${ICON.edit}</button><button data-a="del" title="${showDeleted ? 'Restore' : 'Delete'}">${showDeleted ? ICON.restore : ICON.del}</button></span>` },
+                { title: 'TVG_ID', field: 'tvg_id', widthGrow: 1.3, editor: 'input', cellEdited: onEdit },
+                { title: 'TVG Name', field: 'tvg_name', widthGrow: 1.6, editor: 'input', cellEdited: onEdit },
+                { title: 'Title', field: 'name', widthGrow: 1.6, editor: 'input', cellEdited: onEdit,
+                  formatter: c => { const d = c.getRow().getData(); return (d.missing ? '<span style="color:#f87171" title="source channel missing">⚠ </span>' : '') + esc(c.getValue()); } },
+                { title: 'M3U URL', field: 'url', widthGrow: 2.4, editor: 'input', cellEdited: onEdit, tooltip: true },
+                { title: 'Group', field: 'group_title', widthGrow: 1.4,
+                  editor: 'list', editorParams: { values: () => plGroups, autocomplete: true, allowEmpty: false, freetext: false }, cellEdited: onEdit },
+                ...(showDeleted ? [{ title: 'Deleted', field: 'deleted', width: 64, hozAlign: 'center', headerSort: false,
+                  formatter: c => `<input type="checkbox" ${c.getValue() ? 'checked' : ''} style="pointer-events:none">` }] : []),
+                { title: '', field: '_a', width: 84, hozAlign: 'center', headerSort: false,
+                  formatter: c => { const d = c.getRow().getData(); return `<span class="ple-act"><button data-a="move" title="Move to row">${ICON.move}</button><button data-a="edit" title="Edit">${ICON.edit}</button><button data-a="del" title="${d.deleted ? 'Restore' : 'Delete'}">${d.deleted ? ICON.restore : ICON.del}</button></span>`; } },
             ],
         });
         chTable.on('cellClick', (e, cell) => {
             const f = cell.getField(); const d = cell.getRow().getData();
             if (f === 'enabled') { const on = !d.enabled; J('/playlists/' + plId + '/channels/' + d.id, 'PATCH', { enabled: on }); cell.getRow().update({ enabled: on }); return; }
+            if (f === 'deleted') { J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', d.deleted ? { restore: true } : null).then(reloadChannels); return; }
             if (f !== '_a') return;
             const a = e.target.closest('button')?.dataset.a; if (!a) return;
             if (a === 'move') openMove(d);
             else if (a === 'edit') openEdit(d);
-            else if (a === 'del') J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', showDeleted ? { restore: true } : null).then(reloadChannels);
+            else if (a === 'del') J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', d.deleted ? { restore: true } : null).then(reloadChannels);
         });
         chTable.on('rowMoved', (row) => {
             const page = chTable.getPage() || 1;

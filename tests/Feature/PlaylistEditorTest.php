@@ -55,9 +55,20 @@ class PlaylistEditorTest extends TestCase { use RefreshDatabase;
     $this->actingAs($u)->patchJson("/playlists/{$pl->id}/channels/{$cid}",['enabled'=>false])->assertOk();
     $this->actingAs($u)->deleteJson("/playlists/{$pl->id}/channels/{$cid}")->assertOk();
     $this->assertSame(3,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json('total')); // hidden
-    $this->assertSame(1,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?deleted=1")->json('total')); // in trash
+    $all=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?deleted=all")->json(); // show-all reveals everything
+    $this->assertSame(4,$all['total']);
+    $this->assertTrue(collect($all['data'])->firstWhere('id',$cid)['deleted']); // deleted flag exposed
     $this->actingAs($u)->deleteJson("/playlists/{$pl->id}/channels/{$cid}",['restore'=>true])->assertOk();
     $this->assertSame(4,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json('total')); // restored
+  }
+
+  public function test_inline_edit_overrides_provider_value(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]); $pl=$this->seeded($u);
+    $rows=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json("data");
+    $cid=$rows[0]["id"];
+    $this->actingAs($u)->patchJson("/playlists/{$pl->id}/channels/{$cid}",["name"=>"My Custom Name"])->assertOk();
+    $rows2=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json("data");
+    $this->assertSame("My Custom Name", collect($rows2)->firstWhere("id",$cid)["name"]); // override wins over provider value
   }
 
   public function test_orphan_group_channels_still_listed(): void {
@@ -73,6 +84,16 @@ class PlaylistEditorTest extends TestCase { use RefreshDatabase;
     $this->assertSame(2,$r->json("total"));
     $this->assertCount(2,$r->json("data")); // LEFT JOIN: orphan-group channel not dropped
     $this->assertContains("NEWS", array_column((new PlaylistStore($pl->id))->groups(),"group_title")); // seed created the missing group
+  }
+
+  public function test_group_rename_cascades_to_channels(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]); $pl=$this->seeded($u);
+    $st=new PlaylistStore($pl->id); $g=collect($st->groups())->firstWhere("group_title","CANADA");
+    $this->actingAs($u)->patchJson("/playlists/{$pl->id}/groups/{$g['id']}",["group_title"=>"CA CHANNELS"])->assertOk();
+    $titles=array_column($st->groups(),"group_title");
+    $this->assertContains("CA CHANNELS",$titles); $this->assertNotContains("CANADA",$titles);
+    $ca=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?group=".urlencode("CA CHANNELS"))->json();
+    $this->assertSame(2,$ca["total"]); // channels followed the rename
   }
 
   public function test_manual_add_and_group_filter(): void {

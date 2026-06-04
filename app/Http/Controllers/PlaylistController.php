@@ -111,14 +111,14 @@ class PlaylistController extends Controller
         $page    = max(1, (int) $request->query('page', 1));
         $search  = $request->query('search');
         $group   = $request->query('group');
-        $deleted = $request->boolean('deleted');
+        $mode    = $request->query('deleted') === 'all' ? 'all' : 'hide';
 
         if (! PlaylistStore::existsFor($playlist->id)) {
             return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
         }
         $store = new PlaylistStore($playlist->id);
-        $total = $store->channelCount($search, $group, $deleted);
-        $rows  = $store->channels($size, ($page - 1) * $size, $search, $group, $deleted);
+        $total = $store->channelCount($search, $group, $mode);
+        $rows  = $store->channels($size, ($page - 1) * $size, $search, $group, $mode);
 
         // hydrate provider-channel rows from their provider stores (manual rows already inline)
         $byProvider = [];
@@ -135,6 +135,12 @@ class PlaylistController extends Controller
         foreach ($rows as $i => $r) {
             $pid = (int) $r['provider_id'];
             $src = $pid > 0 ? ($data[$pid][(int) $r['channel_id']] ?? null) : null;
+            // playlist-level edit (non-empty pointer field) overrides the provider's value
+            $pick = function (string $k) use ($r, $src) {
+                $v = $r[$k] ?? '';
+                return ($v !== '' && $v !== null) ? $v : ($src[$k] ?? '');
+            };
+            $name = $pick('name');
             $out[] = [
                 'id'          => (int) $r['id'],
                 'row'         => $globalBase + $i + 1,
@@ -142,13 +148,14 @@ class PlaylistController extends Controller
                 'channel_id'  => (int) $r['channel_id'],
                 'manual'      => $pid === 0,
                 'missing'     => $pid > 0 && $src === null,
-                'name'        => $src['name']      ?? $r['name'] ?? '(missing channel)',
-                'tvg_name'    => $src['tvg_name']  ?? $r['tvg_name'] ?? '',
-                'tvg_id'      => $src['tvg_id']    ?? $r['tvg_id'] ?? '',
-                'tvg_logo'    => $src['tvg_logo']  ?? $r['tvg_logo'] ?? '',
-                'url'         => $src['url']       ?? $r['url'] ?? '',
+                'name'        => $name !== '' ? $name : ($pid > 0 && $src === null ? '(missing channel)' : ''),
+                'tvg_name'    => $pick('tvg_name'),
+                'tvg_id'      => $pick('tvg_id'),
+                'tvg_logo'    => $pick('tvg_logo'),
+                'url'         => $pick('url'),
                 'group_title' => $r['group_title'],
                 'enabled'     => (bool) $r['enabled'],
+                'deleted'     => (bool) $r['deleted'],
             ];
         }
 
@@ -205,9 +212,9 @@ class PlaylistController extends Controller
     public function updateGroup(Request $request, Playlist $playlist, int $gid)
     {
         $this->authorizeOwner($playlist);
-        if ($request->has('enabled')) {
-            (new PlaylistStore($playlist->id))->setGroupFlag($gid, 'enabled', $request->boolean('enabled'));
-        }
+        $store = new PlaylistStore($playlist->id);
+        if ($request->has('enabled')) { $store->setGroupFlag($gid, 'enabled', $request->boolean('enabled')); }
+        if ($request->filled('group_title')) { $store->renameGroup($gid, (string) $request->input('group_title')); }
 
         return response()->json(['ok' => true]);
     }
