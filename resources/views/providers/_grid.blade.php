@@ -299,7 +299,13 @@ if (!window.GXP) {
             if (ok && data.msgid) openFeed(data.msgid, name);
         }
 
-        async function del(id, name) { if (!confirm('Delete provider "' + name + '"?')) return; await J('/providers/' + id, 'DELETE'); reload(); }
+        async function del(id, name) {
+            if (!confirm('Delete provider "' + name + '"?')) return;
+            const { ok, data } = await J('/providers/' + id, 'DELETE');
+            if (!ok) { alert((data && data.message) || 'Could not delete provider.'); return; }
+            if (Number(browseProvider) === Number(id)) closeBrowse();
+            reload();
+        }
 
         // ----- live feed/log overlay (polls feed_logs by msgid) -----
         let feedTimer = null, feedSince = 0, feedMsgid = null;
@@ -474,6 +480,8 @@ if (!window.GXP) {
             $('gx-browse-pane').hidden = true;
             if (browseTable) { browseTable.destroy(); browseTable = null; }
             if (groupsTable) { groupsTable.destroy(); groupsTable = null; }
+            browseProvider = null;
+            browseGroupFilter = null;
         }
 
         function toggleAddChannel(show) {
