@@ -304,6 +304,27 @@ class ProviderController extends Controller
         }
     }
 
+    /** Add a manual group to a provider's store (owner only). */
+    public function addGroup(Request $request, Provider $provider)
+    {
+        $this->authorizeOwner($provider);
+
+        $v = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'group_title' => 'required|string|max:300',
+        ]);
+        if ($v->fails()) {
+            return response()->json(['message' => $v->errors()->first()], 422);
+        }
+
+        try {
+            $id = (new ProviderStore($provider->id))->addGroup($v->validated()['group_title']);
+            return response()->json(['ok' => true, 'id' => $id]);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
     /** Add a manual channel to a provider's store (owner only). Marked 'user' so refreshes keep it. */
     public function addChannel(Request $request, Provider $provider)
     {

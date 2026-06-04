@@ -15,7 +15,7 @@ use PDO;
  */
 class ProviderStore
 {
-    private const SCHEMA_VERSION = 2;
+    private const SCHEMA_VERSION = 3;
     private const EDITABLE = ['name', 'tvg_id', 'tvg_name', 'tvg_logo', 'group_title', 'type', 'url'];
 
     private const CHANNELS_DDL = 'CREATE TABLE channels (
@@ -69,10 +69,17 @@ class ProviderStore
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             group_title TEXT NOT NULL,
             position_order INTEGER DEFAULT 0,
+            type TEXT NOT NULL DEFAULT \'P\',
             version TEXT,
             error INTEGER DEFAULT 0,
             UNIQUE(group_title)
         )');
+
+        // pre-existing stores: add groups.type if missing (manual groups marked 'user')
+        $gcols = $this->db->query('PRAGMA table_info(groups)')->fetchAll(PDO::FETCH_COLUMN, 1);
+        if (! in_array('type', $gcols, true)) {
+            $this->db->exec("ALTER TABLE groups ADD COLUMN type TEXT NOT NULL DEFAULT 'P'");
+        }
 
         $ver = (int) $this->db->query('PRAGMA user_version')->fetchColumn();
         $hasChannels = $this->db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='channels'")->fetchColumn();
@@ -171,12 +178,25 @@ class ProviderStore
         return (int) $this->db->query('SELECT COALESCE(MAX(position_order),0) FROM groups')->fetchColumn() + 10;
     }
 
-    /** Bump miss-count on rows not seen this run; delete after >3 misses. Never sweeps manual ('user') channels. Returns channels removed. */
+    /** Manually add (or revive) a group; marked 'user' so refreshes never sweep it. */
+    public function addGroup(string $title): int
+    {
+        $stmt = $this->db->prepare(
+            'INSERT INTO groups (group_title,position_order,type,version,error)
+             VALUES (:t,:o,\'user\',NULL,0)
+             ON CONFLICT(group_title) DO UPDATE SET type=\'user\''
+        );
+        $stmt->execute([':t' => $title, ':o' => $this->nextGroupOrder()]);
+
+        return (int) $this->db->lastInsertId();
+    }
+
+    /** Bump miss-count on rows not seen this run; delete after >3 misses. Never sweeps manual ('user') rows. Returns channels removed. */
     public function sweep(string $version): int
     {
-        $this->db->prepare('UPDATE groups SET error=error+1 WHERE version IS NULL OR version<>:v')->execute([':v' => $version]);
+        $this->db->prepare("UPDATE groups SET error=error+1 WHERE (version IS NULL OR version<>:v) AND type<>'user'")->execute([':v' => $version]);
         $this->db->prepare('UPDATE groups SET error=0 WHERE version=:v')->execute([':v' => $version]);
-        $this->db->exec('DELETE FROM groups WHERE error>3');
+        $this->db->exec("DELETE FROM groups WHERE error>3 AND type<>'user'");
 
         $this->db->prepare("UPDATE channels SET error=error+1 WHERE (version IS NULL OR version<>:v) AND type<>'user'")->execute([':v' => $version]);
         $this->db->prepare('UPDATE channels SET error=0 WHERE version=:v')->execute([':v' => $version]);
@@ -198,7 +218,7 @@ class ProviderStore
     public function groups(): array
     {
         return $this->db->query(
-            'SELECT g.id, g.group_title, g.position_order,
+            'SELECT g.id, g.group_title, g.type, g.position_order,
                     (SELECT COUNT(*) FROM channels c WHERE c.group_title = g.group_title) AS channels
              FROM groups g ORDER BY g.position_order, g.group_title COLLATE NOCASE'
         )->fetchAll(PDO::FETCH_ASSOC);

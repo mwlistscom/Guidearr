@@ -53,6 +53,7 @@
     .gx-pane .tabulator .tabulator-header { background:#1c1d21; font-size:.78rem; }
     .gx-pane .tabulator-row .tabulator-cell { padding:3px 8px; }
     .gx-pane-ch .tabulator { border-radius:.6rem .6rem 0 0; }
+    .gx-pane-gr .tabulator { border-radius:0; }
     .gx-pane-title { background:#1c1d21; border:1px solid rgba(255,255,255,.10); border-bottom:none;
         border-radius:.6rem .6rem 0 0; padding:.45rem .7rem; font-size:.8rem; font-weight:700; color:#cbd; }
     .gx-addinline { display:inline-flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
@@ -423,16 +424,38 @@ if (!window.GXP) {
             });
         }
 
-        async function reloadBrowse() {
-            if (browseTable) browseTable.replaceData();
-            if (groupsTable && browseProvider) {
-                const { data } = await J('/providers/' + browseProvider + '/groups');
-                groupsTable.replaceData((data && data.groups) || []);
-                if (browseGroupFilter) {
-                    const r = groupsTable.getRows().find(x => x.getData().group_title === browseGroupFilter);
-                    if (r) r.select(); else browseGroupFilter = null;
-                }
+        async function refreshGroups() {
+            if (!groupsTable || !browseProvider) return;
+            const { data } = await J('/providers/' + browseProvider + '/groups');
+            const rows = (data && data.groups) || [];
+            groupsTable.replaceData(rows);
+            browseGroups = rows.map(r => r.group_title);
+            if (!browseGroups.length) browseGroups = ['[Dummy]'];
+            $('gx-add-group').innerHTML = browseGroups.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+            if (browseGroupFilter) {
+                const r = groupsTable.getRows().find(x => x.getData().group_title === browseGroupFilter);
+                if (r) r.select(); else browseGroupFilter = null;
             }
+        }
+
+        async function reloadBrowse() { if (browseTable) browseTable.replaceData(); await refreshGroups(); }
+        async function reloadGroups() { await refreshGroups(); }
+
+        function toggleAddGroup(show) {
+            const row = $('gx-addgrouprow');
+            const open = (show === undefined) ? row.hidden : show;
+            row.hidden = !open;
+            $('gx-addgroup-err').textContent = '';
+            if (open) { $('gx-add-grouptitle').value = ''; $('gx-add-grouptitle').focus(); }
+        }
+
+        async function addGroup() {
+            const t = $('gx-add-grouptitle').value.trim();
+            if (!t) { $('gx-addgroup-err').textContent = 'Group name is required.'; return; }
+            const { ok, data } = await J('/providers/' + browseProvider + '/groups', 'POST', { group_title: t });
+            if (!ok) { $('gx-addgroup-err').textContent = data.message || 'Could not add group.'; return; }
+            toggleAddGroup(false);
+            await refreshGroups();
         }
 
         async function saveChannel(cell) {
@@ -481,7 +504,7 @@ if (!window.GXP) {
         document.addEventListener('livewire:navigated', init);
         document.addEventListener('DOMContentLoaded', init);
 
-        return { init, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse };
+        return { init, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse, reloadGroups, toggleAddGroup, addGroup };
     })();
 }
 // run now in case the listeners' events already fired before this script parsed

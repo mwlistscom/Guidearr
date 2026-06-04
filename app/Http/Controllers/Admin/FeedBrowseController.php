@@ -14,7 +14,10 @@ class FeedBrowseController extends Controller
     {
         $users = User::withCount('providers')->orderBy('name')->get();
 
-        return view('admin.feeds.users', compact('users'));
+        $queue = \App\Models\FeedQueue::with(['provider:id,name', 'user:id,name,email'])
+            ->orderByDesc('updated_at')->limit(100)->get();
+
+        return view('admin.feeds.users', compact('users', 'queue'));
     }
 
     public function providers(User $user)
@@ -39,22 +42,34 @@ class FeedBrowseController extends Controller
         $size   = min(200, max(10, (int) $request->query('size', 50)));
         $page   = max(1, (int) $request->query('page', 1));
         $search = $request->query('search');
+        $group  = $request->query('group');
 
         try {
             if (! ProviderStore::exists($provider->id)) {
                 return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
             }
             $store = new ProviderStore($provider->id);
-            $total = $store->channelCount($search);
+            $total = $store->channelCount($search, $group);
 
             return response()->json([
                 'last_page' => max(1, (int) ceil($total / $size)),
                 'total'     => $total,
-                'data'      => $store->channels($size, ($page - 1) * $size, $search),
+                'data'      => $store->channels($size, ($page - 1) * $size, $search, $group),
             ]);
         } catch (\Throwable $e) {
             report($e);
             return response()->json(['last_page' => 1, 'total' => 0, 'data' => [], 'error' => $e->getMessage()]);
+        }
+    }
+
+    public function groupsData(Provider $provider)
+    {
+        try {
+            $groups = ProviderStore::exists($provider->id) ? (new ProviderStore($provider->id))->groups() : [];
+            return response()->json(['groups' => $groups]);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['groups' => [], 'error' => $e->getMessage()]);
         }
     }
 

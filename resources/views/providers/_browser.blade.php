@@ -29,8 +29,22 @@
             </div>
         </div>
         <div class="gx-pane gx-pane-gr">
-            <div class="gx-pane-title">Groups <span class="gx-count" id="gx-groups-hint">— click to filter</span></div>
+            <div class="gx-pane-title">Groups</div>
             <div id="provider-groups"></div>
+            <div class="gx-toolbar">
+                <button title="Add group" onclick="GXP.toggleAddGroup()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <button title="Reload groups" onclick="GXP.reloadGroups()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                </button>
+                <span class="gx-addinline" id="gx-addgrouprow" hidden>
+                    <input id="gx-add-grouptitle" placeholder="Group name *">
+                    <button class="gx-btn" type="button" onclick="GXP.addGroup()">Add</button>
+                    <button class="gx-btn secondary" type="button" onclick="GXP.toggleAddGroup(false)">Cancel</button>
+                    <span class="gx-add-err" id="gx-addgroup-err"></span>
+                </span>
+            </div>
         </div>
     </div>
 </div>

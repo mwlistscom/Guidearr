@@ -450,6 +450,46 @@ class ProviderTest extends TestCase
         @unlink(\App\Services\ProviderStore::path($p->id));
     }
 
+    public function test_add_group_endpoint_and_manual_group_survives_sweep(): void
+    {
+        $owner = $this->user();
+        $other = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $owner->id, 'name' => 'GG', 'type' => 'm3u', 'url' => 'http://h/gg.m3u']);
+        @unlink(\App\Services\ProviderStore::path($p->id));
+
+        // seed a provider group via a run
+        $s = new \App\Services\ProviderStore($p->id);
+        $s->begin();
+        $s->upsertChannel(['name' => 'A', 'url' => 'http://h/a.ts', 'group' => 'AutoGroup'], 'v1');
+        $s->upsertGroup('AutoGroup', 10, 'v1');
+        $s->commit();
+        $s->sweep('v1');
+
+        // not the owner -> forbidden
+        $this->actingAs($other)->postJson("/providers/{$p->id}/groups", ['group_title' => 'Mine'])->assertForbidden();
+        // owner adds a manual group
+        $this->actingAs($owner)->postJson("/providers/{$p->id}/groups", ['group_title' => 'Mine'])->assertOk()->assertJson(['ok' => true]);
+        $this->actingAs($owner)->postJson("/providers/{$p->id}/groups", ['group_title' => ''])->assertStatus(422);
+
+        $titles = array_column((new \App\Services\ProviderStore($p->id))->groups(), 'group_title');
+        $this->assertContains('Mine', $titles);
+
+        // refreshes that don't include AutoGroup or Mine: AutoGroup eventually swept, manual Mine stays
+        for ($i = 2; $i <= 6; $i++) {
+            $r = new \App\Services\ProviderStore($p->id);
+            $r->begin();
+            $r->upsertChannel(['name' => 'B', 'url' => 'http://h/b.ts', 'group' => 'Other'], "v{$i}");
+            $r->upsertGroup('Other', 10, "v{$i}");
+            $r->commit();
+            $r->sweep("v{$i}");
+        }
+        $titles = array_column((new \App\Services\ProviderStore($p->id))->groups(), 'group_title');
+        $this->assertContains('Mine', $titles, 'manual group must survive sweeps');
+        $this->assertNotContains('AutoGroup', $titles, 'unseen provider group should be swept');
+
+        @unlink(\App\Services\ProviderStore::path($p->id));
+    }
+
     public function test_validator_pure_logic(): void
     {
         $this->assertTrue(ProviderValidator::contentMatchesType("#EXTM3U\n#EXTINF:-1,Foo\nhttp://x", 'm3u'));
