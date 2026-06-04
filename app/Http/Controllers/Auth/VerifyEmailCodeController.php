@@ -1,11 +1,12 @@
 <?php
+
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
-use RyanChandler\LaravelCloudflareTurnstile\Rules\Turnstile;
+use App\Support\Turnstile;
 
 class VerifyEmailCodeController extends Controller
 {
@@ -13,7 +14,7 @@ class VerifyEmailCodeController extends Controller
     {
         $request->validate([
             'code' => ['required', 'string'],
-            'cf-turnstile-response' => ['required', new Turnstile()],
+            'cf-turnstile-response' => Turnstile::rules(),
         ]);
 
         $user = $request->user();
@@ -34,6 +35,7 @@ class VerifyEmailCodeController extends Controller
             'verification_code_expires_at' => null,
         ])->save();
 
+        // Log out so the user signs in fresh, per the desired flow.
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();

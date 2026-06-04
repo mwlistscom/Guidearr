@@ -7,7 +7,7 @@ use App\Concerns\ProfileValidationRules;
 use App\Models\User;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
-use RyanChandler\LaravelCloudflareTurnstile\Rules\Turnstile;
+use App\Support\Turnstile;
 
 class CreateNewUser implements CreatesNewUsers
 {
@@ -23,7 +23,7 @@ class CreateNewUser implements CreatesNewUsers
         Validator::make($input, [
             ...$this->profileRules(),
             'password' => $this->passwordRules(),
-            'cf-turnstile-response' => ['required', new Turnstile()],
+            'cf-turnstile-response' => Turnstile::rules(),
         ])->validate();
 
         $user = User::create([

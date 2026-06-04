@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
-use RyanChandler\LaravelCloudflareTurnstile\Rules\Turnstile;
+use App\Support\Turnstile;
 
 class AdminAuthController extends Controller
 {
@@ -24,7 +24,7 @@ class AdminAuthController extends Controller
         $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
-            'cf-turnstile-response' => ['required', new Turnstile()],
+            'cf-turnstile-response' => Turnstile::rules(),
         ]);
 
         $user = User::where('email', $request->email)->first();
