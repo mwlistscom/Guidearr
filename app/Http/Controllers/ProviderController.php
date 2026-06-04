@@ -169,7 +169,14 @@ class ProviderController extends Controller
             'last_touch_at' => now(),
         ])->save();
 
-        return response()->json(['enabled' => (bool) $provider->enabled]);
+        $msgid = null;
+        if ($provider->enabled) {
+            $msgid = FeedQueue::enqueue($provider)->msgid;          // re-enable -> re-insert work
+        } else {
+            FeedQueue::where('provider_id', $provider->id)->delete(); // disable -> cancel pending work
+        }
+
+        return response()->json(['enabled' => (bool) $provider->enabled, 'msgid' => $msgid]);
     }
 
     /** Re-queue the provider for a background download; returns the msgid to tail. */

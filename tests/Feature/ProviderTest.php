@@ -185,6 +185,95 @@ class ProviderTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_m3u_parser_extracts_attributes_and_classifies(): void
+    {
+        $ext = \App\Services\M3uParser::parseExtinf('#EXTINF:-1 tvg-id="cnn.us" tvg-name="CNN" tvg-logo="http://x/c.png" group-title="News",CNN HD');
+        $this->assertSame('cnn.us', $ext['tvg_id']);
+        $this->assertSame('CNN', $ext['tvg_name']);
+        $this->assertSame('News', $ext['group']);
+        $this->assertSame('CNN HD', $ext['name']);
+
+        $this->assertSame('VOD', \App\Services\M3uParser::classify('http://h/movie/1.mkv')['type']);
+        $this->assertSame('Live', \App\Services\M3uParser::classify('http://h:8080/live/123')['type']);
+    }
+
+    public function test_m3u_parser_streams_channels_and_groups(): void
+    {
+        $m3u = "#EXTM3U\n"
+            . "#EXTINF:-1 tvg-id=\"a\" group-title=\"News\",A\nhttp://h/a.ts\n"
+            . "#EXTINF:-1 tvg-id=\"b\" group-title=\"Sports\",B\nhttp://h/b.ts\n";
+        $fh = fopen('php://temp', 'r+'); fwrite($fh, $m3u); rewind($fh);
+        $seen = [];
+        $r = \App\Services\M3uParser::stream($fh, function ($c) use (&$seen) { $seen[] = $c['name']; });
+        fclose($fh);
+        $this->assertSame(2, $r['count']);
+        $this->assertEqualsCanonicalizing(['News', 'Sports'], $r['groups']);
+        $this->assertSame(['A', 'B'], $seen);
+    }
+
+    public function test_provider_store_upserts_and_sweeps(): void
+    {
+        $pid = 999001;
+        @unlink(\App\Services\ProviderStore::path($pid));
+        $store = new \App\Services\ProviderStore($pid);
+
+        $store->begin();
+        $store->upsertChannel(['name' => 'A', 'url' => 'http://h/a.ts', 'group' => 'News'], 'v1');
+        $store->upsertChannel(['name' => 'B', 'url' => 'http://h/b.ts', 'group' => 'News'], 'v1');
+        $store->commit();
+        $this->assertSame(2, $store->counts()['channels']);
+
+        // next run only sees A across four sweeps -> B accumulates misses and is pruned
+        for ($i = 0; $i < 4; $i++) {
+            $store->begin();
+            $store->upsertChannel(['name' => 'A', 'url' => 'http://h/a.ts', 'group' => 'News'], 'v' . ($i + 2));
+            $store->commit();
+            $store->sweep('v' . ($i + 2));
+        }
+        $this->assertSame(1, $store->counts()['channels']); // B swept away
+
+        @unlink(\App\Services\ProviderStore::path($pid));
+    }
+
+    public function test_toggle_enqueues_on_enable_and_cancels_on_disable(): void
+    {
+        $user = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $user->id, 'name' => 'X', 'type' => 'manual', 'enabled' => false]);
+
+        $this->actingAs($user)->postJson("/providers/{$p->id}/toggle")->assertOk()->assertJson(['enabled' => true]);
+        $this->assertSame(1, \App\Models\FeedQueue::where('provider_id', $p->id)->count());
+
+        $this->actingAs($user)->postJson("/providers/{$p->id}/toggle")->assertOk()->assertJson(['enabled' => false]);
+        $this->assertSame(0, \App\Models\FeedQueue::where('provider_id', $p->id)->count());
+    }
+
+    public function test_worker_disables_provider_and_drops_job_at_error_threshold(): void
+    {
+        $user = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $user->id, 'name' => 'X', 'type' => 'manual', 'enabled' => true]);
+        $job = \App\Models\FeedQueue::enqueue($p);
+        $job->forceFill(['error' => 4])->save(); // already past the threshold
+
+        $this->artisan('feed:work', ['--once' => true])->assertSuccessful();
+
+        $this->assertDatabaseMissing('feed_queue', ['id' => $job->id]); // job dropped
+        $this->assertFalse((bool) $p->fresh()->enabled);                 // provider disabled
+    }
+
+    public function test_orphan_running_job_is_requeued_with_error_bump(): void
+    {
+        $user = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $user->id, 'name' => 'X', 'type' => 'manual']);
+        $job = \App\Models\FeedQueue::enqueue($p);
+        $job->forceFill(['state' => 'running', 'dstart' => now()->subHours(2), 'error' => 0])->save();
+
+        \App\Models\FeedQueue::reclaimOrphans();
+
+        $fresh = $job->fresh();
+        $this->assertSame('queued', $fresh->state);
+        $this->assertSame(1, $fresh->error);
+    }
+
     public function test_validator_pure_logic(): void
     {
         $this->assertTrue(ProviderValidator::contentMatchesType("#EXTM3U\n#EXTINF:-1,Foo\nhttp://x", 'm3u'));

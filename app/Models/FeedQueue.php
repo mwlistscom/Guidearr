@@ -79,11 +79,36 @@ class FeedQueue extends Model
         return $job;
     }
 
-    /** Atomically claim the next queued job (single-worker safe; add SKIP LOCKED for heavy concurrency). */
+    /** Reset jobs stuck in 'running' past the orphan window (crashed/hung worker); count an error. */
+    public static function reclaimOrphans(): int
+    {
+        $minutes = (int) config('guidearr.feed.orphan_minutes', 60);
+        $orphans = static::where('state', 'running')
+            ->whereNotNull('dstart')
+            ->where('dstart', '<', now()->subMinutes($minutes))
+            ->get();
+
+        foreach ($orphans as $o) {
+            $o->forceFill(['state' => 'queued', 'error' => $o->error + 1, 'processor' => null])->save();
+            $o->log('warn', "Job ran past {$minutes}m and was reset to queued; error #{$o->error}.");
+        }
+
+        return $orphans->count();
+    }
+
+    /** Atomically claim the next queued job. Uses SKIP LOCKED on MySQL for true 2–3 worker parallelism. */
     public static function claimNext(string $processor): ?self
     {
+        static::reclaimOrphans();
+
         return DB::transaction(function () use ($processor) {
-            $job = static::where('state', 'queued')->orderBy('id')->lockForUpdate()->first();
+            $q = static::where('state', 'queued')->orderBy('id');
+            if (in_array($q->getConnection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+                $q->lock('FOR UPDATE SKIP LOCKED');
+            } else {
+                $q->lockForUpdate();
+            }
+            $job = $q->first();
             if (! $job) {
                 return null;
             }

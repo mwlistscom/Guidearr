@@ -13,4 +13,15 @@ return [
         'password' => env('ADMIN_PASSWORD'),
     ],
     'registration_requires_approval' => env('REGISTRATION_REQUIRES_APPROVAL', false),
+
+    // Background feed downloader limits (all overridable via .env).
+    'feed' => [
+        'max_bytes'        => (int) env('FEED_MAX_BYTES', 1288490188), // ~1.2 GB hard cap
+        'connect_timeout'  => (int) env('FEED_CONNECT_TIMEOUT', 30),   // seconds
+        'timeout'          => (int) env('FEED_TIMEOUT', 1200),         // seconds (20 min)
+        'verify_tls'       => (bool) env('FEED_VERIFY_TLS', false),    // many IPTV servers have bad/no TLS
+        'max_errors'       => (int) env('FEED_MAX_ERRORS', 4),         // at this error count: delete job + disable provider
+        'orphan_minutes'   => (int) env('FEED_ORPHAN_MINUTES', 60),    // running longer than this = orphan -> requeue + error++
+        'user_agent'       => env('FEED_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'),
+    ],
 ];

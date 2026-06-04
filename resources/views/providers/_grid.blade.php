@@ -152,7 +152,7 @@ if (!window.GXP) {
                       formatter: c => `<span style="color:#8ab4f8">${c.getValue() ?? ''}</span>` },
                     { title: 'Enable', field: 'enabled', width: 90, hozAlign: 'center',
                       formatter: c => `<input type="checkbox" ${c.getValue() ? 'checked' : ''} style="pointer-events:none">`,
-                      cellClick: (e, c) => GXP.toggle(c.getRow().getData().id) },
+                      cellClick: (e, c) => { const d = c.getRow().getData(); GXP.toggle(d.id, d.name); } },
                     { title: 'Type', field: 'type', width: 100, formatter: c => (c.getValue() || '').toUpperCase() },
                     { title: 'Last Refresh', field: 'last_refresh_at', width: 170,
                       formatter: c => { const d = c.getRow().getData();
@@ -237,7 +237,11 @@ if (!window.GXP) {
             else { $('gx-form-err').textContent = data.message || 'Could not save (check the fields and URL/type).'; }
         }
 
-        async function toggle(id) { await J('/providers/' + id + '/toggle', 'POST'); reload(); }
+        async function toggle(id, name) {
+            const { data } = await J('/providers/' + id + '/toggle', 'POST');
+            reload();
+            if (data && data.msgid) openFeed(data.msgid, name || '');
+        }
 
         async function saveCell(cell) {
             const id = cell.getRow().getData().id;
