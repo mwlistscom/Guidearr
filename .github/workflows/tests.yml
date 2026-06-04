@@ -51,8 +51,8 @@ jobs:
       - name: Install Dependencies
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
-      - name: Copy Environment File
-        run: cp .env.example .env
+      - name: Create Environment File
+        run: cp .env.example .env 2>/dev/null || printf 'APP_NAME=Guidearr\nAPP_ENV=testing\nAPP_KEY=\nAPP_DEBUG=true\n' > .env
 
       - name: Generate Application Key
         run: php artisan key:generate
