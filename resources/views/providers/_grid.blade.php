@@ -68,6 +68,11 @@
     .gx-add-err { color:#f87171; font-size:.8rem; }
     .gx-pane-gr .tabulator-row { cursor:pointer; }
     .gx-pane-gr .tabulator-row.tabulator-selected { background:rgba(244,117,33,.18) !important; }
+    .gx-pane-ch .tabulator-row { cursor:pointer; }
+    .gx-pane-ch .tabulator-row.tabulator-selected { background:rgba(244,117,33,.16) !important; }
+    .gx-ce-iconrow { display:flex; gap:.7rem; align-items:flex-end; margin-bottom:.8rem; }
+    .gx-ce-logo-prev { width:54px; height:54px; object-fit:contain; background:#0e0f13;
+        border:1px solid rgba(255,255,255,.16); border-radius:.5rem; padding:3px; flex:none; }
     .gx-logo { height:24px; max-width:46px; object-fit:contain; vertical-align:middle; }
     .gx-act-del { background:transparent; border:none; color:#aab; cursor:pointer; padding:.2rem; border-radius:.35rem; line-height:0; }
     .gx-act-del:hover { color:#f87171; background:rgba(248,113,113,.12); }
@@ -149,6 +154,31 @@
         <h2>Update log — <span id="gx-log-name"></span> <span class="gx-state" id="gx-log-state">…</span></h2>
         <div class="gx-log" id="gx-log-body"></div>
         <div class="gx-modal-actions"><button class="gx-btn secondary" onclick="GXP.closeLog()">Close</button></div>
+    </div>
+</div>
+
+<div class="gx-overlay" id="gx-chedit-overlay">
+    <div class="gx-modal">
+        <h2>Edit channel</h2>
+        <div class="gx-ce-iconrow">
+            <img id="gx-ce-logo-img" class="gx-ce-logo-prev" alt="" onerror="this.style.visibility='hidden'">
+            <div class="gx-field" style="flex:1;margin:0">
+                <label>Icon URL</label>
+                <input id="gx-ce-logo" placeholder="https://…/logo.png" oninput="GXP.cePreview()">
+            </div>
+        </div>
+        <div class="gx-field"><label>Name</label><input id="gx-ce-name"></div>
+        <div class="gx-field"><label>tvg-name</label><input id="gx-ce-tvgname"></div>
+        <div class="gx-field"><label>Group</label><select id="gx-ce-group"></select></div>
+        <div class="gx-field"><label>Type</label>
+            <select id="gx-ce-type"><option>Live</option><option>VOD</option><option value="user">user</option></select>
+        </div>
+        <div class="gx-field"><label>Stream URL</label><input id="gx-ce-url"></div>
+        <div class="gx-err" id="gx-ce-err"></div>
+        <div class="gx-modal-actions">
+            <button class="gx-btn secondary" onclick="GXP.closeEditChannel()">Cancel</button>
+            <button class="gx-btn" onclick="GXP.saveEditChannel()">Save</button>
+        </div>
     </div>
 </div>
 
@@ -400,6 +430,7 @@ window.GXP = (function () {
             browseTable = new Tabulator('#provider-channels', {
                 layout: 'fitColumns', height: '56vh', editTriggerEvent: 'dblclick',
                 placeholder: 'No channels — process this provider first.',
+                selectableRows: 1,
                 pagination: true, paginationMode: 'remote', paginationSize: 50,
                 ajaxURL: '/providers/' + id + '/channels',
                 ajaxParams: () => ({ search: $('gx-browse-search').value || '', group: browseGroupFilter || '' }),
@@ -431,6 +462,7 @@ window.GXP = (function () {
             groupsTable = new Tabulator('#provider-groups', {
                 layout: 'fitColumns', height: '56vh', data: groupRows,
                 placeholder: 'No groups.', selectableRows: 1,
+                pagination: true, paginationMode: 'local', paginationSize: 50,
                 columns: [
                     { title: 'Group', field: 'group_title', widthGrow: 3 },
                     { title: 'Ch', field: 'channels', width: 52, hozAlign: 'right' },
@@ -518,6 +550,49 @@ window.GXP = (function () {
             if (open) { $('gx-add-name').value = ''; $('gx-add-url').value = ''; $('gx-add-name').focus(); }
         }
 
+        let ceId = null;
+        function openEditChannel() {
+            if (!browseTable) return;
+            const sel = browseTable.getSelectedData();
+            if (!sel || !sel.length) { alert('Select a channel row first (click it), then press Edit.'); return; }
+            const r = sel[0];
+            ceId = r.id;
+            $('gx-ce-name').value = r.name || '';
+            $('gx-ce-tvgname').value = r.tvg_name || '';
+            $('gx-ce-logo').value = r.tvg_logo || '';
+            $('gx-ce-url').value = r.url || '';
+            const g = $('gx-ce-group'); g.innerHTML = '';
+            const groups = browseGroups.slice();
+            if (r.group_title && !groups.includes(r.group_title)) groups.unshift(r.group_title);
+            groups.forEach(name => {
+                const o = document.createElement('option'); o.value = name; o.textContent = name;
+                if (name === r.group_title) o.selected = true; g.appendChild(o);
+            });
+            $('gx-ce-type').value = r.type || 'Live';
+            $('gx-ce-err').textContent = '';
+            cePreview();
+            $('gx-chedit-overlay').classList.add('show');
+        }
+        function cePreview() {
+            const u = $('gx-ce-logo').value.trim(), img = $('gx-ce-logo-img');
+            if (u) { img.src = u; img.style.visibility = 'visible'; } else { img.removeAttribute('src'); img.style.visibility = 'hidden'; }
+        }
+        const closeEditChannel = () => $('gx-chedit-overlay').classList.remove('show');
+        async function saveEditChannel() {
+            if (ceId == null) return;
+            const fields = {
+                name: $('gx-ce-name').value, tvg_name: $('gx-ce-tvgname').value,
+                tvg_logo: $('gx-ce-logo').value, group_title: $('gx-ce-group').value,
+                type: $('gx-ce-type').value, url: $('gx-ce-url').value,
+            };
+            for (const [field, value] of Object.entries(fields)) {
+                const { ok, data } = await J('/providers/' + browseProvider + '/channels/' + ceId, 'PATCH', { field, value });
+                if (!ok) { $('gx-ce-err').textContent = data.message || ('Could not save ' + field + '.'); return; }
+            }
+            closeEditChannel();
+            reloadChannels();
+        }
+
         async function addChannel() {
             const name = $('gx-add-name').value.trim(), url = $('gx-add-url').value.trim();
             if (!name || !url) { $('gx-add-err').textContent = 'Name and URL are required.'; return; }
@@ -540,7 +615,7 @@ window.GXP = (function () {
             }
         }
 
-        return { init, onInput, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse, reloadGroups, toggleAddGroup, addGroup };
+        return { init, onInput, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse, reloadGroups, toggleAddGroup, addGroup, openEditChannel, cePreview, closeEditChannel, saveEditChannel };
     })();
 
     // Bind document-level listeners once; they call through window.GXP so the latest code always runs.
@@ -550,5 +625,6 @@ window.GXP = (function () {
         document.addEventListener('livewire:navigated', () => window.GXP && window.GXP.init());
         document.addEventListener('DOMContentLoaded', () => window.GXP && window.GXP.init());
     }
+    console.log('GXP controller {{ config('guidearr.version') }} loaded');
     window.GXP.init();
 </script>

@@ -17,6 +17,9 @@
                 <button title="Reload channels" onclick="GXP.reloadBrowse()">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                 </button>
+                <button title="Edit selected channel" onclick="GXP.openEditChannel()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                </button>
                 <span class="gx-addinline" id="gx-addrow" hidden>
                     <input id="gx-add-name" placeholder="Name *">
                     <select id="gx-add-group" title="Group"></select>
