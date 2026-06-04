@@ -245,14 +245,15 @@ class ProviderController extends Controller
         $size   = min(200, max(10, (int) $request->query('size', 50)));
         $page   = max(1, (int) $request->query('page', 1));
         $search = $request->query('search');
+        $group  = $request->query('group');
 
         try {
             if (! ProviderStore::exists($provider->id)) {
                 return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
             }
             $store = new ProviderStore($provider->id);
-            $total = $store->channelCount($search);
-            $rows  = $store->channels($size, ($page - 1) * $size, $search);
+            $total = $store->channelCount($search, $group);
+            $rows  = $store->channels($size, ($page - 1) * $size, $search, $group);
 
             return response()->json([
                 'last_page' => max(1, (int) ceil($total / $size)),

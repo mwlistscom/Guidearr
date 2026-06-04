@@ -21,5 +21,8 @@
                 </div>
             </div>
         </div>
+
+        {{-- Channels + Groups: full width, below the Provider/Playlist row --}}
+        @include('providers._browser')
     </div>
 </x-layouts::app>

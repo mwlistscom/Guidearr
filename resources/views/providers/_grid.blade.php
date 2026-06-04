@@ -61,6 +61,8 @@
     .gx-addinline #gx-add-name { width:11rem; } .gx-addinline #gx-add-url { width:16rem; } .gx-addinline #gx-add-group { width:10rem; }
     .gx-addinline .gx-btn { padding:.35rem .7rem; font-size:.82rem; }
     .gx-add-err { color:#f87171; font-size:.8rem; }
+    .gx-pane-gr .tabulator-row { cursor:pointer; }
+    .gx-pane-gr .tabulator-row.tabulator-selected { background:rgba(244,117,33,.18) !important; }
     .gx-logo { height:24px; max-width:46px; object-fit:contain; vertical-align:middle; }
     .gx-act-del { background:transparent; border:none; color:#aab; cursor:pointer; padding:.2rem; border-radius:.35rem; line-height:0; }
     .gx-act-del:hover { color:#f87171; background:rgba(248,113,113,.12); }
@@ -133,37 +135,8 @@
     </div>
 </div>
 
-{{-- Channel + group browser (inline split pane: channels 75% / groups 25%) --}}
-<div class="gx-browse-pane" id="gx-browse-pane" hidden>
-    <div class="gx-browse-head">
-        <h2>Channels — <span id="gx-browse-name"></span></h2>
-        <input id="gx-browse-search" placeholder="Filter name / group / tvg-name…">
-        <span class="gx-count" id="gx-browse-count"></span>
-        <button class="gx-btn secondary" type="button" onclick="GXP.closeBrowse()">Close</button>
-    </div>
-    <div class="gx-split">
-        <div class="gx-pane gx-pane-ch">
-            <div id="provider-channels"></div>
-            <div class="gx-toolbar">
-                <button title="Add channel" onclick="GXP.toggleAddChannel()">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-                </button>
-                <span class="gx-addinline" id="gx-addrow" hidden>
-                    <input id="gx-add-name" placeholder="Name *">
-                    <select id="gx-add-group" title="Group"></select>
-                    <input id="gx-add-url" placeholder="Stream URL *">
-                    <button class="gx-btn" type="button" onclick="GXP.addChannel()">Add</button>
-                    <button class="gx-btn secondary" type="button" onclick="GXP.toggleAddChannel(false)">Cancel</button>
-                    <span class="gx-add-err" id="gx-add-err"></span>
-                </span>
-            </div>
-        </div>
-        <div class="gx-pane gx-pane-gr">
-            <div class="gx-pane-title">Groups</div>
-            <div id="provider-groups"></div>
-        </div>
-    </div>
-</div>
+{{-- The channel/group browser markup lives in providers/_browser.blade.php so it can
+     render full-width below the page rows. Include it once on any page that uses this grid. --}}
 
 {{-- Log overlay --}}
 <div class="gx-overlay" id="gx-log-overlay">
@@ -380,7 +353,7 @@ if (!window.GXP) {
         const closeLog = () => { stopFeed(); $('gx-log-overlay').classList.remove('show'); };
 
         // ----- inline channel/group browser over the provider's SQLite store -----
-        let browseTable = null, groupsTable = null, browseProvider = null, browseGroups = [], searchTimer = null;
+        let browseTable = null, groupsTable = null, browseProvider = null, browseGroups = [], browseGroupFilter = null, searchTimer = null;
 
         function esc(s) { return String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
 
@@ -391,6 +364,7 @@ if (!window.GXP) {
             $('gx-browse-count').textContent = '';
             $('gx-addrow').hidden = true;
             $('gx-browse-pane').hidden = false;
+            browseGroupFilter = null;
             if (browseTable) { browseTable.destroy(); browseTable = null; }
             if (groupsTable) { groupsTable.destroy(); groupsTable = null; }
 
@@ -407,7 +381,7 @@ if (!window.GXP) {
                 placeholder: 'No channels — process this provider first.',
                 pagination: true, paginationMode: 'remote', paginationSize: 50,
                 ajaxURL: '/providers/' + id + '/channels',
-                ajaxParams: () => ({ search: $('gx-browse-search').value || '' }),
+                ajaxParams: () => ({ search: $('gx-browse-search').value || '', group: browseGroupFilter || '' }),
                 ajaxResponse: (url, params, response) => {
                     if (response.error) {
                         $('gx-browse-count').innerHTML = '<span style="color:#f87171">Error: ' + esc(response.error) + '</span>';
@@ -435,17 +409,30 @@ if (!window.GXP) {
 
             groupsTable = new Tabulator('#provider-groups', {
                 layout: 'fitColumns', height: '56vh', data: groupRows,
-                placeholder: 'No groups.',
+                placeholder: 'No groups.', selectableRows: 1,
                 columns: [
                     { title: 'Group', field: 'group_title', widthGrow: 3 },
                     { title: 'Ch', field: 'channels', width: 52, hozAlign: 'right' },
                 ],
-                rowClick: (e, row) => {           // click a group to filter the channels pane
+                rowClick: (e, row) => {           // click a group to filter the channels pane (exact); click again to clear
                     const t = row.getData().group_title;
-                    $('gx-browse-search').value = t === '[Dummy]' ? '' : t;
+                    if (browseGroupFilter === t) { browseGroupFilter = null; groupsTable.deselectRow(); }
+                    else { browseGroupFilter = t; groupsTable.deselectRow(); row.select(); }
                     if (browseTable) browseTable.setPage(1);
                 },
             });
+        }
+
+        async function reloadBrowse() {
+            if (browseTable) browseTable.replaceData();
+            if (groupsTable && browseProvider) {
+                const { data } = await J('/providers/' + browseProvider + '/groups');
+                groupsTable.replaceData((data && data.groups) || []);
+                if (browseGroupFilter) {
+                    const r = groupsTable.getRows().find(x => x.getData().group_title === browseGroupFilter);
+                    if (r) r.select(); else browseGroupFilter = null;
+                }
+            }
         }
 
         async function saveChannel(cell) {
@@ -494,7 +481,7 @@ if (!window.GXP) {
         document.addEventListener('livewire:navigated', init);
         document.addEventListener('DOMContentLoaded', init);
 
-        return { init, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel };
+        return { init, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse };
     })();
 }
 // run now in case the listeners' events already fired before this script parsed

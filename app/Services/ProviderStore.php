@@ -204,14 +204,9 @@ class ProviderStore
         )->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function channels(int $limit, int $offset, ?string $search = null): array
+    public function channels(int $limit, int $offset, ?string $search = null, ?string $group = null): array
     {
-        $where = '';
-        $bind  = [];
-        if ($search !== null && $search !== '') {
-            $where = 'WHERE name LIKE :s OR group_title LIKE :s OR tvg_name LIKE :s';
-            $bind[':s'] = '%' . $search . '%';
-        }
+        [$where, $bind] = $this->channelFilter($search, $group);
         $stmt = $this->db->prepare(
             "SELECT id,tvg_id,tvg_name,tvg_logo,group_title,name,url,type
              FROM channels {$where} ORDER BY id LIMIT :lim OFFSET :off"
@@ -226,14 +221,30 @@ class ProviderStore
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    public function channelCount(?string $search = null): int
+    public function channelCount(?string $search = null, ?string $group = null): int
     {
+        [$where, $bind] = $this->channelFilter($search, $group);
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM channels {$where}");
+        $stmt->execute($bind);
+
+        return (int) $stmt->fetchColumn();
+    }
+
+    /** Build a WHERE clause from an optional text search and an exact group match. */
+    private function channelFilter(?string $search, ?string $group): array
+    {
+        $clauses = [];
+        $bind    = [];
         if ($search !== null && $search !== '') {
-            $stmt = $this->db->prepare('SELECT COUNT(*) FROM channels WHERE name LIKE :s OR group_title LIKE :s OR tvg_name LIKE :s');
-            $stmt->execute([':s' => '%' . $search . '%']);
-            return (int) $stmt->fetchColumn();
+            $clauses[] = '(name LIKE :s OR group_title LIKE :s OR tvg_name LIKE :s)';
+            $bind[':s'] = '%' . $search . '%';
         }
-        return (int) $this->db->query('SELECT COUNT(*) FROM channels')->fetchColumn();
+        if ($group !== null && $group !== '') {
+            $clauses[] = 'group_title = :g';
+            $bind[':g'] = $group;
+        }
+
+        return [$clauses ? 'WHERE ' . implode(' AND ', $clauses) : '', $bind];
     }
 
     public function updateChannel(int $id, string $field, $value): bool

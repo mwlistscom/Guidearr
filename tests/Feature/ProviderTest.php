@@ -424,6 +424,32 @@ class ProviderTest extends TestCase
         @unlink(\App\Services\ProviderStore::path($p->id));
     }
 
+    public function test_channels_endpoint_filters_by_exact_group(): void
+    {
+        $owner = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $owner->id, 'name' => 'F', 'type' => 'm3u', 'url' => 'http://h/f.m3u']);
+        @unlink(\App\Services\ProviderStore::path($p->id));
+        $s = new \App\Services\ProviderStore($p->id);
+        $s->begin();
+        $s->upsertChannel(['name' => 'A', 'url' => 'http://h/a.ts', 'group' => 'News'], 'v1');
+        $s->upsertChannel(['name' => 'B', 'url' => 'http://h/b.ts', 'group' => 'News'], 'v1');
+        $s->upsertChannel(['name' => 'C', 'url' => 'http://h/c.ts', 'group' => 'Sports'], 'v1');
+        $s->commit();
+
+        $all = $this->actingAs($owner)->getJson("/providers/{$p->id}/channels")->json();
+        $this->assertSame(3, $all['total']);
+
+        $news = $this->actingAs($owner)->getJson("/providers/{$p->id}/channels?group=News")->json();
+        $this->assertSame(2, $news['total']);
+        $this->assertEqualsCanonicalizing(['A', 'B'], array_column($news['data'], 'name'));
+
+        // group + search combine
+        $both = $this->actingAs($owner)->getJson("/providers/{$p->id}/channels?group=News&search=A")->json();
+        $this->assertSame(1, $both['total']);
+
+        @unlink(\App\Services\ProviderStore::path($p->id));
+    }
+
     public function test_validator_pure_logic(): void
     {
         $this->assertTrue(ProviderValidator::contentMatchesType("#EXTM3U\n#EXTINF:-1,Foo\nhttp://x", 'm3u'));
