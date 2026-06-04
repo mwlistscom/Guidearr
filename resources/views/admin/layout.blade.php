@@ -35,6 +35,11 @@
         .sidebar nav svg { width:18px; height:18px; flex-shrink:0; stroke-linecap:round; stroke-linejoin:round; }
         .sidebar .spacer { flex:1; }
         .sidebar .foot { padding:1rem 1.25rem; border-top:1px solid var(--border); }
+        .sidebar .foot .dash-link { display:flex; align-items:center; gap:.6rem; text-decoration:none;
+            color:#cdd2da; font-size:.86rem; font-weight:600; padding:.5rem .65rem; margin-bottom:.7rem;
+            border:1px solid var(--border); border-radius:.5rem; background:rgba(255,255,255,.02); }
+        .sidebar .foot .dash-link:hover { color:#fff; border-color:var(--accent); background:rgba(244,117,33,.10); }
+        .sidebar .foot .dash-link svg { width:16px; height:16px; flex-shrink:0; }
         .sidebar .foot .ver { font-size:.72rem; color:var(--muted); margin-bottom:.5rem; letter-spacing:.02em; }
         .sidebar .foot .who { font-size:.78rem; color:var(--muted); margin-bottom:.6rem; word-break:break-all; }
         .sidebar .foot button { width:100%; }
@@ -136,6 +141,10 @@
             </nav>
             <div class="spacer"></div>
             <div class="foot">
+                <a class="dash-link" href="{{ route('dashboard') }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
+                    Dashboard
+                </a>
                 <div class="ver">{{ config('app.name','Guidearr') }} v{{ config('guidearr.version') }}</div>
                 <div class="who">{{ auth()->user()->email }}</div>
                 <form method="POST" action="{{ route('admin.logout') }}">@csrf<button class="ghost">Log out</button></form>

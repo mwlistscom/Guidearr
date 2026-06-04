@@ -442,8 +442,10 @@ window.GXP = (function () {
                 ],
                 rowClick: (e, row) => {           // click a group to filter the channels pane (exact); click again to clear
                     const t = row.getData().group_title;
+                    console.log('[GXP] group rowClick:', t);
                     if (browseGroupFilter === t) { browseGroupFilter = null; groupsTable.deselectRow(); }
                     else { browseGroupFilter = t; groupsTable.deselectRow(); row.select(); }
+                    console.log('[GXP] browseGroupFilter is now:', browseGroupFilter);
                     setFilterChip();
                     reloadChannels();   // rebuild the channels grid with the new group filter
                 },
@@ -460,6 +462,7 @@ window.GXP = (function () {
         // Rebuild the channels table from scratch — the SAME path as the initial load, so the group/search
         // filter is applied via a fresh remote-paginated request (no reliance on setData/replaceData reload quirks).
         function buildChannelsTable() {
+            console.log('[GXP] buildChannelsTable, group =', browseGroupFilter);
             if (browseTable) { browseTable.destroy(); browseTable = null; }
             browseTable = new Tabulator('#provider-channels', {
                 layout: 'fitColumns', height: '56vh', editTriggerEvent: 'dblclick',
@@ -467,8 +470,13 @@ window.GXP = (function () {
                 selectableRows: 1,
                 pagination: true, paginationMode: 'remote', paginationSize: 50,
                 ajaxURL: '/providers/' + browseProvider + '/channels',
-                ajaxParams: () => ({ search: $('gx-browse-search').value || '', group: browseGroupFilter || '' }),
+                ajaxParams: () => {
+                    const p = { search: $('gx-browse-search').value || '', group: browseGroupFilter || '' };
+                    console.log('[GXP] channels ajaxParams →', JSON.stringify(p));
+                    return p;
+                },
                 ajaxResponse: (url, params, response) => {
+                    console.log('[GXP] channels response: url=', url, 'sentParams=', JSON.stringify(params), 'total=', response.total);
                     if (response.error) {
                         $('gx-browse-count').innerHTML = '<span style="color:#f87171">Error: ' + esc(response.error) + '</span>';
                     } else {
