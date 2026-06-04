@@ -16,13 +16,14 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
                     <span class="text-lg font-bold tracking-tight">Playlist</span>
                 </div>
-                <div class="relative min-h-[20rem] overflow-hidden rounded-lg border border-neutral-200 dark:border-neutral-700">
-                    <x-placeholder-pattern class="absolute inset-0 size-full stroke-gray-900/20 dark:stroke-neutral-100/20" />
-                </div>
+                @include('playlists._grid')
             </div>
         </div>
 
-        {{-- Channels + Groups: full width, below the Provider/Playlist row --}}
+        {{-- Channels + Groups (provider browse): full width, below the Provider/Playlist row --}}
         @include('providers._browser')
+
+        {{-- Playlist editor: full width, opens below when a playlist is selected --}}
+        @include('playlists._editor')
     </div>
 </x-layouts::app>

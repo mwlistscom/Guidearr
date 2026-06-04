@@ -411,6 +411,7 @@ window.GXP = (function () {
         function esc(s) { return String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
 
         async function openBrowse(id, name) {
+            if (window.GXPLE) window.GXPLE.close();   // close the playlist editor if open
             browseProvider = id;
             $('gx-browse-name').textContent = name || '';
             $('gx-browse-search').value = '';

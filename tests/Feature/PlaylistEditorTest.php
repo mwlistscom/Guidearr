@@ -1,0 +1,71 @@
+<?php
+namespace Tests\Feature;
+use App\Models\User; use App\Models\Provider; use App\Models\Playlist;
+use App\Services\ProviderStore; use App\Services\PlaylistStore;
+use Illuminate\Foundation\Testing\RefreshDatabase; use Tests\TestCase;
+class PlaylistEditorTest extends TestCase { use RefreshDatabase;
+  protected function setUp(): void { parent::setUp(); foreach (array_merge(glob(storage_path("app/playlists/*.sqlite"))?:[], glob(storage_path("app/feeds/*.sqlite"))?:[]) as $f) @unlink($f); }
+  private function seeded(User $u): Playlist {
+    $p = Provider::create(['user_id'=>$u->id,'name'=>'Grey','type'=>'xtream','url'=>'http://h','enabled'=>true,'refresh_hour'=>2]);
+    $s = new ProviderStore($p->id); $s->begin();
+    foreach ([['US A','US-ENT'],['US B','US-ENT'],['CA A','CANADA'],['CA B','CANADA']] as $i=>[$n,$g])
+      $s->upsertChannel(['name'=>$n,'url'=>"http://h/$i.ts",'group'=>$g,'tvg_logo'=>"http://l/$i.png"],'v1');
+    $s->commit();
+    $s->begin(); $o=$s->nextGroupOrder(); foreach(['US-ENT','CANADA'] as $g){ $s->upsertGroup($g,$o,'v1'); $o+=10; } $s->commit();
+    $pl=Playlist::create(['user_id'=>$u->id,'name'=>'PL']); $pl->providers()->sync([$p->id]);
+    (new PlaylistStore($pl->id))->seedFromProvider($p->id, new ProviderStore($p->id));
+    return $pl;
+  }
+
+  public function test_channels_listing_hydrates_provider_data(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
+    $r=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->assertOk();
+    $this->assertSame(4,$r->json('total'));
+    $names=array_column($r->json('data'),'name');
+    $this->assertContains('US A',$names); // hydrated from provider store
+    $this->assertContains('http://l/0.png', array_column($r->json('data'),'tvg_logo'));
+  }
+
+  public function test_group_move_reorders_channels(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
+    $st=new PlaylistStore($pl->id);
+    $groups=$st->groups(); // US-ENT(10), CANADA(20)
+    $canada=collect($groups)->firstWhere('group_title','CANADA');
+    // move CANADA to row 1 (top)
+    $this->actingAs($u)->postJson("/playlists/{$pl->id}/groups/{$canada['id']}/move",['row'=>1])->assertOk();
+    $first=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->json('data')[0];
+    fwrite(STDERR,"after group move, first channel group={$first['group_title']}\n");
+    $this->assertSame('CANADA',$first['group_title']); // CANADA now sorts to top
+  }
+
+  public function test_channel_move_to_row(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
+    $rows=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->json('data');
+    // move the last channel to row 1
+    $last=end($rows);
+    $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels/{$last['id']}/move",['row'=>1])->assertOk();
+    $rows2=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->json('data');
+    $this->assertSame($last['id'],$rows2[0]['id']); // moved channel now first
+  }
+
+  public function test_enable_disable_and_delete_restore(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
+    $rows=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json('data');
+    $cid=$rows[0]['id'];
+    $this->actingAs($u)->patchJson("/playlists/{$pl->id}/channels/{$cid}",['enabled'=>false])->assertOk();
+    $this->actingAs($u)->deleteJson("/playlists/{$pl->id}/channels/{$cid}")->assertOk();
+    $this->assertSame(3,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json('total')); // hidden
+    $this->assertSame(1,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?deleted=1")->json('total')); // in trash
+    $this->actingAs($u)->deleteJson("/playlists/{$pl->id}/channels/{$cid}",['restore'=>true])->assertOk();
+    $this->assertSame(4,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json('total')); // restored
+  }
+
+  public function test_manual_add_and_group_filter(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
+    $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels",['name'=>'My Manual','url'=>'http://m/x.ts','group'=>'CANADA'])->assertOk();
+    $ca=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?group=CANADA")->json();
+    $this->assertSame(3,$ca['total']); // 2 seeded + 1 manual
+    $manual=collect($ca['data'])->firstWhere('name','My Manual');
+    $this->assertTrue($manual['manual']);
+  }
+}

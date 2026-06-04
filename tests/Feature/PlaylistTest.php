@@ -4,6 +4,7 @@ use App\Models\User; use App\Models\Provider; use App\Models\Playlist;
 use App\Services\ProviderStore; use App\Services\PlaylistStore;
 use Illuminate\Foundation\Testing\RefreshDatabase; use Tests\TestCase;
 class PlaylistTest extends TestCase { use RefreshDatabase;
+  protected function setUp(): void { parent::setUp(); foreach (array_merge(glob(storage_path("app/playlists/*.sqlite"))?:[], glob(storage_path("app/feeds/*.sqlite"))?:[]) as $f) @unlink($f); }
   private function providerWithStore(User $u): Provider {
     $p = Provider::create(['user_id'=>$u->id,'name'=>'Grey','type'=>'xtream','url'=>'http://h','enabled'=>true,'refresh_hour'=>2]);
     $s = new ProviderStore($p->id); $s->begin();

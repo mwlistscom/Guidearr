@@ -25,6 +25,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('playlists/options', [\App\Http\Controllers\PlaylistController::class, 'options'])->name('playlists.options');
     Route::post('playlists', [\App\Http\Controllers\PlaylistController::class, 'store'])->name('playlists.store');
     Route::delete('playlists/{playlist}', [\App\Http\Controllers\PlaylistController::class, 'destroy'])->name('playlists.destroy');
+    Route::get('playlists/{playlist}/channels', [\App\Http\Controllers\PlaylistController::class, 'channels'])->name('playlists.channels');
+    Route::get('playlists/{playlist}/groups', [\App\Http\Controllers\PlaylistController::class, 'groups'])->name('playlists.groups');
+    Route::post('playlists/{playlist}/channels', [\App\Http\Controllers\PlaylistController::class, 'addChannel'])->name('playlists.channels.add');
+    Route::patch('playlists/{playlist}/channels/{cid}', [\App\Http\Controllers\PlaylistController::class, 'updateChannel'])->name('playlists.channels.update');
+    Route::post('playlists/{playlist}/channels/{cid}/move', [\App\Http\Controllers\PlaylistController::class, 'moveChannel'])->name('playlists.channels.move');
+    Route::delete('playlists/{playlist}/channels/{cid}', [\App\Http\Controllers\PlaylistController::class, 'deleteChannel'])->name('playlists.channels.delete');
+    Route::patch('playlists/{playlist}/groups/{gid}', [\App\Http\Controllers\PlaylistController::class, 'updateGroup'])->name('playlists.groups.update');
+    Route::post('playlists/{playlist}/groups/{gid}/move', [\App\Http\Controllers\PlaylistController::class, 'moveGroup'])->name('playlists.groups.move');
+    Route::delete('playlists/{playlist}/groups/{gid}', [\App\Http\Controllers\PlaylistController::class, 'deleteGroup'])->name('playlists.groups.delete');
     Route::get('providers/feed/{msgid}', [\App\Http\Controllers\ProviderController::class, 'feed'])->name('providers.feed');
     Route::post('providers', [\App\Http\Controllers\ProviderController::class, 'store'])->name('providers.store');
     Route::get('providers/{provider}', [\App\Http\Controllers\ProviderController::class, 'show'])->name('providers.show');

@@ -101,4 +101,130 @@ class PlaylistController extends Controller
     {
         abort_unless($playlist->user_id === Auth::id(), 403);
     }
+
+    // ---------- editor ----------
+
+    public function channels(Request $request, Playlist $playlist)
+    {
+        $this->authorizeOwner($playlist);
+        $size    = min(200, max(10, (int) $request->query('size', 50)));
+        $page    = max(1, (int) $request->query('page', 1));
+        $search  = $request->query('search');
+        $group   = $request->query('group');
+        $deleted = $request->boolean('deleted');
+
+        if (! PlaylistStore::existsFor($playlist->id)) {
+            return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
+        }
+        $store = new PlaylistStore($playlist->id);
+        $total = $store->channelCount($search, $group, $deleted);
+        $rows  = $store->channels($size, ($page - 1) * $size, $search, $group, $deleted);
+
+        // hydrate provider-channel rows from their provider stores (manual rows already inline)
+        $byProvider = [];
+        foreach ($rows as $r) {
+            if ((int) $r['provider_id'] > 0) { $byProvider[(int) $r['provider_id']][] = (int) $r['channel_id']; }
+        }
+        $data = [];
+        foreach ($byProvider as $pid => $ids) {
+            $data[$pid] = ProviderStore::exists($pid) ? (new ProviderStore($pid))->channelsByIds($ids) : [];
+        }
+
+        $globalBase = ($page - 1) * $size;
+        $out = [];
+        foreach ($rows as $i => $r) {
+            $pid = (int) $r['provider_id'];
+            $src = $pid > 0 ? ($data[$pid][(int) $r['channel_id']] ?? null) : null;
+            $out[] = [
+                'id'          => (int) $r['id'],
+                'row'         => $globalBase + $i + 1,
+                'provider_id' => $pid,
+                'channel_id'  => (int) $r['channel_id'],
+                'manual'      => $pid === 0,
+                'missing'     => $pid > 0 && $src === null,
+                'name'        => $src['name']      ?? $r['name'] ?? '(missing channel)',
+                'tvg_name'    => $src['tvg_name']  ?? $r['tvg_name'] ?? '',
+                'tvg_id'      => $src['tvg_id']    ?? $r['tvg_id'] ?? '',
+                'tvg_logo'    => $src['tvg_logo']  ?? $r['tvg_logo'] ?? '',
+                'url'         => $src['url']       ?? $r['url'] ?? '',
+                'group_title' => $r['group_title'],
+                'enabled'     => (bool) $r['enabled'],
+            ];
+        }
+
+        return response()->json(['last_page' => max(1, (int) ceil($total / $size)), 'total' => $total, 'data' => $out]);
+    }
+
+    public function groups(Playlist $playlist)
+    {
+        $this->authorizeOwner($playlist);
+        $store = PlaylistStore::existsFor($playlist->id) ? new PlaylistStore($playlist->id) : null;
+
+        return response()->json(['groups' => $store ? $store->groups() : []]);
+    }
+
+    public function addChannel(Request $request, Playlist $playlist)
+    {
+        $this->authorizeOwner($playlist);
+        $v = Validator::make($request->all(), [
+            'name' => 'required|string|max:255', 'url' => 'required|string|max:2048', 'group' => 'nullable|string|max:128',
+            'tvg_logo' => 'nullable|string|max:2048', 'tvg_id' => 'nullable|string|max:128',
+        ]);
+        if ($v->fails()) { return response()->json(['message' => $v->errors()->first()], 422); }
+        $id = (new PlaylistStore($playlist->id))->addManualChannel($request->only(['name', 'url', 'group', 'tvg_logo', 'tvg_id']));
+
+        return response()->json(['id' => $id]);
+    }
+
+    public function updateChannel(Request $request, Playlist $playlist, int $cid)
+    {
+        $this->authorizeOwner($playlist);
+        $store = new PlaylistStore($playlist->id);
+        if ($request->has('enabled')) { $store->setChannelFlag($cid, 'enabled', $request->boolean('enabled')); }
+        $store->updateChannel($cid, $request->only(['group_title', 'name', 'url', 'tvg_id', 'tvg_logo', 'tvg_name']));
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function moveChannel(Request $request, Playlist $playlist, int $cid)
+    {
+        $this->authorizeOwner($playlist);
+        (new PlaylistStore($playlist->id))->moveChannelToRow($cid, max(1, (int) $request->input('row', 1)));
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function deleteChannel(Request $request, Playlist $playlist, int $cid)
+    {
+        $this->authorizeOwner($playlist);
+        (new PlaylistStore($playlist->id))->setChannelFlag($cid, 'deleted', ! $request->boolean('restore'));
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function updateGroup(Request $request, Playlist $playlist, int $gid)
+    {
+        $this->authorizeOwner($playlist);
+        if ($request->has('enabled')) {
+            (new PlaylistStore($playlist->id))->setGroupFlag($gid, 'enabled', $request->boolean('enabled'));
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function moveGroup(Request $request, Playlist $playlist, int $gid)
+    {
+        $this->authorizeOwner($playlist);
+        (new PlaylistStore($playlist->id))->moveGroupToRow($gid, max(1, (int) $request->input('row', 1)));
+
+        return response()->json(['ok' => true]);
+    }
+
+    public function deleteGroup(Request $request, Playlist $playlist, int $gid)
+    {
+        $this->authorizeOwner($playlist);
+        (new PlaylistStore($playlist->id))->setGroupFlag($gid, 'deleted', ! $request->boolean('restore'));
+
+        return response()->json(['ok' => true]);
+    }
 }

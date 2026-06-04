@@ -125,9 +125,15 @@ window.GXPL = (function () {
                         const a = e.target.closest('button')?.dataset.a; if (!a) return;
                         const d = c.getRow().getData();
                         if (a === 'del') del(d.id, d.name);
-                        else alert('The playlist editor (' + a + ') lands in the next build.');
+                        else if (a === 'edit') { window.GXPLE && window.GXPLE.open(d.id, d.name); }
+                        else alert('Playlist links arrive with the serving phase.');
                   } },
             ],
+        });
+        table.on('rowClick', (e, row) => {   // select a playlist to open its editor below
+            if (e.target.closest('button') || e.target.closest('input')) return;
+            const d = row.getData();
+            window.GXPLE && window.GXPLE.open(d.id, d.name);
         });
     }
 
