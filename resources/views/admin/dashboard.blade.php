@@ -1,7 +1,7 @@
 @extends('admin.layout')
-@section('title', 'Dashboard')
+@section('title', 'Status')
 @section('content')
-<h1>Dashboard</h1>
+<h1>Status</h1>
 <div class="stats">
     <div class="stat"><span class="n">{{ $userCount }}</span><span class="l">Users</span></div>
     <div class="stat"><span class="n">{{ $pending }}</span><span class="l">Pending</span></div>

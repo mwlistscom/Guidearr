@@ -6,7 +6,8 @@ use App\Http\Controllers\BrandingController;
 
 Route::view('/', 'hello')->name('home');
 
-Route::get('branding/icon', [BrandingController::class, 'show'])->name('branding.icon');
+Route::get('branding/icon', [BrandingController::class, 'show'])->defaults('kind', 'icon')->name('branding.icon');
+Route::get('branding/logo', [BrandingController::class, 'show'])->defaults('kind', 'logo')->name('branding.logo');
 Route::view('docs', 'docs')->name('docs');
 
 Route::post('email/verify-code', [VerifyEmailCodeController::class, 'store'])

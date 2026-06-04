@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>@yield('title', 'Admin') · {{ config('app.name','Guidearr') }}</title>
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml">
     @include('partials.turnstile')
     <style>
         :root { color-scheme: dark;
@@ -20,10 +20,11 @@
         .sidebar { width:232px; flex-shrink:0; background:#101216; border-right:1px solid var(--border);
             display:flex; flex-direction:column; position:sticky; top:0; height:100svh; }
         .sidebar .brand { display:flex; align-items:center; gap:.6rem; padding:1.05rem 1.25rem;
-            font-weight:800; letter-spacing:-.02em; color:#fff; border-bottom:1px solid var(--border); }
-        .sidebar .brand .logo { width:28px; height:28px; border-radius:7px; color:#fff; font-weight:800; font-size:.95rem;
-            display:flex; align-items:center; justify-content:center;
-            background:linear-gradient(135deg,var(--accent),#b9531a); box-shadow:0 0 14px rgba(244,117,33,.35); }
+            font-weight:800; letter-spacing:-.02em; color:#fff; border-bottom:1px solid var(--border);
+            text-decoration:none; }
+        a.sidebar-brand:hover { background:rgba(255,255,255,.03); }
+        .sidebar .brand .logo { width:30px; height:30px; border-radius:7px; object-fit:contain;
+            background:#0e0f13; padding:2px; border:1px solid var(--border); flex-shrink:0; }
         .sidebar nav { padding:.5rem 0; display:flex; flex-direction:column; }
         .sidebar nav a, .sidebar nav .disabled { display:flex; align-items:center; gap:.7rem;
             padding:.62rem 1.25rem; font-size:.92rem; color:var(--muted); border-left:3px solid transparent; }
@@ -109,11 +110,11 @@
 @if ($chrome)
     <div class="app">
         <aside class="sidebar">
-            <div class="brand"><span class="logo">{{ substr(config('app.name','Guidearr'),0,1) }}</span> {{ config('app.name','Guidearr') }}</div>
+            <a class="brand sidebar-brand" href="{{ route('home') }}"><img class="logo" src="{{ route('branding.icon') }}" alt=""> {{ config('app.name','Guidearr') }}</a>
             <nav>
                 <a href="{{ route('admin.dashboard') }}" class="{{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-                    Dashboard
+                    Status
                 </a>
                 <a href="{{ route('admin.users') }}" class="{{ request()->routeIs('admin.users') ? 'active' : '' }}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>

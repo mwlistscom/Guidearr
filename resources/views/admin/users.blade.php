@@ -30,6 +30,18 @@
                     <a class="icon" href="{{ route('admin.users.edit', $u) }}" title="Edit">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                     </a>
+                    <form class="inline" method="POST" action="{{ route('admin.users.verify', $u) }}">
+                        @csrf @method('PATCH')
+                        @if ($u->email_verified_at)
+                            <button class="icon on" title="Mark unverified">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                            </button>
+                        @else
+                            <button class="icon off" title="Mark verified">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                            </button>
+                        @endif
+                    </form>
                     <form class="inline" method="POST" action="{{ route('admin.users.toggle', $u) }}">
                         @csrf @method('PATCH')
                         @if ($enabled)

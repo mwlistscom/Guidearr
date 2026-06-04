@@ -54,7 +54,7 @@
 </head>
 <body>
     <div class="wrap">
-        <img class="logo" src="{{ route('branding.icon') }}" alt="{{ config('app.name', 'Guidearr') }}">
+        <img class="logo" src="{{ route('branding.logo') }}" alt="{{ config('app.name', 'Guidearr') }}">
         <p class="sub">Your M3U playlists, organized. Build, edit, and serve channel lineups from one private place.</p>
         <div class="actions">
             @auth
@@ -65,6 +65,6 @@
             @endauth
         </div>
     </div>
-    <footer>&copy; {{ date('Y') }} {{ config('app.name', 'Guidearr') }}</footer>
+    <footer>&copy; {{ date('Y') }} {{ $appCopyright }}</footer>
 </body>
 </html>

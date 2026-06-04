@@ -24,14 +24,16 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::get('users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
             Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
             Route::patch('users/{user}/toggle', [UserController::class, 'toggle'])->name('users.toggle');
+            Route::patch('users/{user}/verify', [UserController::class, 'verify'])->name('users.verify');
             Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
 
             Route::get('environment', [EnvController::class, 'edit'])->name('environment');
             Route::put('environment', [EnvController::class, 'update'])->name('environment.update');
 
             Route::get('branding', [BrandingController::class, 'edit'])->name('branding');
-            Route::post('branding', [BrandingController::class, 'update'])->name('branding.update');
-            Route::delete('branding', [BrandingController::class, 'reset'])->name('branding.reset');
+            Route::put('branding/copyright', [BrandingController::class, 'updateCopyright'])->name('branding.copyright');
+            Route::post('branding/{kind}', [BrandingController::class, 'update'])->whereIn('kind', ['icon', 'logo'])->name('branding.update');
+            Route::delete('branding/{kind}', [BrandingController::class, 'reset'])->whereIn('kind', ['icon', 'logo'])->name('branding.reset');
         });
     });
 });

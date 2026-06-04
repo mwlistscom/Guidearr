@@ -19,36 +19,46 @@ class AdminSync extends Command
             return self::FAILURE;
         }
 
-        $admin = User::where('email', $email)->first();
+        $admin   = User::where('email', $email)->first();
+        $existed = (bool) $admin;
 
         if (! $admin) {
-            User::create([
-                'name' => 'Administrator',
-                'email' => $email,
-                'password' => $password, // hashed by the model cast
-                'email_verified_at' => now(),
-            ])->forceFill([
-                'is_admin' => true,
-                'status' => 'active',
-                'must_change_password' => true,
-            ])->save();
-
-            $this->info("Admin created for {$email}. You'll be required to change the password on first login.");
-            return self::SUCCESS;
-        }
-
-        if ($this->option('reset')) {
+            // New bootstrap admin. forceFill bypasses mass-assignment guarding so
+            // email_verified_at actually gets set (the model has no $fillable).
+            $admin = new User();
             $admin->forceFill([
-                'password' => bcrypt($password),
-                'is_admin' => true,
-                'status' => 'active',
+                'name'                 => 'Administrator',
+                'email'                => $email,
+                'password'             => $password, // 'hashed' cast hashes this once
                 'must_change_password' => true,
-            ])->save();
-            $this->info("Admin {$email} reset from .env. Change the password on next login.");
-            return self::SUCCESS;
+            ]);
+        } elseif ($this->option('reset')) {
+            $admin->forceFill([
+                'password'             => $password,
+                'must_change_password' => true,
+            ]);
         }
 
-        $this->info("Admin {$email} already exists. Use --reset to recover the password from .env.");
+        // Every run guarantees the bootstrap admin is an active, email-verified
+        // admin — so it never gets stopped by the 6-digit verification screen.
+        $admin->forceFill([
+            'is_admin' => true,
+            'status'   => 'active',
+        ]);
+        if (is_null($admin->email_verified_at)) {
+            $admin->forceFill(['email_verified_at' => now()]);
+        }
+
+        $admin->save();
+
+        if (! $existed) {
+            $this->info("Admin created for {$email} — verified and active. Password change required on first login.");
+        } elseif ($this->option('reset')) {
+            $this->info("Admin {$email} reset from .env — verified and active. Change the password on next login.");
+        } else {
+            $this->info("Admin {$email} ensured: email-verified, active, admin role. (Use --reset to re-apply the .env password.)");
+        }
+
         return self::SUCCESS;
     }
 }

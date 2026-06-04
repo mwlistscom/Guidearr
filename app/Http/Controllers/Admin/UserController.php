@@ -26,6 +26,7 @@ class UserController extends Controller
             'email'    => ['required', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
             'role'     => ['required', Rule::in(['user', 'admin'])],
             'status'   => ['required', Rule::in(['active', 'banned'])],
+            'verified' => ['required', Rule::in(['verified', 'unverified'])],
             'password' => ['nullable', 'confirmed', Password::defaults()],
         ]);
 
@@ -47,6 +48,10 @@ class UserController extends Controller
             'email'    => $validated['email'],
             'is_admin' => $validated['role'] === 'admin',
             'status'   => $validated['status'],
+            // keep the original timestamp if already verified; stamp now() when newly verified
+            'email_verified_at' => $validated['verified'] === 'verified'
+                ? ($user->email_verified_at ?? now())
+                : null,
         ];
         if (! empty($validated['password'])) {
             $attrs['password'] = bcrypt($validated['password']);
@@ -73,6 +78,17 @@ class UserController extends Controller
         $user->forceFill(['status' => $enabling ? 'active' : 'banned'])->save();
 
         return back()->with('status', $enabling ? "{$user->email} unbanned." : "{$user->email} banned.");
+    }
+
+    public function verify(User $user)
+    {
+        $verifying = is_null($user->email_verified_at);
+
+        $user->forceFill(['email_verified_at' => $verifying ? now() : null])->save();
+
+        return back()->with('status', $verifying
+            ? "{$user->email} marked verified."
+            : "{$user->email} marked unverified.");
     }
 
     public function destroy(User $user, Request $request)

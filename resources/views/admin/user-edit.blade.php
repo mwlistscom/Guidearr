@@ -31,6 +31,14 @@
             </select>
         </label>
 
+        @php($vf = old('verified', $user->email_verified_at ? 'verified' : 'unverified'))
+        <label>Email verification
+            <select name="verified">
+                <option value="verified"   {{ $vf === 'verified'   ? 'selected' : '' }}>Verified</option>
+                <option value="unverified" {{ $vf === 'unverified' ? 'selected' : '' }}>Not verified</option>
+            </select>
+        </label>
+
         <label>New password <span class="muted" style="font-size:.78rem">(leave blank to keep current)</span>
             <input type="password" name="password" autocomplete="new-password">
         </label>

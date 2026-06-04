@@ -21,7 +21,13 @@
             <flux:spacer />
 
             <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/Guidearr" target="_blank">
+                @if (auth()->user()?->is_admin)
+                    <flux:sidebar.item icon="shield-check" href="{{ route('admin.dashboard') }}">
+                        {{ __('Admin') }}
+                    </flux:sidebar.item>
+                @endif
+
+                <flux:sidebar.item icon="folder-git-2" href="https://github.com/mwlistscom/Guidearr" target="_blank">
                     {{ __('Repository') }}
                 </flux:sidebar.item>
 
