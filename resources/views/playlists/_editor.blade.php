@@ -185,8 +185,8 @@ window.GXPLE = (function () {
         });
         grTable.on('cellClick', (e, cell) => {
             const f = cell.getField(); const d = cell.getRow().getData();
-            if (f === 'enabled') { const on = !d.enabled; J('/playlists/' + plId + '/groups/' + d.id, 'PATCH', { enabled: on }); cell.getRow().update({ enabled: on }); reloadChannels(); }
-            else if (f === '_d' && e.target.closest('button')) { if (confirm('Hide group "' + d.group_title + '" (and its channels) from the playlist?')) { J('/playlists/' + plId + '/groups/' + d.id, 'DELETE').then(() => { loadGroups(); reloadChannels(); }); } }
+            if (f === 'enabled') { const on = !d.enabled; J('/playlists/' + plId + '/groups/' + d.id, 'PATCH', { enabled: on }); cell.getRow().update({ enabled: on }); softReload(); }
+            else if (f === '_d' && e.target.closest('button')) { if (confirm('Hide group "' + d.group_title + '" (and its channels) from the playlist?')) { J('/playlists/' + plId + '/groups/' + d.id, 'DELETE').then(() => { loadGroups(); softReload(); }); } }
         });
         grTable.on('rowClick', (e, row) => {
             if (e.target.closest('button') || e.target.closest('input') || e.target.closest('.tabulator-editing')) return;
@@ -203,12 +203,14 @@ window.GXPLE = (function () {
         const onEdit = (cell) => {
             const f = cell.getField(); const body = {}; body[f] = cell.getValue();
             J('/playlists/' + plId + '/channels/' + cell.getRow().getData().id, 'PATCH', body)
-                .then(() => { if (f === 'group_title') { loadGroups(); reloadChannels(); } });
+                .then(() => { if (f === 'group_title') { loadGroups(); softReload(); } });
         };
         chTable = new Tabulator('#pl-channels', {
             layout: 'fitColumns', height: '56vh', movableRows: true,
             editTriggerEvent: 'dblclick',   // single press = drag/move, double-click = edit
             pagination: true, paginationMode: 'remote', paginationSize: SIZE,
+            paginationSizeSelector: [5, 10, 25, 50, 100, 250],
+            dataLoaderLoading: '',          // suppress the "Loading" flash on silent refreshes
             placeholder: 'No channels.',
             ajaxURL: '/playlists/' + plId + '/channels',
             ajaxParams: () => ({ search: $('ple-search').value || '', group: groupFilter || '', deleted: showDeleted ? 'all' : '' }),
@@ -226,7 +228,7 @@ window.GXPLE = (function () {
                   formatter: c => { const d = c.getRow().getData(); return (d.missing ? '<span style="color:#f87171" title="source channel missing">⚠ </span>' : '') + esc(c.getValue()); } },
                 { title: 'M3U URL', field: 'url', widthGrow: 2.4, editor: 'input', cellEdited: onEdit, tooltip: true },
                 { title: 'Group', field: 'group_title', widthGrow: 1.4,
-                  editor: 'list', editorParams: { values: () => plGroups, autocomplete: true, allowEmpty: false, freetext: false }, cellEdited: onEdit },
+                  editor: 'list', editorParams: { values: () => plGroups, allowEmpty: false }, cellEdited: onEdit },
                 ...(showDeleted ? [{ title: 'Deleted', field: 'deleted', width: 64, hozAlign: 'center', headerSort: false,
                   formatter: c => `<input type="checkbox" ${c.getValue() ? 'checked' : ''} style="pointer-events:none">` }] : []),
                 { title: '', field: '_a', width: 84, hozAlign: 'center', headerSort: false,
@@ -236,21 +238,23 @@ window.GXPLE = (function () {
         chTable.on('cellClick', (e, cell) => {
             const f = cell.getField(); const d = cell.getRow().getData();
             if (f === 'enabled') { const on = !d.enabled; J('/playlists/' + plId + '/channels/' + d.id, 'PATCH', { enabled: on }); cell.getRow().update({ enabled: on }); return; }
-            if (f === 'deleted') { J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', d.deleted ? { restore: true } : null).then(reloadChannels); return; }
+            if (f === 'deleted') { J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', d.deleted ? { restore: true } : null).then(softReload); return; }
             if (f !== '_a') return;
             const a = e.target.closest('button')?.dataset.a; if (!a) return;
             if (a === 'move') openMove(d);
             else if (a === 'edit') openEdit(d);
-            else if (a === 'del') J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', d.deleted ? { restore: true } : null).then(reloadChannels);
+            else if (a === 'del') J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', d.deleted ? { restore: true } : null).then(softReload);
         });
         chTable.on('rowMoved', (row) => {
             const page = chTable.getPage() || 1;
-            const globalRow = (page - 1) * SIZE + row.getPosition(true);
-            J('/playlists/' + plId + '/channels/' + row.getData().id + '/move', 'POST', { row: globalRow }).then(reloadChannels);
+            const size = chTable.getPageSize() || SIZE;
+            const globalRow = (page - 1) * size + row.getPosition(true);
+            J('/playlists/' + plId + '/channels/' + row.getData().id + '/move', 'POST', { row: globalRow }).then(softReload);
         });
     }
 
-    function reloadChannels() { if (plId) buildChannels(); } // rebuild = proven reliable filter/reorder path
+    function reloadChannels() { if (plId) buildChannels(); }              // rebuild — for filter/column changes (search, group, show-deleted)
+    function softReload() { if (chTable) { try { chTable.replaceData(); } catch (e) { reloadChannels(); } } } // silent in-place refresh — for moves/edits/deletes (no flash, params unchanged)
 
     function toggleDeleted() {
         showDeleted = !showDeleted;
@@ -261,7 +265,7 @@ window.GXPLE = (function () {
     // move modal
     function openMove(d) { moveCid = d.id; $('ple-move-label').textContent = 'Move "' + (d.name || '') + '" to row #'; $('ple-move-row').value = d.row || 1; $('ple-move-overlay').classList.add('show'); }
     const closeMove = () => $('ple-move-overlay').classList.remove('show');
-    function applyMove() { const row = Math.max(1, Number($('ple-move-row').value) || 1); J('/playlists/' + plId + '/channels/' + moveCid + '/move', 'POST', { row }).then(() => { closeMove(); reloadChannels(); }); }
+    function applyMove() { const row = Math.max(1, Number($('ple-move-row').value) || 1); J('/playlists/' + plId + '/channels/' + moveCid + '/move', 'POST', { row }).then(() => { closeMove(); softReload(); }); }
 
     // edit / add modal (shared)
     function fillGroups(sel) { const g = $('ple-e-group'); g.innerHTML = ''; plGroups.forEach(t => { const o = document.createElement('option'); o.value = t; o.textContent = t; if (t === sel) o.selected = true; g.appendChild(o); }); }
@@ -295,7 +299,7 @@ window.GXPLE = (function () {
             const { ok, data } = await J('/playlists/' + plId + '/channels/' + editCid, 'PATCH', body);
             if (!ok) { $('ple-e-err').textContent = data.message || 'Could not save.'; return; }
         }
-        closeEdit(); loadGroups(); reloadChannels();
+        closeEdit(); loadGroups(); softReload();
     }
 
     function onInput(e) {
