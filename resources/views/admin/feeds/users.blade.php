@@ -5,7 +5,7 @@
 <p style="color:var(--muted);margin-bottom:1rem">The job queue and ingested provider data. Drill into a user to browse a provider's channels.</p>
 
 <h2 style="font-size:1.05rem;font-weight:700;margin:.4rem 0 .6rem">Job Queue</h2>
-<table class="grid" style="margin-bottom:2rem">
+<table class="dtbl" style="margin-bottom:2rem">
     <thead><tr><th>Provider</th><th>User</th><th style="width:6rem">Type</th><th style="width:8rem">State</th><th style="width:6rem">Attempts</th><th style="width:6rem">Errors</th><th style="width:12rem">Updated</th></tr></thead>
     <tbody>
     @forelse ($queue as $j)
@@ -25,7 +25,7 @@
 </table>
 
 <h2 style="font-size:1.05rem;font-weight:700;margin:.4rem 0 .6rem">Users</h2>
-<table class="grid">
+<table class="dtbl">
     <thead><tr><th>User</th><th>Email</th><th style="width:8rem">Providers</th><th style="width:6rem"></th></tr></thead>
     <tbody>
     @forelse ($users as $u)
@@ -42,9 +42,9 @@
 </table>
 
 <style>
-    table.grid { width:100%; border-collapse:collapse; font-size:.9rem; }
-    table.grid th, table.grid td { text-align:left; padding:.55rem .7rem; border-bottom:1px solid rgba(255,255,255,.08); }
-    table.grid th { color:var(--muted); font-weight:600; }
+    table.dtbl { width:100%; border-collapse:collapse; font-size:.9rem; }
+    table.dtbl th, table.dtbl td { text-align:left; padding:.55rem .7rem; border-bottom:1px solid rgba(255,255,255,.08); }
+    table.dtbl th { color:var(--muted); font-weight:600; }
     .btn { display:inline-block; background:#26272b; color:#e6e7ea; border:1px solid rgba(255,255,255,.14);
         border-radius:.45rem; padding:.3rem .7rem; font-size:.82rem; text-decoration:none; }
     .btn:hover { filter:brightness(1.15); }
