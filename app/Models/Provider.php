@@ -48,9 +48,14 @@ class Provider extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function refreshLogs(): HasMany
+    public function feedQueue(): \Illuminate\Database\Eloquent\Relations\HasOne
     {
-        return $this->hasMany(ProviderRefreshLog::class)->latest('started_at');
+        return $this->hasOne(FeedQueue::class);
+    }
+
+    public function feedLogs(): HasMany
+    {
+        return $this->hasMany(FeedLog::class);
     }
 
     /** Update the "last touched" marker for any user action. */

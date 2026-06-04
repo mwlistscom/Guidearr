@@ -19,6 +19,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('providers', [\App\Http\Controllers\ProviderController::class, 'index'])->name('providers.index');
     Route::get('providers/data', [\App\Http\Controllers\ProviderController::class, 'data'])->name('providers.data');
+    Route::get('providers/feed/{msgid}', [\App\Http\Controllers\ProviderController::class, 'feed'])->name('providers.feed');
     Route::post('providers', [\App\Http\Controllers\ProviderController::class, 'store'])->name('providers.store');
     Route::get('providers/{provider}', [\App\Http\Controllers\ProviderController::class, 'show'])->name('providers.show');
     Route::put('providers/{provider}', [\App\Http\Controllers\ProviderController::class, 'update'])->name('providers.update');

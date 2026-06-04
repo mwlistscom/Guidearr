@@ -82,14 +82,69 @@ class ProviderTest extends TestCase
         $this->actingAs($user)->postJson("/providers/{$p->id}/toggle")->assertOk()->assertJson(['enabled' => true]);
     }
 
-    public function test_refresh_logs_a_manual_provider_and_logs_endpoint_returns_it(): void
+    public function test_creating_a_provider_enqueues_a_feed_job(): void
     {
         $user = $this->user();
-        $p = Provider::create(['user_id' => $user->id, 'name' => 'X', 'type' => 'manual']);
-        $this->actingAs($user)->postJson("/providers/{$p->id}/refresh")->assertOk()->assertJson(['status' => 'ok']);
-        $logs = $this->actingAs($user)->getJson("/providers/{$p->id}/logs")->assertOk()->json();
-        $this->assertCount(1, $logs);
-        $this->assertSame('ok', $logs[0]['status']);
+        $msgid = $this->actingAs($user)->postJson('/providers', [
+            'name' => 'M', 'type' => 'manual',
+        ])->assertCreated()->json('msgid');
+
+        $this->assertNotEmpty($msgid);
+        $this->assertDatabaseHas('feed_queue', ['msgid' => $msgid, 'state' => 'queued', 'user_id' => $user->id]);
+        $this->assertDatabaseHas('feed_logs', ['msgid' => $msgid]);
+    }
+
+    public function test_refresh_requeues_and_is_one_row_per_provider(): void
+    {
+        $user = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $user->id, 'name' => 'X', 'type' => 'manual']);
+
+        $m1 = \App\Models\FeedQueue::enqueue($p)->msgid;
+        $m2 = $this->actingAs($user)->postJson("/providers/{$p->id}/refresh")->assertOk()->json('msgid');
+
+        $this->assertNotSame($m1, $m2);
+        $this->assertSame(1, \App\Models\FeedQueue::where('provider_id', $p->id)->count()); // upsert, not duplicate
+        $this->assertSame('queued', \App\Models\FeedQueue::where('provider_id', $p->id)->first()->state);
+    }
+
+    public function test_feed_poll_is_owner_scoped_and_returns_lines(): void
+    {
+        $user = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $user->id, 'name' => 'X', 'type' => 'manual']);
+        $job = \App\Models\FeedQueue::enqueue($p);
+
+        $body = $this->actingAs($user)->getJson("/providers/feed/{$job->msgid}")->assertOk()->json();
+        $this->assertSame('queued', $body['state']);
+        $this->assertNotEmpty($body['logs']);
+
+        $this->actingAs($this->user())->getJson("/providers/feed/{$job->msgid}")->assertForbidden();
+    }
+
+    public function test_worker_processes_a_manual_job_to_done(): void
+    {
+        $user = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $user->id, 'name' => 'X', 'type' => 'manual']);
+        $job = \App\Models\FeedQueue::enqueue($p);
+
+        $this->artisan('feed:work', ['--once' => true])->assertSuccessful();
+
+        $this->assertSame('done', $job->fresh()->state);
+        $this->assertSame('ok', $p->fresh()->last_status);
+        $this->assertNotNull($p->fresh()->last_refresh_at);
+    }
+
+    public function test_trim_removes_old_logs(): void
+    {
+        $user = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $user->id, 'name' => 'X', 'type' => 'manual']);
+        \App\Models\FeedLog::write('oldmsg00', $p->id, $user->id, 'info', 'old');
+        \App\Models\FeedLog::where('msgid', 'oldmsg00')->update(['created_at' => now()->subDays(40)]);
+        \App\Models\FeedLog::write('newmsg00', $p->id, $user->id, 'info', 'new');
+
+        $this->artisan('feed:trim', ['--days' => 14])->assertSuccessful();
+
+        $this->assertDatabaseMissing('feed_logs', ['msgid' => 'oldmsg00']);
+        $this->assertDatabaseHas('feed_logs', ['msgid' => 'newmsg00']);
     }
 
     public function test_owner_only_access(): void

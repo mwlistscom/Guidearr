@@ -28,7 +28,8 @@
     .gx-act button:hover { color:#fff; background:rgba(255,255,255,.08); }
     .gx-act button.danger:hover { color:#f87171; background:rgba(248,113,113,.12); }
     .gx-act svg { width:16px; height:16px; }
-    .gx-ok { color:#6ee7b7; } .gx-fail { color:#f87171; } .gx-never { color:#9aa; }
+    .gx-ok { color:#6ee7b7; } .gx-fail { color:#f87171; } .gx-never { color:#9aa; } .gx-warn { color:#fbbf24; }
+    .gx-state { font-size:.72rem; font-weight:700; padding:.1rem .5rem; border-radius:.3rem; background:rgba(255,255,255,.06); }
 
     .gx-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-start;
         justify-content:center; z-index:60; padding:4rem 1rem; }
@@ -106,7 +107,7 @@
 {{-- Log overlay --}}
 <div class="gx-overlay" id="gx-log-overlay">
     <div class="gx-modal">
-        <h2>Refresh log — <span id="gx-log-name"></span></h2>
+        <h2>Update log — <span id="gx-log-name"></span> <span class="gx-state" id="gx-log-state">…</span></h2>
         <div class="gx-log" id="gx-log-body"></div>
         <div class="gx-modal-actions"><button class="gx-btn secondary" onclick="GXP.closeLog()">Close</button></div>
     </div>
@@ -165,7 +166,7 @@ if (!window.GXP) {
                       cellClick: (e, c) => {
                             const a = e.target.closest('button')?.dataset.a; if (!a) return;
                             const d = c.getRow().getData();
-                            ({ refresh: () => GXP.refresh(d.id), log: () => GXP.openLog(d.id, d.name),
+                            ({ refresh: () => GXP.refresh(d.id, d.name), log: () => GXP.openLog(d.id, d.name),
                                edit: () => GXP.openEdit(d.id), del: () => GXP.del(d.id, d.name) }[a])();
                       } },
                 ],
@@ -226,12 +227,13 @@ if (!window.GXP) {
 
         async function save() {
             const id = $('f-id').value;
+            const name = $('f-name').value.trim();
             const btn = $('gx-save'); btn.disabled = true; btn.textContent = 'Validating…';
             $('gx-form-err').textContent = '';
             const { ok, data } = id ? await J('/providers/' + id, 'PUT', payload())
                                     : await J('/providers', 'POST', payload());
             btn.disabled = false; btn.textContent = 'Submit';
-            if (ok) { closeForm(); reload(); }
+            if (ok) { closeForm(); reload(); if (data.msgid) openFeed(data.msgid, name); }
             else { $('gx-form-err').textContent = data.message || 'Could not save (check the fields and URL/type).'; }
         }
 
@@ -243,21 +245,66 @@ if (!window.GXP) {
                 { field: cell.getField(), value: cell.getValue() });
             if (!ok) { cell.restoreOldValue(); alert(data.message || 'Could not save that change.'); }
         }
-        async function refresh(id) { const { data } = await J('/providers/' + id + '/refresh', 'POST'); reload(); if (data.message) alert(data.message); }
+
+        async function refresh(id, name) {
+            const { ok, data } = await J('/providers/' + id + '/refresh', 'POST');
+            reload();
+            if (ok && data.msgid) openFeed(data.msgid, name);
+        }
+
         async function del(id, name) { if (!confirm('Delete provider "' + name + '"?')) return; await J('/providers/' + id, 'DELETE'); reload(); }
 
-        async function openLog(id, name) {
-            $('gx-log-name').textContent = name;
-            const body = $('gx-log-body'); body.innerHTML = 'Loading…';
-            const { data } = await J('/providers/' + id + '/logs');
-            const rows = Array.isArray(data) ? data : [];
-            body.innerHTML = rows.map(l =>
-                `<div class="e"><span class="t">${l.finished_at ?? l.started_at ?? ''}</span>
-                 <span class="${sClass(l.status)}"> [${(l.status || '').toUpperCase()}]</span> ${(l.message || '').replace(/</g, '&lt;')}</div>`
-            ).join('') || '<div class="e t">No refresh history yet.</div>';
-            $('gx-log-overlay').classList.add('show');
+        // ----- live feed/log overlay (polls feed_logs by msgid) -----
+        let feedTimer = null, feedSince = 0, feedMsgid = null;
+        const levelClass = l => l === 'error' ? 'gx-fail' : (l === 'warn' ? 'gx-warn' : 'gx-ok');
+
+        function appendLines(lines) {
+            const body = $('gx-log-body');
+            lines.forEach(l => {
+                const div = document.createElement('div'); div.className = 'e';
+                div.innerHTML = `<span class="t">${l.at ?? ''}</span> <span class="${levelClass(l.level)}">[${(l.level || 'info').toUpperCase()}]</span> ${(l.message || '').replace(/</g, '&lt;')}`;
+                body.appendChild(div);
+                if (l.id > feedSince) feedSince = l.id;
+            });
+            body.scrollTop = body.scrollHeight;
         }
-        const closeLog = () => $('gx-log-overlay').classList.remove('show');
+
+        function stopFeed() { if (feedTimer) { clearInterval(feedTimer); feedTimer = null; } }
+
+        async function pollFeed() {
+            if (!feedMsgid) return;
+            const { ok, data } = await J('/providers/feed/' + feedMsgid + '?since=' + feedSince);
+            if (!ok) { stopFeed(); return; }
+            if (data.logs && data.logs.length) appendLines(data.logs);
+            const badge = $('gx-log-state');
+            badge.textContent = (data.state || '').toUpperCase();
+            badge.className = 'gx-state ' + (data.state === 'error' ? 'gx-fail' : (data.state === 'done' ? 'gx-ok' : 'gx-never'));
+            if (data.done) stopFeed();
+        }
+
+        function openFeed(msgid, name) {
+            stopFeed();
+            feedMsgid = msgid; feedSince = 0;
+            $('gx-log-name').textContent = name || '';
+            $('gx-log-body').innerHTML = '';
+            $('gx-log-state').textContent = '…';
+            $('gx-log-overlay').classList.add('show');
+            pollFeed();
+            feedTimer = setInterval(pollFeed, 1500);
+        }
+
+        async function openLog(id, name) {
+            const { data } = await J('/providers/' + id + '/logs');
+            if (!data.msgid) {
+                $('gx-log-name').textContent = name || '';
+                $('gx-log-state').textContent = '—';
+                $('gx-log-body').innerHTML = '<div class="e t">No update has run for this provider yet.</div>';
+                $('gx-log-overlay').classList.add('show');
+                return;
+            }
+            openFeed(data.msgid, name);
+        }
+        const closeLog = () => { stopFeed(); $('gx-log-overlay').classList.remove('show'); };
 
         document.addEventListener('livewire:navigated', init);
         document.addEventListener('DOMContentLoaded', init);

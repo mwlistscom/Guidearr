@@ -3,7 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Provider;
-use App\Models\ProviderRefreshLog;
+use App\Models\FeedQueue;
+use App\Models\FeedLog;
 use App\Services\ProviderValidator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -53,7 +54,14 @@ class ProviderController extends Controller
 
         $provider = Provider::create($data);
 
-        return response()->json(['id' => $provider->id, 'message' => 'Provider added.'], 201);
+        // Queue the actual download so a worker can populate channels/guide (overlay will tail the log).
+        $job = FeedQueue::enqueue($provider);
+
+        return response()->json([
+            'id'      => $provider->id,
+            'msgid'   => $job->msgid,
+            'message' => 'Provider added.',
+        ], 201);
     }
 
     /** Return a single provider for the edit form — includes the decrypted password (owner only). */
@@ -164,56 +172,61 @@ class ProviderController extends Controller
         return response()->json(['enabled' => (bool) $provider->enabled]);
     }
 
-    /** Re-validate the source against its declared type and log the result. */
-    public function refresh(Provider $provider, ProviderValidator $validator)
+    /** Re-queue the provider for a background download; returns the msgid to tail. */
+    public function refresh(Provider $provider)
     {
         $this->authorizeOwner($provider);
 
-        $started = now();
-        $check   = $validator->validate($provider->type, $provider->url, $provider->username, $provider->password);
+        $provider->forceFill(['last_touch_at' => now()])->save();
+        $job = FeedQueue::enqueue($provider);
 
-        $updates = [
-            'last_status'   => $check['ok'] ? 'ok' : 'failed',
-            'last_touch_at' => now(),
-        ];
-        if ($check['ok']) {
-            $updates['last_refresh_at'] = now();
-            if (! empty($check['timeshift'])) {
-                $updates['timeshift'] = $check['timeshift'];
-            }
-        }
-        $provider->forceFill($updates)->save();
-
-        ProviderRefreshLog::create([
-            'provider_id' => $provider->id,
-            'started_at'  => $started,
-            'finished_at' => now(),
-            'status'      => $check['ok'] ? 'ok' : 'failed',
-            'message'     => $check['message'],
-            'bytes'       => $check['bytes'] ?? 0,
-        ]);
-
-        return response()->json([
-            'status'          => $check['ok'] ? 'ok' : 'failed',
-            'message'         => $check['message'],
-            'last_refresh_at' => optional($provider->last_refresh_at)->format('Y-m-d H:i:s'),
-        ], $check['ok'] ? 200 : 422);
+        return response()->json(['msgid' => $job->msgid, 'message' => 'Refresh queued.']);
     }
 
-    /** Recent refresh-log history for the LOG modal. */
+    /** Open the LOG: return the provider's current run msgid + its log lines. */
     public function logs(Provider $provider)
     {
         $this->authorizeOwner($provider);
 
-        $logs = $provider->refreshLogs()->limit(50)->get()->map(fn (ProviderRefreshLog $l) => [
-            'started_at'  => optional($l->started_at)->format('Y-m-d H:i:s'),
-            'finished_at' => optional($l->finished_at)->format('Y-m-d H:i:s'),
-            'status'      => $l->status,
-            'message'     => $l->message,
-            'bytes'       => $l->bytes,
-        ]);
+        $job = $provider->feedQueue;
+        if (! $job) {
+            return response()->json(['msgid' => null, 'state' => null, 'logs' => []]);
+        }
 
-        return response()->json($logs);
+        return response()->json($this->feedPayload($job, 0));
+    }
+
+    /** Poll a single run by msgid (owner-scoped); returns state + new log lines since ?since. */
+    public function feed(Request $request, string $msgid)
+    {
+        $job = FeedQueue::where('msgid', $msgid)->first();
+        abort_unless($job && $job->user_id === Auth::id(), 403);
+
+        return response()->json($this->feedPayload($job, (int) $request->query('since', 0)));
+    }
+
+    private function feedPayload(FeedQueue $job, int $since): array
+    {
+        $lines = FeedLog::where('msgid', $job->msgid)
+            ->where('id', '>', $since)
+            ->orderBy('id')
+            ->limit(500)
+            ->get()
+            ->map(fn (FeedLog $l) => [
+                'id'      => $l->id,
+                'level'   => $l->level,
+                'message' => $l->message,
+                'at'      => optional($l->created_at)->format('Y-m-d H:i:s'),
+            ]);
+
+        return [
+            'msgid'     => $job->msgid,
+            'state'     => $job->state,
+            'processor' => $job->processor,
+            'elapsed'   => $job->elapsed,
+            'done'      => in_array($job->state, ['done', 'error'], true),
+            'logs'      => $lines,
+        ];
     }
 
     private function makeValidator(Request $request): \Illuminate\Validation\Validator
