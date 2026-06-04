@@ -53,7 +53,12 @@
         pagination: true, paginationMode: 'remote', paginationSize: 75,
         ajaxURL: '{{ route('admin.feeds.provider.data', $provider) }}',
         ajaxParams: () => ({ search: document.getElementById('af-search').value || '' }),
-        ajaxResponse: (u, p, res) => { document.getElementById('af-count').textContent = (res.total ?? 0) + ' channels'; return res; },
+        ajaxResponse: (u, p, res) => {
+            const c = document.getElementById('af-count');
+            if (res.error) { c.innerHTML = '<span style="color:#f87171">Error: ' + String(res.error).replace(/</g, '&lt;') + '</span>'; }
+            else { c.textContent = (res.total ?? 0) + ' channels'; }
+            return res;
+        },
         columns: [
             { title: 'Name', field: 'name', widthGrow: 2, editor: 'input', cellEdited: save },
             { title: 'tvg-name', field: 'tvg_name', widthGrow: 2, editor: 'input', cellEdited: save },

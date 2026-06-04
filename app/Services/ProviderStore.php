@@ -16,13 +16,15 @@ class ProviderStore
 
     public function __construct(public int $providerId)
     {
-        $dir = storage_path('app/feeds');
+        $dir  = storage_path('app/feeds');
+        $path = self::path($providerId);
         if (! is_dir($dir)) {
-            mkdir($dir, 0775, true);
+            @mkdir($dir, 0777, true);
         }
-        $this->db = new PDO('sqlite:' . $dir . '/provider_' . $providerId . '.sqlite');
+        @chmod($dir, 0777); // worker (root) and php-fpm (www-data) may differ; keep the dir writable by both
+        $this->db = new PDO('sqlite:' . $path);
         $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        $this->db->exec('PRAGMA journal_mode=WAL');
+        @chmod($path, 0666); // ditto for the file itself
         $this->migrate();
     }
 

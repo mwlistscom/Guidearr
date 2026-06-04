@@ -40,17 +40,22 @@ class FeedBrowseController extends Controller
         $page   = max(1, (int) $request->query('page', 1));
         $search = $request->query('search');
 
-        if (! ProviderStore::exists($provider->id)) {
-            return response()->json(['last_page' => 1, 'data' => []]);
-        }
-        $store = new ProviderStore($provider->id);
-        $total = $store->channelCount($search);
+        try {
+            if (! ProviderStore::exists($provider->id)) {
+                return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
+            }
+            $store = new ProviderStore($provider->id);
+            $total = $store->channelCount($search);
 
-        return response()->json([
-            'last_page' => max(1, (int) ceil($total / $size)),
-            'total'     => $total,
-            'data'      => $store->channels($size, ($page - 1) * $size, $search),
-        ]);
+            return response()->json([
+                'last_page' => max(1, (int) ceil($total / $size)),
+                'total'     => $total,
+                'data'      => $store->channels($size, ($page - 1) * $size, $search),
+            ]);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['last_page' => 1, 'total' => 0, 'data' => [], 'error' => $e->getMessage()]);
+        }
     }
 
     public function updateChannel(Request $request, Provider $provider, int $channel)

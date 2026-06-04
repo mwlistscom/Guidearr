@@ -354,7 +354,11 @@ if (!window.GXP) {
                 ajaxURL: '/providers/' + id + '/channels',
                 ajaxParams: () => ({ search: $('gx-browse-search').value || '' }),
                 ajaxResponse: (url, params, response) => {
-                    $('gx-browse-count').textContent = (response.total ?? 0) + ' channels';
+                    if (response.error) {
+                        $('gx-browse-count').innerHTML = '<span style="color:#f87171">Error: ' + String(response.error).replace(/</g, '&lt;') + '</span>';
+                    } else {
+                        $('gx-browse-count').textContent = (response.total ?? 0) + ' channels';
+                    }
                     return response;
                 },
                 columns: [
