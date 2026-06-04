@@ -10,3 +10,6 @@ Artisan::command('inspire', function () {
 
 // Keep the per-run feed log table from growing unbounded.
 Schedule::command('feed:trim')->weekly();
+
+// Clean up data left by deleted accounts (per-provider SQLite stores). Infrequent.
+Schedule::command('feed:purge')->hourly();

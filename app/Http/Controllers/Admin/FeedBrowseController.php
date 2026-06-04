@@ -17,7 +17,55 @@ class FeedBrowseController extends Controller
         $queue = \App\Models\FeedQueue::with(['provider:id,name', 'user:id,name,email'])
             ->orderByDesc('updated_at')->limit(100)->get();
 
-        return view('admin.feeds.users', compact('users', 'queue'));
+        $queueData = $queue->map(fn ($j) => [
+            'id'       => $j->id,
+            'provider' => $j->provider->name ?? '#' . $j->provider_id,
+            'email'    => $j->user->email ?? '—',
+            'type'     => $j->type,
+            'state'    => $j->state,
+            'attempts' => $j->attempts,
+            'error'    => $j->error,
+            'updated'  => optional($j->updated_at)->format('Y-m-d H:i:s'),
+        ])->values();
+
+        $purges = \App\Models\PurgeJob::orderByDesc('updated_at')->limit(50)->get();
+
+        return view('admin.feeds.users', compact('users', 'queueData', 'purges'));
+    }
+
+    /** Inline-edit a feed_queue row (type/state pulldowns, attempts/error counters). */
+    public function queueUpdate(Request $request, \App\Models\FeedQueue $job)
+    {
+        $field = (string) $request->input('field');
+        $value = $request->input('value');
+
+        $rules = [
+            'type'     => ['in:' . implode(',', Provider::TYPES)],
+            'state'    => ['in:' . implode(',', \App\Models\FeedQueue::STATES)],
+            'attempts' => ['integer', 'min:0'],
+            'error'    => ['integer', 'min:0'],
+        ];
+        if (! isset($rules[$field])) {
+            return response()->json(['message' => 'That field is not editable.'], 422);
+        }
+
+        $v = \Illuminate\Support\Facades\Validator::make(['v' => $value], ['v' => $rules[$field]]);
+        if ($v->fails()) {
+            return response()->json(['message' => $v->errors()->first()], 422);
+        }
+
+        $job->update([$field => $value]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /** Delete a feed_queue row; disable its provider so it is not re-queued. */
+    public function queueDelete(\App\Models\FeedQueue $job)
+    {
+        Provider::whereKey($job->provider_id)->update(['enabled' => false]);
+        $job->delete();
+
+        return response()->json(['ok' => true, 'message' => 'Job removed; provider disabled.']);
     }
 
     public function providers(User $user)

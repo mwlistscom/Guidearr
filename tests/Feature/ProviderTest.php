@@ -546,6 +546,37 @@ class ProviderTest extends TestCase
         $this->assertDatabaseHas('purge_queue', ['user_id' => $uid, 'state' => 'done']);
     }
 
+    public function test_admin_queue_update_and_delete_disables_provider(): void
+    {
+        $owner = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $owner->id, 'name' => 'QP', 'type' => 'm3u', 'url' => 'http://h/q.m3u', 'enabled' => true]);
+        $job = \App\Models\FeedQueue::create([
+            'msgid' => 'qmsg', 'user_id' => $owner->id, 'provider_id' => $p->id,
+            'type' => 'm3u', 'state' => 'done', 'attempts' => 1, 'error' => 0, 'hour' => 1,
+        ]);
+
+        $c = new \App\Http\Controllers\Admin\FeedBrowseController();
+
+        // editable field (state pulldown)
+        $r = $c->queueUpdate(new \Illuminate\Http\Request(['field' => 'state', 'value' => 'queued']), $job);
+        $this->assertEquals(200, $r->getStatusCode());
+        $this->assertDatabaseHas('feed_queue', ['id' => $job->id, 'state' => 'queued']);
+
+        // invalid state value rejected
+        $r = $c->queueUpdate(new \Illuminate\Http\Request(['field' => 'state', 'value' => 'bogus']), $job->fresh());
+        $this->assertEquals(422, $r->getStatusCode());
+
+        // non-editable field (provider) rejected
+        $r = $c->queueUpdate(new \Illuminate\Http\Request(['field' => 'provider_id', 'value' => 999]), $job->fresh());
+        $this->assertEquals(422, $r->getStatusCode());
+
+        // delete removes the row AND disables the provider
+        $r = $c->queueDelete($job->fresh());
+        $this->assertEquals(200, $r->getStatusCode());
+        $this->assertDatabaseMissing('feed_queue', ['id' => $job->id]);
+        $this->assertFalse((bool) $p->fresh()->enabled);
+    }
+
     public function test_validator_pure_logic(): void
     {
         $this->assertTrue(ProviderValidator::contentMatchesType("#EXTM3U\n#EXTINF:-1,Foo\nhttp://x", 'm3u'));

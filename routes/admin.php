@@ -30,6 +30,8 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
 
             Route::get('feeds', [FeedBrowseController::class, 'users'])->name('feeds');
+            Route::patch('feeds/queue/{job}', [FeedBrowseController::class, 'queueUpdate'])->name('feeds.queue.update');
+            Route::delete('feeds/queue/{job}', [FeedBrowseController::class, 'queueDelete'])->name('feeds.queue.delete');
             Route::get('feeds/user/{user}', [FeedBrowseController::class, 'providers'])->name('feeds.user');
             Route::get('feeds/provider/{provider}', [FeedBrowseController::class, 'channels'])->name('feeds.provider');
             Route::get('feeds/provider/{provider}/data', [FeedBrowseController::class, 'channelsData'])->name('feeds.provider.data');
