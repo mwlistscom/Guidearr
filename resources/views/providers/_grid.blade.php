@@ -73,6 +73,8 @@
     .gx-ce-iconrow { display:flex; gap:.7rem; align-items:flex-end; margin-bottom:.8rem; }
     .gx-ce-logo-prev { width:54px; height:54px; object-fit:contain; background:#0e0f13;
         border:1px solid rgba(255,255,255,.16); border-radius:.5rem; padding:3px; flex:none; }
+    .gx-fchip { font-size:.78rem; font-weight:700; color:#f47521; background:rgba(244,117,33,.14);
+        border:1px solid rgba(244,117,33,.4); border-radius:1rem; padding:.15rem .6rem; }
     .gx-logo { height:24px; max-width:46px; object-fit:contain; vertical-align:middle; }
     .gx-act-del { background:transparent; border:none; color:#aab; cursor:pointer; padding:.2rem; border-radius:.35rem; line-height:0; }
     .gx-act-del:hover { color:#f87171; background:rgba(248,113,113,.12); }
@@ -416,6 +418,7 @@ window.GXP = (function () {
             $('gx-addrow').hidden = true;
             $('gx-browse-pane').hidden = false;
             browseGroupFilter = null;
+            setFilterChip();
             if (browseTable) { browseTable.destroy(); browseTable = null; }
             if (groupsTable) { groupsTable.destroy(); groupsTable = null; }
 
@@ -427,12 +430,43 @@ window.GXP = (function () {
             const sel = $('gx-add-group');
             sel.innerHTML = browseGroups.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
 
+            buildChannelsTable();
+
+            groupsTable = new Tabulator('#provider-groups', {
+                layout: 'fitColumns', height: '56vh', data: groupRows,
+                placeholder: 'No groups.', selectableRows: 1,
+                pagination: true, paginationMode: 'local', paginationSize: 50,
+                columns: [
+                    { title: 'Group', field: 'group_title', widthGrow: 3 },
+                    { title: 'Ch', field: 'channels', width: 52, hozAlign: 'right' },
+                ],
+                rowClick: (e, row) => {           // click a group to filter the channels pane (exact); click again to clear
+                    const t = row.getData().group_title;
+                    if (browseGroupFilter === t) { browseGroupFilter = null; groupsTable.deselectRow(); }
+                    else { browseGroupFilter = t; groupsTable.deselectRow(); row.select(); }
+                    setFilterChip();
+                    reloadChannels();   // rebuild the channels grid with the new group filter
+                },
+            });
+        }
+
+        function setFilterChip() {
+            const chip = $('gx-browse-filter');
+            if (!chip) return;
+            if (browseGroupFilter) { chip.textContent = '● ' + browseGroupFilter; chip.style.display = ''; }
+            else { chip.textContent = ''; chip.style.display = 'none'; }
+        }
+
+        // Rebuild the channels table from scratch — the SAME path as the initial load, so the group/search
+        // filter is applied via a fresh remote-paginated request (no reliance on setData/replaceData reload quirks).
+        function buildChannelsTable() {
+            if (browseTable) { browseTable.destroy(); browseTable = null; }
             browseTable = new Tabulator('#provider-channels', {
                 layout: 'fitColumns', height: '56vh', editTriggerEvent: 'dblclick',
                 placeholder: 'No channels — process this provider first.',
                 selectableRows: 1,
                 pagination: true, paginationMode: 'remote', paginationSize: 50,
-                ajaxURL: '/providers/' + id + '/channels',
+                ajaxURL: '/providers/' + browseProvider + '/channels',
                 ajaxParams: () => ({ search: $('gx-browse-search').value || '', group: browseGroupFilter || '' }),
                 ajaxResponse: (url, params, response) => {
                     if (response.error) {
@@ -458,22 +492,6 @@ window.GXP = (function () {
                       cellClick: (e, c) => { if (e.target.closest('button')) GXP.delChannel(c.getRow().getData().id); } },
                 ],
             });
-
-            groupsTable = new Tabulator('#provider-groups', {
-                layout: 'fitColumns', height: '56vh', data: groupRows,
-                placeholder: 'No groups.', selectableRows: 1,
-                pagination: true, paginationMode: 'local', paginationSize: 50,
-                columns: [
-                    { title: 'Group', field: 'group_title', widthGrow: 3 },
-                    { title: 'Ch', field: 'channels', width: 52, hozAlign: 'right' },
-                ],
-                rowClick: (e, row) => {           // click a group to filter the channels pane (exact); click again to clear
-                    const t = row.getData().group_title;
-                    if (browseGroupFilter === t) { browseGroupFilter = null; groupsTable.deselectRow(); }
-                    else { browseGroupFilter = t; groupsTable.deselectRow(); row.select(); }
-                    reloadChannels();   // re-pull with the new group param
-                },
-            });
         }
 
         async function refreshGroups() {
@@ -490,16 +508,10 @@ window.GXP = (function () {
             }
         }
 
-        // Build the filter into the URL itself so the group/search params can't be lost to
-        // Tabulator's ajaxParams-snapshot behaviour. ajaxParams still carries them for page nav.
+        // Rebuild = the proven initial-load path, so the current group/search always take effect.
         function reloadChannels() {
-            if (! browseTable || ! browseProvider) return;
-            const q = new URLSearchParams();
-            const s = ($('gx-browse-search').value || '').trim();
-            if (s) q.set('search', s);
-            if (browseGroupFilter) q.set('group', browseGroupFilter);
-            const qs = q.toString();
-            browseTable.setData('/providers/' + browseProvider + '/channels' + (qs ? '?' + qs : ''));
+            if (! browseProvider) return;
+            buildChannelsTable();
         }
 
         async function reloadBrowse() { reloadChannels(); await refreshGroups(); }

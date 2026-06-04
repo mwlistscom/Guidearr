@@ -4,6 +4,7 @@
 <div class="gx-browse-pane" id="gx-browse-pane" hidden>
     <div class="gx-browse-head">
         <h2>Channels — <span id="gx-browse-name"></span></h2>
+        <span class="gx-fchip" id="gx-browse-filter" style="display:none"></span>
         <span class="gx-count" id="gx-browse-count"></span>
     </div>
     <div class="gx-split">
