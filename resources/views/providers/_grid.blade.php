@@ -52,8 +52,12 @@
     .gx-pane .tabulator { background:#16171a; border:1px solid rgba(255,255,255,.10); font-size:.8rem; }
     .gx-pane .tabulator .tabulator-header { background:#1c1d21; font-size:.78rem; }
     .gx-pane .tabulator-row .tabulator-cell { padding:3px 8px; }
-    .gx-pane-ch .tabulator { border-radius:.6rem .6rem 0 0; }
+    .gx-pane-ch .tabulator { border-radius:0; }
     .gx-pane-gr .tabulator { border-radius:0; }
+    .gx-pane-filter { width:100%; box-sizing:border-box; background:#0e0f13;
+        border:1px solid rgba(255,255,255,.10); border-bottom:none; border-radius:.6rem .6rem 0 0;
+        color:#e6e7ea; padding:.42rem .6rem; font-size:.85rem; }
+    .gx-pane-filter:focus { outline:none; border-color:rgba(244,117,33,.5); }
     .gx-pane-title { background:#1c1d21; border:1px solid rgba(255,255,255,.10); border-bottom:none;
         border-radius:.6rem .6rem 0 0; padding:.45rem .7rem; font-size:.8rem; font-weight:700; color:#cbd; }
     .gx-addinline { display:inline-flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
@@ -332,7 +336,17 @@ if (!window.GXP) {
             const badge = $('gx-log-state');
             badge.textContent = (data.state || '').toUpperCase();
             badge.className = 'gx-state ' + (data.state === 'error' ? 'gx-fail' : (data.state === 'done' ? 'gx-ok' : 'gx-never'));
-            if (data.done) stopFeed();
+            if (data.done) {
+                stopFeed();
+                if (!$('gx-log-done-note')) {
+                    const note = document.createElement('div');
+                    note.id = 'gx-log-done-note'; note.className = 'e gx-ok';
+                    note.style.cssText = 'margin-top:.6rem;font-weight:700';
+                    note.textContent = '✓ You can close this window now.';
+                    $('gx-log-body').appendChild(note);
+                    $('gx-log-body').scrollTop = $('gx-log-body').scrollHeight;
+                }
+            }
         }
 
         function openFeed(msgid, name) {
@@ -425,7 +439,7 @@ if (!window.GXP) {
                     const t = row.getData().group_title;
                     if (browseGroupFilter === t) { browseGroupFilter = null; groupsTable.deselectRow(); }
                     else { browseGroupFilter = t; groupsTable.deselectRow(); row.select(); }
-                    if (browseTable) browseTable.setPage(1);
+                    if (browseTable) browseTable.replaceData();   // re-pull with the new group param
                 },
             });
         }
@@ -503,9 +517,14 @@ if (!window.GXP) {
         }
 
         document.addEventListener('input', e => {
-            if (e.target && e.target.id === 'gx-browse-search' && browseTable) {
+            if (!e.target) return;
+            if (e.target.id === 'gx-browse-search' && browseTable) {
                 clearTimeout(searchTimer);
-                searchTimer = setTimeout(() => browseTable.setPage(1), 300);
+                searchTimer = setTimeout(() => browseTable.replaceData(), 300);
+            } else if (e.target.id === 'gx-group-search' && groupsTable) {
+                const v = e.target.value.trim();
+                if (v) groupsTable.setFilter('group_title', 'like', v);
+                else groupsTable.clearFilter();
             }
         });
 

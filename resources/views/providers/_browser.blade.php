@@ -4,12 +4,11 @@
 <div class="gx-browse-pane" id="gx-browse-pane" hidden>
     <div class="gx-browse-head">
         <h2>Channels — <span id="gx-browse-name"></span></h2>
-        <input id="gx-browse-search" placeholder="Filter name / group / tvg-name…">
         <span class="gx-count" id="gx-browse-count"></span>
-        <button class="gx-btn secondary" type="button" onclick="GXP.closeBrowse()">Close</button>
     </div>
     <div class="gx-split">
         <div class="gx-pane gx-pane-ch">
+            <input class="gx-pane-filter" id="gx-browse-search" placeholder="Filter…">
             <div id="provider-channels"></div>
             <div class="gx-toolbar">
                 <button title="Add channel" onclick="GXP.toggleAddChannel()">
@@ -29,7 +28,7 @@
             </div>
         </div>
         <div class="gx-pane gx-pane-gr">
-            <div class="gx-pane-title">Groups</div>
+            <input class="gx-pane-filter" id="gx-group-search" placeholder="Filter…">
             <div id="provider-groups"></div>
             <div class="gx-toolbar">
                 <button title="Add group" onclick="GXP.toggleAddGroup()">
