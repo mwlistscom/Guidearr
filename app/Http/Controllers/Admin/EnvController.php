@@ -128,7 +128,7 @@ class EnvController extends Controller
 
         return back()->with('status',
             count($changed) . ' value(s) saved: ' . implode(', ', $changed)
-            . '. Backup: ' . $backupName . '. Some changes (DB, mail, app) may need a worker restart to fully apply.');
+            . '. Backup: ' . $backupName . '. Some changes (DB, mail, app) may need a worker reload — use Reload services on the Status page to apply them.');
     }
 
     // ---- helpers -------------------------------------------------------------

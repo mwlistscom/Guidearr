@@ -19,6 +19,7 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
 
         Route::middleware('admin.password')->group(function () {
             Route::get('/', [AdminController::class, 'index'])->name('dashboard');
+            Route::post('restart', [AdminController::class, 'restart'])->name('restart');
 
             Route::get('users', [UserController::class, 'index'])->name('users');
             Route::get('users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
