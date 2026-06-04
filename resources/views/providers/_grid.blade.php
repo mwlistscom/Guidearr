@@ -218,11 +218,6 @@ window.GXP = (function () {
                 layout: 'fitColumns', rowHeight: 30, maxHeight: '170px', editTriggerEvent: 'dblclick',
                 placeholder: 'No providers yet — use + to add one.',
                 ajaxURL: '{{ route('providers.data') }}',
-                rowClick: (e, row) => {
-                    if (e.target.closest('.gx-act') || e.target.closest('input')) return; // let actions/edit work
-                    const d = row.getData();
-                    GXP.openBrowse(d.id, d.name);
-                },
                 columns: [
                     { title: 'Name', field: 'name', widthGrow: 2, editor: 'input', cellEdited: c => GXP.saveCell(c) },
                     { title: 'URL', field: 'url', widthGrow: 3, editor: 'input', cellEdited: c => GXP.saveCell(c),
@@ -249,6 +244,11 @@ window.GXP = (function () {
                                edit: () => GXP.openEdit(d.id), del: () => GXP.del(d.id, d.name) }[a])();
                       } },
                 ],
+            });
+            table.on('rowClick', (e, row) => {   // Tabulator 6: rowClick must be registered via .on()
+                if (e.target.closest('.gx-act') || e.target.closest('input')) return; // let actions/checkbox work
+                const d = row.getData();
+                GXP.openBrowse(d.id, d.name);
             });
         }
 
@@ -440,15 +440,15 @@ window.GXP = (function () {
                     { title: 'Group', field: 'group_title', widthGrow: 3 },
                     { title: 'Ch', field: 'channels', width: 52, hozAlign: 'right' },
                 ],
-                rowClick: (e, row) => {           // click a group to filter the channels pane (exact); click again to clear
-                    const t = row.getData().group_title;
-                    console.log('[GXP] group rowClick:', t);
-                    if (browseGroupFilter === t) { browseGroupFilter = null; groupsTable.deselectRow(); }
-                    else { browseGroupFilter = t; groupsTable.deselectRow(); row.select(); }
-                    console.log('[GXP] browseGroupFilter is now:', browseGroupFilter);
-                    setFilterChip();
-                    reloadChannels();   // rebuild the channels grid with the new group filter
-                },
+            });
+            // Tabulator 6 requires event callbacks via .on() — rowClick as a constructor option is ignored.
+            groupsTable.on('rowClick', (e, row) => {  // click a group to filter (exact); click again to clear
+                const t = row.getData().group_title;
+                console.log('[GXP] group rowClick:', t);
+                if (browseGroupFilter === t) { browseGroupFilter = null; groupsTable.deselectRow(); }
+                else { browseGroupFilter = t; groupsTable.deselectRow(); row.select(); }
+                setFilterChip();
+                reloadChannels();
             });
         }
 
