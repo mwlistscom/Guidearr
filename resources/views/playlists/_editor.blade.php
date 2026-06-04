@@ -9,6 +9,10 @@
         border:1px solid rgba(244,117,33,.4); border-radius:1rem; padding:.15rem .6rem; }
     .ple-count { font-size:.82rem; color:#9aa0aa; margin-left:auto; }
     .ple-split { display:grid; grid-template-columns:3fr 1fr; gap:1rem; }
+    /* grid items default to min-width:auto, which lets a resized column push the track
+       (and the table) ever wider in a fitColumns feedback loop — pin to 0 so the table
+       stays inside its track and manages its own column widths. */
+    .ple-split > div { min-width:0; }
     .ple-pane-filter { width:100%; box-sizing:border-box; background:#0e0f13; border:1px solid rgba(255,255,255,.10);
         border-bottom:none; border-radius:.6rem .6rem 0 0; color:#e6e7ea; padding:.42rem .6rem; font-size:.85rem; }
     .ple-split .tabulator { border-radius:0; }
@@ -168,6 +172,7 @@ window.GXPLE = (function () {
         if (grTable) { grTable.replaceData(rows); return; }
         grTable = new Tabulator('#pl-groups', {
             layout: 'fitColumns', height: '56vh', data: rows, movableRows: true, placeholder: 'No groups.',
+            editTriggerEvent: 'dblclick',   // single press = drag/move, double-click = edit
             columns: [
                 { title: 'Group', field: 'group_title', widthGrow: 3, editor: 'input',
                   cellEdited: cell => J('/playlists/' + plId + '/groups/' + cell.getRow().getData().id, 'PATCH', { group_title: cell.getValue() }).then(() => { loadGroups(); reloadChannels(); }) },
@@ -202,6 +207,7 @@ window.GXPLE = (function () {
         };
         chTable = new Tabulator('#pl-channels', {
             layout: 'fitColumns', height: '56vh', movableRows: true,
+            editTriggerEvent: 'dblclick',   // single press = drag/move, double-click = edit
             pagination: true, paginationMode: 'remote', paginationSize: SIZE,
             placeholder: 'No channels.',
             ajaxURL: '/playlists/' + plId + '/channels',
