@@ -37,19 +37,31 @@
     .gx-modal { background:#1b1c20; border:1px solid rgba(255,255,255,.14); border-radius:.8rem; width:100%;
         max-width:30rem; padding:1.3rem 1.4rem; color:#e6e7ea; }
     .gx-modal.wide { max-width:70rem; }
-    .gx-modal .tabulator { background:#16171a; border:1px solid rgba(255,255,255,.10); font-size:.8rem; }
-    .gx-modal .tabulator .tabulator-header { background:#1c1d21; font-size:.78rem; }
-    .gx-modal .tabulator-row .tabulator-cell { padding:3px 8px; }
-    .gx-browse-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.8rem; flex-wrap:wrap; }
+
+    /* inline channel/group browser */
+    .gx-browse-pane { margin-top:1rem; }
+    .gx-browse-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.7rem; flex-wrap:wrap; }
+    .gx-browse-head h2 { font-size:1.05rem; font-weight:800; margin:0; color:#e6e7ea; }
     .gx-browse-head input { flex:1; min-width:12rem; background:#0e0f13; border:1px solid rgba(255,255,255,.16);
         color:#e6e7ea; border-radius:.5rem; padding:.4rem .6rem; font-size:.85rem; }
     .gx-count { font-size:.78rem; color:#9aa; }
-    .gx-addrow { display:flex; gap:.5rem; align-items:center; margin-bottom:.7rem; flex-wrap:wrap; }
-    .gx-addrow input { background:#0e0f13; border:1px solid rgba(255,255,255,.16); color:#e6e7ea;
-        border-radius:.5rem; padding:.4rem .6rem; font-size:.85rem; }
-    .gx-addrow #gx-add-name { flex:2; min-width:9rem; } .gx-addrow #gx-add-group { flex:1; min-width:7rem; }
-    .gx-addrow #gx-add-url { flex:3; min-width:12rem; }
+    .gx-split { display:flex; gap:1rem; align-items:flex-start; }
+    .gx-pane { min-width:0; }
+    .gx-pane-ch { flex:3; }
+    .gx-pane-gr { flex:1; }
+    .gx-pane .tabulator { background:#16171a; border:1px solid rgba(255,255,255,.10); font-size:.8rem; }
+    .gx-pane .tabulator .tabulator-header { background:#1c1d21; font-size:.78rem; }
+    .gx-pane .tabulator-row .tabulator-cell { padding:3px 8px; }
+    .gx-pane-ch .tabulator { border-radius:.6rem .6rem 0 0; }
+    .gx-pane-title { background:#1c1d21; border:1px solid rgba(255,255,255,.10); border-bottom:none;
+        border-radius:.6rem .6rem 0 0; padding:.45rem .7rem; font-size:.8rem; font-weight:700; color:#cbd; }
+    .gx-addinline { display:inline-flex; gap:.4rem; align-items:center; flex-wrap:wrap; }
+    .gx-addinline input, .gx-addinline select { background:#0e0f13; border:1px solid rgba(255,255,255,.16);
+        color:#e6e7ea; border-radius:.45rem; padding:.35rem .5rem; font-size:.82rem; }
+    .gx-addinline #gx-add-name { width:11rem; } .gx-addinline #gx-add-url { width:16rem; } .gx-addinline #gx-add-group { width:10rem; }
+    .gx-addinline .gx-btn { padding:.35rem .7rem; font-size:.82rem; }
     .gx-add-err { color:#f87171; font-size:.8rem; }
+    .gx-logo { height:24px; max-width:46px; object-fit:contain; vertical-align:middle; }
     .gx-act-del { background:transparent; border:none; color:#aab; cursor:pointer; padding:.2rem; border-radius:.35rem; line-height:0; }
     .gx-act-del:hover { color:#f87171; background:rgba(248,113,113,.12); }
     .gx-act-del svg { width:15px; height:15px; }
@@ -121,25 +133,35 @@
     </div>
 </div>
 
-{{-- Channel browser overlay --}}
-<div class="gx-overlay" id="gx-browse-overlay">
-    <div class="gx-modal wide">
-        <div class="gx-browse-head">
-            <h2 style="font-size:1.1rem;font-weight:800;margin:0">Channels — <span id="gx-browse-name"></span></h2>
-            <input id="gx-browse-search" placeholder="Filter name / group / tvg-name…">
-            <span class="gx-count" id="gx-browse-count"></span>
-            <button class="gx-btn" type="button" onclick="GXP.toggleAddChannel()">+ Add channel</button>
+{{-- Channel + group browser (inline split pane: channels 75% / groups 25%) --}}
+<div class="gx-browse-pane" id="gx-browse-pane" hidden>
+    <div class="gx-browse-head">
+        <h2>Channels — <span id="gx-browse-name"></span></h2>
+        <input id="gx-browse-search" placeholder="Filter name / group / tvg-name…">
+        <span class="gx-count" id="gx-browse-count"></span>
+        <button class="gx-btn secondary" type="button" onclick="GXP.closeBrowse()">Close</button>
+    </div>
+    <div class="gx-split">
+        <div class="gx-pane gx-pane-ch">
+            <div id="provider-channels"></div>
+            <div class="gx-toolbar">
+                <button title="Add channel" onclick="GXP.toggleAddChannel()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <span class="gx-addinline" id="gx-addrow" hidden>
+                    <input id="gx-add-name" placeholder="Name *">
+                    <select id="gx-add-group" title="Group"></select>
+                    <input id="gx-add-url" placeholder="Stream URL *">
+                    <button class="gx-btn" type="button" onclick="GXP.addChannel()">Add</button>
+                    <button class="gx-btn secondary" type="button" onclick="GXP.toggleAddChannel(false)">Cancel</button>
+                    <span class="gx-add-err" id="gx-add-err"></span>
+                </span>
+            </div>
         </div>
-        <div class="gx-addrow" id="gx-addrow" hidden>
-            <input id="gx-add-name" placeholder="Name *">
-            <input id="gx-add-group" placeholder="Group (default [Dummy])">
-            <input id="gx-add-url" placeholder="Stream URL *">
-            <button class="gx-btn accent" type="button" onclick="GXP.addChannel()">Add</button>
-            <button class="gx-btn secondary" type="button" onclick="GXP.toggleAddChannel(false)">Cancel</button>
-            <span class="gx-add-err" id="gx-add-err"></span>
+        <div class="gx-pane gx-pane-gr">
+            <div class="gx-pane-title">Groups</div>
+            <div id="provider-groups"></div>
         </div>
-        <div id="provider-channels"></div>
-        <div class="gx-modal-actions"><button class="gx-btn secondary" onclick="GXP.closeBrowse()">Close</button></div>
     </div>
 </div>
 
@@ -186,6 +208,11 @@ if (!window.GXP) {
                 layout: 'fitColumns', rowHeight: 30, maxHeight: '170px', editTriggerEvent: 'dblclick',
                 placeholder: 'No providers yet — use + to add one.',
                 ajaxURL: '{{ route('providers.data') }}',
+                rowClick: (e, row) => {
+                    if (e.target.closest('.gx-act') || e.target.closest('input')) return; // let actions/edit work
+                    const d = row.getData();
+                    GXP.openBrowse(d.id, d.name);
+                },
                 columns: [
                     { title: 'Name', field: 'name', widthGrow: 2, editor: 'input', cellEdited: c => GXP.saveCell(c) },
                     { title: 'URL', field: 'url', widthGrow: 3, editor: 'input', cellEdited: c => GXP.saveCell(c),
@@ -352,42 +379,72 @@ if (!window.GXP) {
         }
         const closeLog = () => { stopFeed(); $('gx-log-overlay').classList.remove('show'); };
 
-        // ----- channel browser (remote-paginated grid over the provider's SQLite store) -----
-        let browseTable = null, browseProvider = null, searchTimer = null;
+        // ----- inline channel/group browser over the provider's SQLite store -----
+        let browseTable = null, groupsTable = null, browseProvider = null, browseGroups = [], searchTimer = null;
 
-        function openBrowse(id, name) {
+        function esc(s) { return String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
+
+        async function openBrowse(id, name) {
             browseProvider = id;
             $('gx-browse-name').textContent = name || '';
             $('gx-browse-search').value = '';
             $('gx-browse-count').textContent = '';
             $('gx-addrow').hidden = true;
-            $('gx-browse-overlay').classList.add('show');
+            $('gx-browse-pane').hidden = false;
             if (browseTable) { browseTable.destroy(); browseTable = null; }
+            if (groupsTable) { groupsTable.destroy(); groupsTable = null; }
+
+            // groups first — needed for the Group dropdown editor + the right pane
+            const { data: g } = await J('/providers/' + id + '/groups');
+            const groupRows = (g && g.groups) || [];
+            browseGroups = groupRows.map(r => r.group_title);
+            if (!browseGroups.length) browseGroups = ['[Dummy]'];
+            const sel = $('gx-add-group');
+            sel.innerHTML = browseGroups.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+
             browseTable = new Tabulator('#provider-channels', {
-                layout: 'fitColumns', height: '52vh', editTriggerEvent: 'dblclick',
+                layout: 'fitColumns', height: '56vh', editTriggerEvent: 'dblclick',
                 placeholder: 'No channels — process this provider first.',
                 pagination: true, paginationMode: 'remote', paginationSize: 50,
                 ajaxURL: '/providers/' + id + '/channels',
                 ajaxParams: () => ({ search: $('gx-browse-search').value || '' }),
                 ajaxResponse: (url, params, response) => {
                     if (response.error) {
-                        $('gx-browse-count').innerHTML = '<span style="color:#f87171">Error: ' + String(response.error).replace(/</g, '&lt;') + '</span>';
+                        $('gx-browse-count').innerHTML = '<span style="color:#f87171">Error: ' + esc(response.error) + '</span>';
                     } else {
                         $('gx-browse-count').textContent = (response.total ?? 0) + ' channels';
                     }
                     return response;
                 },
                 columns: [
+                    { title: 'Logo', field: 'tvg_logo', width: 60, hozAlign: 'center', headerSort: false,
+                      formatter: c => c.getValue() ? `<img class="gx-logo" src="${esc(c.getValue())}" onerror="this.style.display='none'">` : '' },
                     { title: 'Name', field: 'name', widthGrow: 2, editor: 'input', cellEdited: c => GXP.saveChannel(c) },
                     { title: 'tvg-name', field: 'tvg_name', widthGrow: 2, editor: 'input', cellEdited: c => GXP.saveChannel(c) },
-                    { title: 'Group', field: 'group_title', widthGrow: 1, editor: 'input', cellEdited: c => GXP.saveChannel(c) },
-                    { title: 'Type', field: 'type', width: 80, editor: 'list', editorParams: { values: ['Live', 'VOD', 'user'] }, cellEdited: c => GXP.saveChannel(c) },
+                    { title: 'Group', field: 'group_title', widthGrow: 1,
+                      editor: 'list', editorParams: { values: browseGroups, autocomplete: true, freetext: false },
+                      cellEdited: c => GXP.saveChannel(c) },
+                    { title: 'Type', field: 'type', width: 78, editor: 'list', editorParams: { values: ['Live', 'VOD', 'user'] }, cellEdited: c => GXP.saveChannel(c) },
                     { title: 'URL', field: 'url', widthGrow: 3, editor: 'input', cellEdited: c => GXP.saveChannel(c),
-                      formatter: c => `<span style="color:#8ab4f8">${c.getValue() ?? ''}</span>` },
-                    { title: '', field: '_d', width: 50, hozAlign: 'center', headerSort: false,
+                      formatter: c => `<span style="color:#8ab4f8">${esc(c.getValue())}</span>` },
+                    { title: '', field: '_d', width: 46, hozAlign: 'center', headerSort: false,
                       formatter: () => `<button class="gx-act-del" title="Delete">${ICONS.del}</button>`,
                       cellClick: (e, c) => { if (e.target.closest('button')) GXP.delChannel(c.getRow().getData().id); } },
                 ],
+            });
+
+            groupsTable = new Tabulator('#provider-groups', {
+                layout: 'fitColumns', height: '56vh', data: groupRows,
+                placeholder: 'No groups.',
+                columns: [
+                    { title: 'Group', field: 'group_title', widthGrow: 3 },
+                    { title: 'Ch', field: 'channels', width: 52, hozAlign: 'right' },
+                ],
+                rowClick: (e, row) => {           // click a group to filter the channels pane
+                    const t = row.getData().group_title;
+                    $('gx-browse-search').value = t === '[Dummy]' ? '' : t;
+                    if (browseTable) browseTable.setPage(1);
+                },
             });
         }
 
@@ -404,8 +461,9 @@ if (!window.GXP) {
         }
 
         function closeBrowse() {
-            $('gx-browse-overlay').classList.remove('show');
+            $('gx-browse-pane').hidden = true;
             if (browseTable) { browseTable.destroy(); browseTable = null; }
+            if (groupsTable) { groupsTable.destroy(); groupsTable = null; }
         }
 
         function toggleAddChannel(show) {
@@ -413,14 +471,14 @@ if (!window.GXP) {
             const open = (show === undefined) ? row.hidden : show;
             row.hidden = !open;
             $('gx-add-err').textContent = '';
-            if (open) { $('gx-add-name').value = ''; $('gx-add-group').value = ''; $('gx-add-url').value = ''; $('gx-add-name').focus(); }
+            if (open) { $('gx-add-name').value = ''; $('gx-add-url').value = ''; $('gx-add-name').focus(); }
         }
 
         async function addChannel() {
             const name = $('gx-add-name').value.trim(), url = $('gx-add-url').value.trim();
             if (!name || !url) { $('gx-add-err').textContent = 'Name and URL are required.'; return; }
             const { ok, data } = await J('/providers/' + browseProvider + '/channels', 'POST',
-                { name, url, group: $('gx-add-group').value.trim() });
+                { name, url, group: $('gx-add-group').value });
             if (!ok) { $('gx-add-err').textContent = data.message || 'Could not add channel.'; return; }
             toggleAddChannel(false);
             if (browseTable) browseTable.replaceData();

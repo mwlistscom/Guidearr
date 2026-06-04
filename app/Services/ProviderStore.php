@@ -194,6 +194,16 @@ class ProviderStore
         ];
     }
 
+    /** Groups with a live channel count, ordered for the right-hand pane / the Group dropdown. */
+    public function groups(): array
+    {
+        return $this->db->query(
+            'SELECT g.id, g.group_title, g.position_order,
+                    (SELECT COUNT(*) FROM channels c WHERE c.group_title = g.group_title) AS channels
+             FROM groups g ORDER BY g.position_order, g.group_title COLLATE NOCASE'
+        )->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     public function channels(int $limit, int $offset, ?string $search = null): array
     {
         $where = '';

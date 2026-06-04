@@ -289,6 +289,20 @@ class ProviderController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /** List a provider's groups (owner only) — powers the right pane and the Group dropdown. */
+    public function groups(Provider $provider)
+    {
+        $this->authorizeOwner($provider);
+
+        try {
+            $groups = ProviderStore::exists($provider->id) ? (new ProviderStore($provider->id))->groups() : [];
+            return response()->json(['groups' => $groups]);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['groups' => [], 'error' => $e->getMessage()]);
+        }
+    }
+
     /** Add a manual channel to a provider's store (owner only). Marked 'user' so refreshes keep it. */
     public function addChannel(Request $request, Provider $provider)
     {

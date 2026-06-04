@@ -29,6 +29,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('providers/{provider}/refresh', [\App\Http\Controllers\ProviderController::class, 'refresh'])->name('providers.refresh');
     Route::get('providers/{provider}/logs', [\App\Http\Controllers\ProviderController::class, 'logs'])->name('providers.logs');
     Route::get('providers/{provider}/channels', [\App\Http\Controllers\ProviderController::class, 'channels'])->name('providers.channels');
+    Route::get('providers/{provider}/groups', [\App\Http\Controllers\ProviderController::class, 'groups'])->name('providers.groups');
     Route::post('providers/{provider}/channels', [\App\Http\Controllers\ProviderController::class, 'addChannel'])->name('providers.channels.add');
     Route::patch('providers/{provider}/channels/{channel}', [\App\Http\Controllers\ProviderController::class, 'updateChannel'])->name('providers.channels.update');
     Route::delete('providers/{provider}/channels/{channel}', [\App\Http\Controllers\ProviderController::class, 'deleteChannel'])->name('providers.channels.delete');

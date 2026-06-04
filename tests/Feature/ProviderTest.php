@@ -398,6 +398,32 @@ class ProviderTest extends TestCase
         @unlink(\App\Services\ProviderStore::path($p->id));
     }
 
+    public function test_groups_endpoint_returns_counts_and_is_owner_scoped(): void
+    {
+        $owner = $this->user();
+        $other = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $owner->id, 'name' => 'G', 'type' => 'm3u', 'url' => 'http://h/g.m3u']);
+        @unlink(\App\Services\ProviderStore::path($p->id));
+
+        $s = new \App\Services\ProviderStore($p->id);
+        $s->begin();
+        $s->upsertChannel(['name' => 'A', 'url' => 'http://h/a.ts', 'group' => 'News'], 'v1');
+        $s->upsertChannel(['name' => 'B', 'url' => 'http://h/b.ts', 'group' => 'News'], 'v1');
+        $s->upsertChannel(['name' => 'C', 'url' => 'http://h/c.ts', 'group' => 'Sports'], 'v1');
+        $s->upsertGroup('News', 10, 'v1');
+        $s->upsertGroup('Sports', 20, 'v1');
+        $s->commit();
+
+        $body = $this->actingAs($owner)->getJson("/providers/{$p->id}/groups")->assertOk()->json();
+        $byTitle = collect($body['groups'])->keyBy('group_title');
+        $this->assertSame(2, (int) $byTitle['News']['channels']);
+        $this->assertSame(1, (int) $byTitle['Sports']['channels']);
+
+        $this->actingAs($other)->getJson("/providers/{$p->id}/groups")->assertForbidden();
+
+        @unlink(\App\Services\ProviderStore::path($p->id));
+    }
+
     public function test_validator_pure_logic(): void
     {
         $this->assertTrue(ProviderValidator::contentMatchesType("#EXTM3U\n#EXTINF:-1,Foo\nhttp://x", 'm3u'));
