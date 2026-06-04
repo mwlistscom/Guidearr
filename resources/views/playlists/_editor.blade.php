@@ -47,6 +47,18 @@
     .ple-split .tabulator-cell.tabulator-editing { box-shadow:inset 0 0 0 2px #f47521; padding:0 !important; }
     .ple-split .tabulator-cell.tabulator-editing input,
     .ple-split .tabulator-cell.tabulator-editing select { background:#0e0f13; color:#fff; border:none; height:100%; padding:.3rem .5rem; box-sizing:border-box; }
+    /* paginator footer — make page-size dropdown + nav visible on the dark theme */
+    .ple-split .tabulator-footer { background:#1c1d21; border-top:1px solid rgba(255,255,255,.10); color:#cdd2da; padding:.25rem .4rem; }
+    .ple-split .tabulator-footer .tabulator-paginator label { color:#9aa0aa; margin-right:.3rem; }
+    .ple-split .tabulator-footer .tabulator-page,
+    .ple-split .tabulator-footer select.tabulator-page-size {
+        background:#0e0f13 !important; color:#e6e7ea !important; border:1px solid rgba(255,255,255,.2);
+        border-radius:.35rem; padding:.12rem .4rem; margin:0 .1rem; font-size:.82rem; min-width:2.2rem;
+    }
+    .ple-split .tabulator-footer select.tabulator-page-size option { background:#1c1d21; color:#e6e7ea; }
+    .ple-split .tabulator-footer .tabulator-page:hover:not([disabled]) { border-color:#f47521; color:#fff !important; }
+    .ple-split .tabulator-footer .tabulator-page.active { background:#f47521 !important; color:#fff !important; border-color:#f47521; }
+    .ple-split .tabulator-footer .tabulator-page[disabled] { opacity:.4; }
     .ple-split .tabulator-row .tabulator-row-handle { color:#6b7280; }
     .ple-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-start;
         justify-content:center; padding-top:8vh; z-index:70; }
@@ -173,6 +185,7 @@ window.GXPLE = (function () {
         grTable = new Tabulator('#pl-groups', {
             layout: 'fitColumns', height: '56vh', data: rows, movableRows: true, placeholder: 'No groups.',
             editTriggerEvent: 'dblclick',   // single press = drag/move, double-click = edit
+            pagination: true, paginationSize: 25, paginationSizeSelector: [10, 25, 50, 100, 250], dataLoaderLoading: '',
             columns: [
                 { title: 'Group', field: 'group_title', widthGrow: 3, editor: 'input',
                   cellEdited: cell => J('/playlists/' + plId + '/groups/' + cell.getRow().getData().id, 'PATCH', { group_title: cell.getValue() }).then(() => { loadGroups(); reloadChannels(); }) },
@@ -194,7 +207,10 @@ window.GXPLE = (function () {
             groupFilter = (groupFilter === t) ? null : t; setChip(); reloadChannels();
         });
         grTable.on('rowMoved', (row) => {
-            J('/playlists/' + plId + '/groups/' + row.getData().id + '/move', 'POST', { row: row.getPosition(true) }).then(reloadChannels);
+            const page = grTable.getPage() || 1;
+            const size = grTable.getPageSize() || 25;
+            const globalRow = (page - 1) * size + row.getPosition(true);
+            J('/playlists/' + plId + '/groups/' + row.getData().id + '/move', 'POST', { row: globalRow }).then(reloadChannels);
         });
     }
 
@@ -228,7 +244,7 @@ window.GXPLE = (function () {
                   formatter: c => { const d = c.getRow().getData(); return (d.missing ? '<span style="color:#f87171" title="source channel missing">⚠ </span>' : '') + esc(c.getValue()); } },
                 { title: 'M3U URL', field: 'url', widthGrow: 2.4, editor: 'input', cellEdited: onEdit, tooltip: true },
                 { title: 'Group', field: 'group_title', widthGrow: 1.4,
-                  editor: 'list', editorParams: { values: () => plGroups, allowEmpty: false }, cellEdited: onEdit },
+                  editor: 'list', editorParams: () => ({ values: plGroups, allowEmpty: false }), cellEdited: onEdit },
                 ...(showDeleted ? [{ title: 'Deleted', field: 'deleted', width: 64, hozAlign: 'center', headerSort: false,
                   formatter: c => `<input type="checkbox" ${c.getValue() ? 'checked' : ''} style="pointer-events:none">` }] : []),
                 { title: '', field: '_a', width: 84, hozAlign: 'center', headerSort: false,
