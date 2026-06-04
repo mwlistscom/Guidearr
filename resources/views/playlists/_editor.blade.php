@@ -277,3 +277,4 @@ if (!window.__GXPLE_BOUND) {
     document.addEventListener('input', e => window.GXPLE && window.GXPLE.onInput(e));
 }
 console.log('GXPLE playlist-editor {{ config('guidearr.version') }} loaded');
+</script>
