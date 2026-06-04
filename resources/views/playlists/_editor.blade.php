@@ -129,6 +129,7 @@ window.GXPLE = (function () {
     }
 
     async function open(id, name) {
+        console.log('GXPLE.open', id, name);
         plId = id; groupFilter = null; showDeleted = false;
         const gb = document.getElementById('gx-browse-pane'); if (gb) gb.hidden = true; // hide provider browser
         $('ple-name').textContent = name || '';
@@ -136,9 +137,9 @@ window.GXPLE = (function () {
         $('ple-trash-toggle').classList.remove('on');
         setChip();
         $('pl-editor-pane').hidden = false;
-        await loadGroups();
-        buildChannels();
         $('pl-editor-pane').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        try { await loadGroups(); } catch (e) { console.error('GXPLE loadGroups failed', e); }
+        buildChannels();
     }
 
     async function loadGroups() {

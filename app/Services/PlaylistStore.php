@@ -140,6 +140,20 @@ class PlaylistStore
         });
         $this->commit();
 
+        // Provider data can reference group titles that aren't in its groups table.
+        // Ensure every channel's group exists so nothing is orphaned in the editor.
+        $missing = $this->db->query(
+            'SELECT DISTINCT c.group_title FROM playlist_channels c
+             LEFT JOIN playlist_groups g ON g.group_title = c.group_title
+             WHERE g.group_title IS NULL AND c.group_title IS NOT NULL'
+        )->fetchAll(PDO::FETCH_COLUMN);
+        if ($missing) {
+            $this->begin();
+            $o = $this->nextGroupOrder();
+            foreach ($missing as $t) { $gIns->execute([':t' => $t, ':o' => $o]); $o += self::STEP; $groupsAdded++; }
+            $this->commit();
+        }
+
         return ['groups_added' => $groupsAdded, 'channels_added' => $channelsAdded];
     }
 
@@ -220,8 +234,8 @@ class PlaylistStore
         $stmt = $this->db->prepare(
             "SELECT c.id, c.provider_id, c.channel_id, c.group_title, c.position_order, c.enabled, c.deleted,
                     c.name, c.url, c.tvg_id, c.tvg_logo, c.tvg_name
-             FROM playlist_channels c JOIN playlist_groups g ON g.group_title = c.group_title
-             $where ORDER BY g.position_order, c.position_order LIMIT :lim OFFSET :off"
+             FROM playlist_channels c LEFT JOIN playlist_groups g ON g.group_title = c.group_title
+             $where ORDER BY COALESCE(g.position_order, 1e12), c.position_order, c.id LIMIT :lim OFFSET :off"
         );
         foreach ($bind as $k => $v) { $stmt->bindValue($k, $v); }
         $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
@@ -243,8 +257,8 @@ class PlaylistStore
 
         $others = $this->db->prepare(
             'SELECT c.id, c.group_title gt, c.position_order po
-             FROM playlist_channels c JOIN playlist_groups g ON g.group_title = c.group_title
-             WHERE c.id != :id AND c.deleted = 0 ORDER BY g.position_order, c.position_order'
+             FROM playlist_channels c LEFT JOIN playlist_groups g ON g.group_title = c.group_title
+             WHERE c.id != :id AND c.deleted = 0 ORDER BY COALESCE(g.position_order, 1e12), c.position_order, c.id'
         );
         $others->execute([':id' => $id]);
         $rows = $others->fetchAll(PDO::FETCH_ASSOC);

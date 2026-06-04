@@ -60,6 +60,21 @@ class PlaylistEditorTest extends TestCase { use RefreshDatabase;
     $this->assertSame(4,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json('total')); // restored
   }
 
+  public function test_orphan_group_channels_still_listed(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]);
+    $p=Provider::create(["user_id"=>$u->id,"name"=>"Drift","type"=>"m3u","url"=>"http://h","enabled"=>true,"refresh_hour"=>2]);
+    $s=new ProviderStore($p->id); $s->begin();
+    $s->upsertChannel(["name"=>"In Group","url"=>"http://h/1.ts","group"=>"SPORTS"],"v1");
+    $s->upsertChannel(["name"=>"Orphan","url"=>"http://h/2.ts","group"=>"NEWS"],"v1");
+    $s->commit(); $s->begin(); $s->upsertGroup("SPORTS",$s->nextGroupOrder(),"v1"); $s->commit(); // NEWS intentionally missing
+    $pl=Playlist::create(["user_id"=>$u->id,"name"=>"PL"]); $pl->providers()->sync([$p->id]);
+    (new PlaylistStore($pl->id))->seedFromProvider($p->id, new ProviderStore($p->id));
+    $r=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->assertOk();
+    $this->assertSame(2,$r->json("total"));
+    $this->assertCount(2,$r->json("data")); // LEFT JOIN: orphan-group channel not dropped
+    $this->assertContains("NEWS", array_column((new PlaylistStore($pl->id))->groups(),"group_title")); // seed created the missing group
+  }
+
   public function test_manual_add_and_group_filter(): void {
     $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
     $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels",['name'=>'My Manual','url'=>'http://m/x.ts','group'=>'CANADA'])->assertOk();
