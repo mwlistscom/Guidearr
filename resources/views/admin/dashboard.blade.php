@@ -6,6 +6,7 @@
     <div class="stat"><span class="n">{{ $userCount }}</span><span class="l">Users</span></div>
     <div class="stat"><span class="n">{{ $pending }}</span><span class="l">Pending</span></div>
     <div class="stat"><span class="n">{{ $banned }}</span><span class="l">Banned</span></div>
+    <div class="stat"><span class="n">{{ config('guidearr.version') }}</span><span class="l">Version</span></div>
 </div>
 <div class="grid">
     <a class="tile" href="{{ route('admin.users') }}"><h3>Users</h3><p>Authorize, ban, or delete accounts.</p></a>

@@ -1,6 +1,6 @@
 # Guidearr
 
-**Guidearr** is a self‑hosted M3U / IPTV playlist editor — the same engine that runs the playlist tooling on **[mwlists.com](https://mwlists.com)**, packaged as a standalone, Dockerized application you can run on your own server.
+**Guidearr** is a self‑hosted M3U / IPTV playlist editor — the same engine that runs the playlist tooling on **[RockMyM3U.com](https://rockmym3u.com)**, packaged as a standalone, Dockerized application you can run on your own server.
 
 It gives you a clean web UI for importing, editing, reordering and exporting M3U playlists and EPG/TVG data, wrapped in a hardened Laravel application with a built‑in admin panel for user management, environment configuration and branding.
 
@@ -24,6 +24,7 @@ It gives you a clean web UI for importing, editing, reordering and exporting M3U
 - [Applying configuration changes](#applying-configuration-changes)
 - [Common maintenance commands](#common-maintenance-commands)
 - [Updating](#updating)
+- [Versioning](#versioning)
 - [Tests & CI](#tests--ci)
 - [Troubleshooting](#troubleshooting)
 - [Project layout](#project-layout)
@@ -90,9 +91,10 @@ No PHP, Composer or Node is required on the host — everything runs in containe
 git clone git@github.com:mwlistscom/Guidearr.git
 cd Guidearr
 
-# 2. Create your environment file
-cp .env.example .env
-#    -> then edit .env (see "Configuring .env for the first time" below)
+# 2. Generate your environment file (interactive — writes fresh secrets)
+chmod +x setup.sh
+./setup.sh
+#    prompts for hostname, admin email/password and admin path, then writes .env
 
 # 3. Provide TLS certs in ./certs (see "TLS certificates")
 mkdir -p certs
@@ -104,8 +106,7 @@ mkdir -p certs
 # 5. Build and start the stack
 docker compose up -d --build
 
-# 6. Initialise the application
-docker compose exec app php artisan key:generate
+# 6. Initialise the application (setup.sh already generated APP_KEY)
 docker compose exec app php artisan migrate --force
 docker compose exec app php artisan admin:sync   # creates the admin from ADMIN_EMAIL/ADMIN_PASSWORD
 ```
@@ -120,48 +121,18 @@ If your image doesn't install PHP dependencies or build front‑end assets at bu
 
 ## Configuring `.env` for the first time
 
-`cp .env.example .env` gives you Laravel's defaults. Before the first boot, set the keys below so the app can reach the database, send mail, and create your admin account. (The values shown are examples — `db`, `mailpit` etc. are the Docker **service names** the app talks to over the internal network.)
+Guidearr ships a generator (`setup.sh`) instead of a committed example file, so every install gets its own secrets. Run it once after cloning:
 
-```dotenv
-APP_NAME=Guidearr
-APP_ENV=production
-APP_DEBUG=false
-APP_URL=https://your-host:7979
-
-# --- Database (matches the db service in docker-compose.yml) ---
-DB_CONNECTION=mysql
-DB_HOST=db
-DB_PORT=3306
-DB_DATABASE=guidearr
-DB_USERNAME=guidearr
-DB_PASSWORD=change-this-strong-password
-
-# --- Bootstrap admin (used by `php artisan admin:sync`) ---
-ADMIN_EMAIL=admin@example.com
-ADMIN_PASSWORD=change-me-on-first-login
-# Hard-to-guess admin URL segment -> /<this>. Defaults to "admin".
-ADMIN_PATH=admin
-# Hold new sign-ups until an admin approves them
-REGISTRATION_REQUIRES_APPROVAL=false
-
-# --- Mail (example: an external SMTP relay) ---
-MAIL_MAILER=smtp
-MAIL_HOST=mail.example.com
-MAIL_PORT=465
-MAIL_SCHEME=smtps
-MAIL_USERNAME=admin@example.com
-MAIL_PASSWORD=your-smtp-password
-MAIL_FROM_ADDRESS=admin@example.com
-MAIL_FROM_NAME=Guidearr
-
-# --- Cloudflare Turnstile (leave blank to disable the CAPTCHA) ---
-TURNSTILE_SITE_KEY=
-TURNSTILE_SECRET_KEY=
+```bash
+./setup.sh            # interactive
+./setup.sh --force    # overwrite an existing .env (keeps a timestamped backup)
 ```
 
-After editing, generate the app key and run the initial setup (steps 5–6 of the Quick start). From then on you can edit most values from the browser — see [The admin panel → Environment](#the-admin-panel) — instead of touching the file by hand.
+It prompts for the hostname, HTTPS port, admin email, admin password (blank → generates a strong one) and admin URL path, then writes a complete `.env` — including a freshly generated `APP_KEY`, database credentials that match the `db` service, and Mailpit as the default mail catcher (UI on port `8025`). If it generates an admin password it prints it once, so note it down.
 
-> ⚠️ **Match the database credentials to your compose file.** `DB_DATABASE` / `DB_USERNAME` / `DB_PASSWORD` must match whatever the `db` service is initialised with in `docker-compose.yml`. If you change them after the volume already exists, recreate the DB volume or update the MySQL user — the app won't connect otherwise.
+From then on you can edit most values from the browser — see [The admin panel → Environment](#the-admin-panel) — instead of touching the file by hand.
+
+> ⚠️ **Database credentials are pinned to the compose file.** The `db` service initialises MySQL with `tunarr / tunarr / secret`, so `setup.sh` writes those into `.env`. To use different values, change them in **both** `docker-compose.yml` and `.env` *before* the database volume is first created (otherwise MySQL keeps the originals and the app can't connect).
 
 ---
 
@@ -325,6 +296,10 @@ docker compose exec app php artisan optimize:clear
 
 ---
 
+## Versioning
+
+The current version is shown on the admin **Status** page and is read from the `VERSION` file at the project root. Bump `VERSION` on every change — especially before pushing to GitHub — so the running build is always identifiable.
+
 ## Tests & CI
 
 The bundled PHPUnit suite (auth, settings) runs in GitHub Actions on push/PR across PHP 8.3 / 8.4 / 8.5. Turnstile is disabled in the `testing` environment so the suite runs without CAPTCHA tokens.
@@ -375,6 +350,8 @@ public/branding/                       # default icon + logo
 resources/views/admin/                 # admin panel views
 routes/admin.php                       # admin routes (prefixed by ADMIN_PATH)
 routes/web.php                         # public + app routes
+setup.sh                               # interactive .env generator
+VERSION                                # app version (bump on every change)
 ```
 
 ---
