@@ -142,7 +142,7 @@ if (!window.GXP) {
             if (!el || el.__built || !window.Tabulator) return;
             el.__built = true;
             table = new Tabulator(el, {
-                layout: 'fitColumns', maxHeight: '58vh', editTriggerEvent: 'dblclick',
+                layout: 'fitColumns', rowHeight: 30, maxHeight: '170px', editTriggerEvent: 'dblclick',
                 placeholder: 'No providers yet — use + to add one.',
                 ajaxURL: '{{ route('providers.data') }}',
                 columns: [
