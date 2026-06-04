@@ -439,7 +439,7 @@ if (!window.GXP) {
                     const t = row.getData().group_title;
                     if (browseGroupFilter === t) { browseGroupFilter = null; groupsTable.deselectRow(); }
                     else { browseGroupFilter = t; groupsTable.deselectRow(); row.select(); }
-                    if (browseTable) browseTable.replaceData();   // re-pull with the new group param
+                    reloadChannels();   // re-pull with the new group param
                 },
             });
         }
@@ -458,7 +458,13 @@ if (!window.GXP) {
             }
         }
 
-        async function reloadBrowse() { if (browseTable) browseTable.replaceData(); await refreshGroups(); }
+        // setData(url) forces a fresh ajax request that RE-EVALUATES ajaxParams (picking up the
+        // current search + group filter). replaceData() reuses the stale param snapshot, so don't use it here.
+        function reloadChannels() {
+            if (browseTable && browseProvider) browseTable.setData('/providers/' + browseProvider + '/channels');
+        }
+
+        async function reloadBrowse() { reloadChannels(); await refreshGroups(); }
         async function reloadGroups() { await refreshGroups(); }
 
         function toggleAddGroup(show) {
@@ -487,7 +493,7 @@ if (!window.GXP) {
         async function delChannel(cid) {
             if (!confirm('Delete this channel from the store?')) return;
             await J('/providers/' + browseProvider + '/channels/' + cid, 'DELETE');
-            if (browseTable) browseTable.replaceData();
+            reloadChannels();
         }
 
         function closeBrowse() {
@@ -513,14 +519,14 @@ if (!window.GXP) {
                 { name, url, group: $('gx-add-group').value });
             if (!ok) { $('gx-add-err').textContent = data.message || 'Could not add channel.'; return; }
             toggleAddChannel(false);
-            if (browseTable) browseTable.replaceData();
+            reloadChannels();
         }
 
         document.addEventListener('input', e => {
             if (!e.target) return;
             if (e.target.id === 'gx-browse-search' && browseTable) {
                 clearTimeout(searchTimer);
-                searchTimer = setTimeout(() => browseTable.replaceData(), 300);
+                searchTimer = setTimeout(reloadChannels, 300);
             } else if (e.target.id === 'gx-group-search' && groupsTable) {
                 const v = e.target.value.trim();
                 if (v) groupsTable.setFilter('group_title', 'like', v);
