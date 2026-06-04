@@ -19,6 +19,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('providers', [\App\Http\Controllers\ProviderController::class, 'index'])->name('providers.index');
     Route::get('providers/data', [\App\Http\Controllers\ProviderController::class, 'data'])->name('providers.data');
+
+    Route::get('playlists', [\App\Http\Controllers\PlaylistController::class, 'index'])->name('playlists.index');
+    Route::get('playlists/data', [\App\Http\Controllers\PlaylistController::class, 'data'])->name('playlists.data');
+    Route::get('playlists/options', [\App\Http\Controllers\PlaylistController::class, 'options'])->name('playlists.options');
+    Route::post('playlists', [\App\Http\Controllers\PlaylistController::class, 'store'])->name('playlists.store');
+    Route::delete('playlists/{playlist}', [\App\Http\Controllers\PlaylistController::class, 'destroy'])->name('playlists.destroy');
     Route::get('providers/feed/{msgid}', [\App\Http\Controllers\ProviderController::class, 'feed'])->name('providers.feed');
     Route::post('providers', [\App\Http\Controllers\ProviderController::class, 'store'])->name('providers.store');
     Route::get('providers/{provider}', [\App\Http\Controllers\ProviderController::class, 'show'])->name('providers.show');

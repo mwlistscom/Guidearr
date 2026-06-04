@@ -13,6 +13,12 @@
                 <flux:navbar.item icon="layout-grid" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                     {{ __('Dashboard') }}
                 </flux:navbar.item>
+                <flux:navbar.item icon="server" :href="route('providers.index')" :current="request()->routeIs('providers.*')" wire:navigate>
+                    {{ __('Providers') }}
+                </flux:navbar.item>
+                <flux:navbar.item icon="list-bullet" :href="route('playlists.index')" :current="request()->routeIs('playlists.*')" wire:navigate>
+                    {{ __('Playlists') }}
+                </flux:navbar.item>
             </flux:navbar>
 
             <flux:spacer />

@@ -161,6 +161,47 @@ class ProviderStore
         ];
     }
 
+    /** Stream every channel (id + group + minimal data) ordered by group then id — used to seed playlists. */
+    public function streamForSeed(callable $cb): void
+    {
+        $stmt = $this->db->query('SELECT id, group_title, name, url, tvg_id, tvg_logo, tvg_name FROM channels ORDER BY group_title, id');
+        while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $cb($r);
+        }
+    }
+
+    /** Of the given channel ids, return those that still exist in this store (for playlist reconcile). */
+    public function existingIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if (! $ids) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT id FROM channels WHERE id IN ($in)");
+        $stmt->execute($ids);
+
+        return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /** Fetch display data for a set of channel ids (id => row) — used to hydrate a playlist page. */
+    public function channelsByIds(array $ids): array
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if (! $ids) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT id,tvg_id,tvg_name,tvg_logo,group_title,name,url,type FROM channels WHERE id IN ($in)");
+        $stmt->execute($ids);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $out[(int) $r['id']] = $r;
+        }
+
+        return $out;
+    }
+
     public static function exists(int $providerId): bool
     {
         return is_file(self::path($providerId));
