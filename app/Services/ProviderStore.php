@@ -118,4 +118,66 @@ class ProviderStore
             'groups'   => (int) $this->db->query('SELECT COUNT(*) FROM groups')->fetchColumn(),
         ];
     }
+
+    public static function exists(int $providerId): bool
+    {
+        return is_file(self::path($providerId));
+    }
+
+    /** Channel-count without creating the file (for admin listings). */
+    public static function channelCountFor(int $providerId): int
+    {
+        return self::exists($providerId) ? (new self($providerId))->counts()['channels'] : 0;
+    }
+
+    private const EDITABLE = ['name', 'tvg_id', 'tvg_name', 'tvg_logo', 'group_title', 'type', 'url'];
+
+    public function channels(int $limit, int $offset, ?string $search = null): array
+    {
+        $where = '';
+        $bind  = [];
+        if ($search !== null && $search !== '') {
+            $where = 'WHERE name LIKE :s OR group_title LIKE :s OR tvg_name LIKE :s';
+            $bind[':s'] = '%' . $search . '%';
+        }
+        $stmt = $this->db->prepare(
+            "SELECT id,tvg_id,tvg_name,tvg_logo,group_title,name,url,type
+             FROM channels {$where} ORDER BY id LIMIT :lim OFFSET :off"
+        );
+        foreach ($bind as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function channelCount(?string $search = null): int
+    {
+        if ($search !== null && $search !== '') {
+            $stmt = $this->db->prepare('SELECT COUNT(*) FROM channels WHERE name LIKE :s OR group_title LIKE :s OR tvg_name LIKE :s');
+            $stmt->execute([':s' => '%' . $search . '%']);
+            return (int) $stmt->fetchColumn();
+        }
+        return (int) $this->db->query('SELECT COUNT(*) FROM channels')->fetchColumn();
+    }
+
+    /** Edit one allow-listed field of one channel. Returns false if the field is not editable. */
+    public function updateChannel(int $id, string $field, $value): bool
+    {
+        if (! in_array($field, self::EDITABLE, true)) {
+            return false;
+        }
+        $stmt = $this->db->prepare("UPDATE channels SET {$field} = :v WHERE id = :id");
+        $stmt->execute([':v' => $value, ':id' => $id]);
+
+        return true;
+    }
+
+    public function deleteChannel(int $id): void
+    {
+        $this->db->prepare('DELETE FROM channels WHERE id = :id')->execute([':id' => $id]);
+    }
 }

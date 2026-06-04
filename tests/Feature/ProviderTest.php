@@ -276,6 +276,46 @@ class ProviderTest extends TestCase
         $this->assertSame(1, $fresh->error);
     }
 
+    public function test_channel_browse_edit_delete_is_owner_scoped(): void
+    {
+        $owner = $this->user();
+        $other = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $owner->id, 'name' => 'X', 'type' => 'm3u', 'url' => 'http://h/x.m3u']);
+
+        // seed the per-provider store directly
+        @unlink(\App\Services\ProviderStore::path($p->id));
+        $store = new \App\Services\ProviderStore($p->id);
+        $store->begin();
+        $store->upsertChannel(['name' => 'Ch A', 'url' => 'http://h/a.ts', 'group' => 'News'], 'v1');
+        $store->upsertChannel(['name' => 'Ch B', 'url' => 'http://h/b.ts', 'group' => 'News'], 'v1');
+        $store->commit();
+        $rows = $store->channels(10, 0);
+        $cid  = $rows[0]['id'];
+
+        // owner can browse (Tabulator shape), no user_id field present
+        $body = $this->actingAs($owner)->getJson("/providers/{$p->id}/channels?page=1&size=50")->assertOk()->json();
+        $this->assertSame(2, $body['total']);
+        $this->assertArrayNotHasKey('user_id', $body['data'][0]);
+
+        // owner can inline-edit an allowed field
+        $this->actingAs($owner)->patchJson("/providers/{$p->id}/channels/{$cid}", ['field' => 'name', 'value' => 'Renamed'])
+            ->assertOk()->assertJson(['ok' => true]);
+        // disallowed field rejected
+        $this->actingAs($owner)->patchJson("/providers/{$p->id}/channels/{$cid}", ['field' => 'id', 'value' => '9'])
+            ->assertStatus(422);
+
+        // not the owner -> 403 on browse, edit, delete
+        $this->actingAs($other)->getJson("/providers/{$p->id}/channels")->assertForbidden();
+        $this->actingAs($other)->patchJson("/providers/{$p->id}/channels/{$cid}", ['field' => 'name', 'value' => 'Hax'])->assertForbidden();
+        $this->actingAs($other)->deleteJson("/providers/{$p->id}/channels/{$cid}")->assertForbidden();
+
+        // owner deletes
+        $this->actingAs($owner)->deleteJson("/providers/{$p->id}/channels/{$cid}")->assertOk();
+        $this->assertSame(1, (new \App\Services\ProviderStore($p->id))->channelCount());
+
+        @unlink(\App\Services\ProviderStore::path($p->id));
+    }
+
     public function test_validator_pure_logic(): void
     {
         $this->assertTrue(ProviderValidator::contentMatchesType("#EXTM3U\n#EXTINF:-1,Foo\nhttp://x", 'm3u'));

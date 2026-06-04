@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AdminAuthController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminPasswordController;
 use App\Http\Controllers\Admin\EnvController;
+use App\Http\Controllers\Admin\FeedBrowseController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\BrandingController;
 use Illuminate\Support\Facades\Route;
@@ -28,8 +29,14 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::patch('users/{user}/verify', [UserController::class, 'verify'])->name('users.verify');
             Route::delete('users/{user}', [UserController::class, 'destroy'])->name('users.destroy');
 
-            Route::get('environment', [EnvController::class, 'edit'])->name('environment');
-            Route::put('environment', [EnvController::class, 'update'])->name('environment.update');
+            Route::get('feeds', [FeedBrowseController::class, 'users'])->name('feeds');
+            Route::get('feeds/user/{user}', [FeedBrowseController::class, 'providers'])->name('feeds.user');
+            Route::get('feeds/provider/{provider}', [FeedBrowseController::class, 'channels'])->name('feeds.provider');
+            Route::get('feeds/provider/{provider}/data', [FeedBrowseController::class, 'channelsData'])->name('feeds.provider.data');
+            Route::patch('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'updateChannel'])->name('feeds.channel.update');
+            Route::delete('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'deleteChannel'])->name('feeds.channel.delete');
+
+            Route::get('environment', [EnvController::class, 'edit'])->name('environment');            Route::put('environment', [EnvController::class, 'update'])->name('environment.update');
 
             Route::get('branding', [BrandingController::class, 'edit'])->name('branding');
             Route::put('branding/copyright', [BrandingController::class, 'updateCopyright'])->name('branding.copyright');

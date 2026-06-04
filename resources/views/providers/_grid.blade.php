@@ -36,6 +36,17 @@
     .gx-overlay.show { display:flex; }
     .gx-modal { background:#1b1c20; border:1px solid rgba(255,255,255,.14); border-radius:.8rem; width:100%;
         max-width:30rem; padding:1.3rem 1.4rem; color:#e6e7ea; }
+    .gx-modal.wide { max-width:70rem; }
+    .gx-modal .tabulator { background:#16171a; border:1px solid rgba(255,255,255,.10); font-size:.8rem; }
+    .gx-modal .tabulator .tabulator-header { background:#1c1d21; font-size:.78rem; }
+    .gx-modal .tabulator-row .tabulator-cell { padding:3px 8px; }
+    .gx-browse-head { display:flex; align-items:center; gap:.6rem; margin-bottom:.8rem; flex-wrap:wrap; }
+    .gx-browse-head input { flex:1; min-width:12rem; background:#0e0f13; border:1px solid rgba(255,255,255,.16);
+        color:#e6e7ea; border-radius:.5rem; padding:.4rem .6rem; font-size:.85rem; }
+    .gx-count { font-size:.78rem; color:#9aa; }
+    .gx-act-del { background:transparent; border:none; color:#aab; cursor:pointer; padding:.2rem; border-radius:.35rem; line-height:0; }
+    .gx-act-del:hover { color:#f87171; background:rgba(248,113,113,.12); }
+    .gx-act-del svg { width:15px; height:15px; }
     .gx-modal h2 { font-size:1.1rem; font-weight:800; margin-bottom:1rem; }
     .gx-field { margin-bottom:.8rem; }
     .gx-field label { display:block; font-size:.8rem; color:#aab; margin-bottom:.25rem; }
@@ -104,6 +115,19 @@
     </div>
 </div>
 
+{{-- Channel browser overlay --}}
+<div class="gx-overlay" id="gx-browse-overlay">
+    <div class="gx-modal wide">
+        <div class="gx-browse-head">
+            <h2 style="font-size:1.1rem;font-weight:800;margin:0">Channels — <span id="gx-browse-name"></span></h2>
+            <input id="gx-browse-search" placeholder="Filter name / group / tvg-name…">
+            <span class="gx-count" id="gx-browse-count"></span>
+        </div>
+        <div id="provider-channels"></div>
+        <div class="gx-modal-actions"><button class="gx-btn secondary" onclick="GXP.closeBrowse()">Close</button></div>
+    </div>
+</div>
+
 {{-- Log overlay --}}
 <div class="gx-overlay" id="gx-log-overlay">
     <div class="gx-modal">
@@ -132,6 +156,7 @@ if (!window.GXP) {
         const ICONS = {
             refresh: icon('<path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>'),
             log:     icon('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8"/>'),
+            browse:  icon('<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/>'),
             edit:    icon('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
             del:     icon('<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'),
         };
@@ -157,16 +182,18 @@ if (!window.GXP) {
                     { title: 'Last Refresh', field: 'last_refresh_at', width: 170,
                       formatter: c => { const d = c.getRow().getData();
                         return `<span class="${sClass(d.last_status)}">${d.last_refresh_at ?? '—'}</span>`; } },
-                    { title: 'Actions', field: '_act', width: 120, hozAlign: 'center', headerSort: false,
+                    { title: 'Actions', field: '_act', width: 150, hozAlign: 'center', headerSort: false,
                       formatter: () => `<span class="gx-act">
                             <button data-a="refresh" title="Refresh">${ICONS.refresh}</button>
+                            <button data-a="browse" title="Browse channels">${ICONS.browse}</button>
                             <button data-a="log" title="Log">${ICONS.log}</button>
                             <button data-a="edit" title="Edit">${ICONS.edit}</button>
                             <button data-a="del" class="danger" title="Delete">${ICONS.del}</button></span>`,
                       cellClick: (e, c) => {
                             const a = e.target.closest('button')?.dataset.a; if (!a) return;
                             const d = c.getRow().getData();
-                            ({ refresh: () => GXP.refresh(d.id, d.name), log: () => GXP.openLog(d.id, d.name),
+                            ({ refresh: () => GXP.refresh(d.id, d.name), browse: () => GXP.openBrowse(d.id, d.name),
+                               log: () => GXP.openLog(d.id, d.name),
                                edit: () => GXP.openEdit(d.id), del: () => GXP.del(d.id, d.name) }[a])();
                       } },
                 ],
@@ -310,10 +337,68 @@ if (!window.GXP) {
         }
         const closeLog = () => { stopFeed(); $('gx-log-overlay').classList.remove('show'); };
 
+        // ----- channel browser (remote-paginated grid over the provider's SQLite store) -----
+        let browseTable = null, browseProvider = null, searchTimer = null;
+
+        function openBrowse(id, name) {
+            browseProvider = id;
+            $('gx-browse-name').textContent = name || '';
+            $('gx-browse-search').value = '';
+            $('gx-browse-count').textContent = '';
+            $('gx-browse-overlay').classList.add('show');
+            if (browseTable) { browseTable.destroy(); browseTable = null; }
+            browseTable = new Tabulator('#provider-channels', {
+                layout: 'fitColumns', height: '52vh', editTriggerEvent: 'dblclick',
+                placeholder: 'No channels — process this provider first.',
+                pagination: true, paginationMode: 'remote', paginationSize: 50,
+                ajaxURL: '/providers/' + id + '/channels',
+                ajaxParams: () => ({ search: $('gx-browse-search').value || '' }),
+                ajaxResponse: (url, params, response) => {
+                    $('gx-browse-count').textContent = (response.total ?? 0) + ' channels';
+                    return response;
+                },
+                columns: [
+                    { title: 'Name', field: 'name', widthGrow: 2, editor: 'input', cellEdited: c => GXP.saveChannel(c) },
+                    { title: 'tvg-name', field: 'tvg_name', widthGrow: 2, editor: 'input', cellEdited: c => GXP.saveChannel(c) },
+                    { title: 'Group', field: 'group_title', widthGrow: 1, editor: 'input', cellEdited: c => GXP.saveChannel(c) },
+                    { title: 'Type', field: 'type', width: 80, editor: 'list', editorParams: { values: ['Live', 'VOD', 'user'] }, cellEdited: c => GXP.saveChannel(c) },
+                    { title: 'URL', field: 'url', widthGrow: 3, editor: 'input', cellEdited: c => GXP.saveChannel(c),
+                      formatter: c => `<span style="color:#8ab4f8">${c.getValue() ?? ''}</span>` },
+                    { title: '', field: '_d', width: 50, hozAlign: 'center', headerSort: false,
+                      formatter: () => `<button class="gx-act-del" title="Delete">${ICONS.del}</button>`,
+                      cellClick: (e, c) => { if (e.target.closest('button')) GXP.delChannel(c.getRow().getData().id); } },
+                ],
+            });
+        }
+
+        async function saveChannel(cell) {
+            const { ok, data } = await J('/providers/' + browseProvider + '/channels/' + cell.getRow().getData().id, 'PATCH',
+                { field: cell.getField(), value: cell.getValue() });
+            if (!ok) { cell.restoreOldValue(); alert(data.message || 'Could not save that change.'); }
+        }
+
+        async function delChannel(cid) {
+            if (!confirm('Delete this channel from the store?')) return;
+            await J('/providers/' + browseProvider + '/channels/' + cid, 'DELETE');
+            if (browseTable) browseTable.replaceData();
+        }
+
+        function closeBrowse() {
+            $('gx-browse-overlay').classList.remove('show');
+            if (browseTable) { browseTable.destroy(); browseTable = null; }
+        }
+
+        document.addEventListener('input', e => {
+            if (e.target && e.target.id === 'gx-browse-search' && browseTable) {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(() => browseTable.setPage(1), 300);
+            }
+        });
+
         document.addEventListener('livewire:navigated', init);
         document.addEventListener('DOMContentLoaded', init);
 
-        return { init, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog };
+        return { init, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel };
     })();
 }
 // run now in case the listeners' events already fired before this script parsed

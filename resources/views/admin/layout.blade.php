@@ -35,6 +35,7 @@
         .sidebar nav svg { width:18px; height:18px; flex-shrink:0; stroke-linecap:round; stroke-linejoin:round; }
         .sidebar .spacer { flex:1; }
         .sidebar .foot { padding:1rem 1.25rem; border-top:1px solid var(--border); }
+        .sidebar .foot .ver { font-size:.72rem; color:var(--muted); margin-bottom:.5rem; letter-spacing:.02em; }
         .sidebar .foot .who { font-size:.78rem; color:var(--muted); margin-bottom:.6rem; word-break:break-all; }
         .sidebar .foot button { width:100%; }
 
@@ -120,6 +121,10 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                     Users
                 </a>
+                <a href="{{ route('admin.feeds') }}" class="{{ request()->routeIs('admin.feeds') || request()->routeIs('admin.feeds.*') ? 'active' : '' }}">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></svg>
+                    Feeds
+                </a>
                 <a href="{{ route('admin.environment') }}" class="{{ request()->routeIs('admin.environment') ? 'active' : '' }}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
                     Environment
@@ -131,6 +136,7 @@
             </nav>
             <div class="spacer"></div>
             <div class="foot">
+                <div class="ver">{{ config('app.name','Guidearr') }} v{{ config('guidearr.version') }}</div>
                 <div class="who">{{ auth()->user()->email }}</div>
                 <form method="POST" action="{{ route('admin.logout') }}">@csrf<button class="ghost">Log out</button></form>
             </div>
