@@ -153,8 +153,8 @@
 </div>
 
 <script>
-if (!window.GXP) {
-    window.GXP = (function () {
+// (Re)install on every load so deploys apply even across SPA (wire:navigate) sessions.
+window.GXP = (function () {
         const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || '';
         const J = async (url, method = 'GET', body = null) => {
             const r = await fetch(url, {
@@ -458,10 +458,16 @@ if (!window.GXP) {
             }
         }
 
-        // setData(url) forces a fresh ajax request that RE-EVALUATES ajaxParams (picking up the
-        // current search + group filter). replaceData() reuses the stale param snapshot, so don't use it here.
+        // Build the filter into the URL itself so the group/search params can't be lost to
+        // Tabulator's ajaxParams-snapshot behaviour. ajaxParams still carries them for page nav.
         function reloadChannels() {
-            if (browseTable && browseProvider) browseTable.setData('/providers/' + browseProvider + '/channels');
+            if (! browseTable || ! browseProvider) return;
+            const q = new URLSearchParams();
+            const s = ($('gx-browse-search').value || '').trim();
+            if (s) q.set('search', s);
+            if (browseGroupFilter) q.set('group', browseGroupFilter);
+            const qs = q.toString();
+            browseTable.setData('/providers/' + browseProvider + '/channels' + (qs ? '?' + qs : ''));
         }
 
         async function reloadBrowse() { reloadChannels(); await refreshGroups(); }
@@ -522,7 +528,7 @@ if (!window.GXP) {
             reloadChannels();
         }
 
-        document.addEventListener('input', e => {
+        function onInput(e) {
             if (!e.target) return;
             if (e.target.id === 'gx-browse-search' && browseTable) {
                 clearTimeout(searchTimer);
@@ -532,14 +538,17 @@ if (!window.GXP) {
                 if (v) groupsTable.setFilter('group_title', 'like', v);
                 else groupsTable.clearFilter();
             }
-        });
+        }
 
-        document.addEventListener('livewire:navigated', init);
-        document.addEventListener('DOMContentLoaded', init);
-
-        return { init, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse, reloadGroups, toggleAddGroup, addGroup };
+        return { init, onInput, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse, reloadGroups, toggleAddGroup, addGroup };
     })();
-}
-// run now in case the listeners' events already fired before this script parsed
-if (window.GXP) window.GXP.init();
+
+    // Bind document-level listeners once; they call through window.GXP so the latest code always runs.
+    if (!window.__GXP_BOUND) {
+        window.__GXP_BOUND = true;
+        document.addEventListener('input', e => window.GXP && window.GXP.onInput(e));
+        document.addEventListener('livewire:navigated', () => window.GXP && window.GXP.init());
+        document.addEventListener('DOMContentLoaded', () => window.GXP && window.GXP.init());
+    }
+    window.GXP.init();
 </script>
