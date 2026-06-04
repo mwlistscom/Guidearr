@@ -44,6 +44,12 @@
     .gx-browse-head input { flex:1; min-width:12rem; background:#0e0f13; border:1px solid rgba(255,255,255,.16);
         color:#e6e7ea; border-radius:.5rem; padding:.4rem .6rem; font-size:.85rem; }
     .gx-count { font-size:.78rem; color:#9aa; }
+    .gx-addrow { display:flex; gap:.5rem; align-items:center; margin-bottom:.7rem; flex-wrap:wrap; }
+    .gx-addrow input { background:#0e0f13; border:1px solid rgba(255,255,255,.16); color:#e6e7ea;
+        border-radius:.5rem; padding:.4rem .6rem; font-size:.85rem; }
+    .gx-addrow #gx-add-name { flex:2; min-width:9rem; } .gx-addrow #gx-add-group { flex:1; min-width:7rem; }
+    .gx-addrow #gx-add-url { flex:3; min-width:12rem; }
+    .gx-add-err { color:#f87171; font-size:.8rem; }
     .gx-act-del { background:transparent; border:none; color:#aab; cursor:pointer; padding:.2rem; border-radius:.35rem; line-height:0; }
     .gx-act-del:hover { color:#f87171; background:rgba(248,113,113,.12); }
     .gx-act-del svg { width:15px; height:15px; }
@@ -122,6 +128,15 @@
             <h2 style="font-size:1.1rem;font-weight:800;margin:0">Channels — <span id="gx-browse-name"></span></h2>
             <input id="gx-browse-search" placeholder="Filter name / group / tvg-name…">
             <span class="gx-count" id="gx-browse-count"></span>
+            <button class="gx-btn" type="button" onclick="GXP.toggleAddChannel()">+ Add channel</button>
+        </div>
+        <div class="gx-addrow" id="gx-addrow" hidden>
+            <input id="gx-add-name" placeholder="Name *">
+            <input id="gx-add-group" placeholder="Group (default [Dummy])">
+            <input id="gx-add-url" placeholder="Stream URL *">
+            <button class="gx-btn accent" type="button" onclick="GXP.addChannel()">Add</button>
+            <button class="gx-btn secondary" type="button" onclick="GXP.toggleAddChannel(false)">Cancel</button>
+            <span class="gx-add-err" id="gx-add-err"></span>
         </div>
         <div id="provider-channels"></div>
         <div class="gx-modal-actions"><button class="gx-btn secondary" onclick="GXP.closeBrowse()">Close</button></div>
@@ -345,6 +360,7 @@ if (!window.GXP) {
             $('gx-browse-name').textContent = name || '';
             $('gx-browse-search').value = '';
             $('gx-browse-count').textContent = '';
+            $('gx-addrow').hidden = true;
             $('gx-browse-overlay').classList.add('show');
             if (browseTable) { browseTable.destroy(); browseTable = null; }
             browseTable = new Tabulator('#provider-channels', {
@@ -392,6 +408,24 @@ if (!window.GXP) {
             if (browseTable) { browseTable.destroy(); browseTable = null; }
         }
 
+        function toggleAddChannel(show) {
+            const row = $('gx-addrow');
+            const open = (show === undefined) ? row.hidden : show;
+            row.hidden = !open;
+            $('gx-add-err').textContent = '';
+            if (open) { $('gx-add-name').value = ''; $('gx-add-group').value = ''; $('gx-add-url').value = ''; $('gx-add-name').focus(); }
+        }
+
+        async function addChannel() {
+            const name = $('gx-add-name').value.trim(), url = $('gx-add-url').value.trim();
+            if (!name || !url) { $('gx-add-err').textContent = 'Name and URL are required.'; return; }
+            const { ok, data } = await J('/providers/' + browseProvider + '/channels', 'POST',
+                { name, url, group: $('gx-add-group').value.trim() });
+            if (!ok) { $('gx-add-err').textContent = data.message || 'Could not add channel.'; return; }
+            toggleAddChannel(false);
+            if (browseTable) browseTable.replaceData();
+        }
+
         document.addEventListener('input', e => {
             if (e.target && e.target.id === 'gx-browse-search' && browseTable) {
                 clearTimeout(searchTimer);
@@ -402,7 +436,7 @@ if (!window.GXP) {
         document.addEventListener('livewire:navigated', init);
         document.addEventListener('DOMContentLoaded', init);
 
-        return { init, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel };
+        return { init, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel };
     })();
 }
 // run now in case the listeners' events already fired before this script parsed

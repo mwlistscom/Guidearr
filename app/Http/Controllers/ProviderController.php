@@ -289,6 +289,35 @@ class ProviderController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /** Add a manual channel to a provider's store (owner only). Marked 'user' so refreshes keep it. */
+    public function addChannel(Request $request, Provider $provider)
+    {
+        $this->authorizeOwner($provider);
+
+        $v = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'name'  => 'required|string|max:300',
+            'url'   => 'required|string|max:2000',
+            'group' => 'nullable|string|max:300',
+        ]);
+        if ($v->fails()) {
+            return response()->json(['message' => $v->errors()->first()], 422);
+        }
+
+        try {
+            $data = $v->validated();
+            $id   = (new ProviderStore($provider->id))->addChannel([
+                'name'  => $data['name'],
+                'url'   => $data['url'],
+                'group' => $data['group'] ?? '[Dummy]',
+            ]);
+
+            return response()->json(['ok' => true, 'id' => $id]);
+        } catch (\Throwable $e) {
+            report($e);
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
     private function makeValidator(Request $request): \Illuminate\Validation\Validator
     {
         $manual = $request->input('type') === 'manual';

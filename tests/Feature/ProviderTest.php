@@ -316,6 +316,88 @@ class ProviderTest extends TestCase
         @unlink(\App\Services\ProviderStore::path($p->id));
     }
 
+    public function test_store_tracks_adds_and_updates_name_logo_in_place(): void
+    {
+        $pid = 99001;
+        @unlink(\App\Services\ProviderStore::path($pid));
+
+        // run 1: two channels
+        $s1 = new \App\Services\ProviderStore($pid);
+        $s1->begin();
+        $s1->upsertChannel(['name' => 'CTV', 'url' => 'http://h/ctv.ts', 'group' => 'CA', 'tvg_logo' => 'old.png'], 'v1');
+        $s1->upsertChannel(['name' => 'CBC', 'url' => 'http://h/cbc.ts', 'group' => 'CA'], 'v1');
+        $s1->commit();
+        $s1->sweep('v1');
+        $this->assertSame(2, $s1->addedCount());
+
+        // run 2: CTV renamed + new logo (same url), CBC unchanged, one brand-new channel
+        $s2 = new \App\Services\ProviderStore($pid);
+        $s2->begin();
+        $s2->upsertChannel(['name' => 'CTV HD', 'url' => 'http://h/ctv.ts', 'group' => 'CA', 'tvg_logo' => 'new.png'], 'v2');
+        $s2->upsertChannel(['name' => 'CBC', 'url' => 'http://h/cbc.ts', 'group' => 'CA'], 'v2');
+        $s2->upsertChannel(['name' => 'TSN', 'url' => 'http://h/tsn.ts', 'group' => 'CA'], 'v2');
+        $s2->commit();
+        $removed = $s2->sweep('v2');
+
+        $this->assertSame(1, $s2->addedCount(), 'only TSN is new');
+        $this->assertSame(0, $removed);
+        $this->assertSame(3, $s2->channelCount());
+        // CTV updated in place — still one row, new name + logo, no duplicate
+        $ctv = collect($s2->channels(50, 0))->firstWhere('url', 'http://h/ctv.ts');
+        $this->assertSame('CTV HD', $ctv['name']);
+        $this->assertSame('new.png', $ctv['tvg_logo']);
+
+        @unlink(\App\Services\ProviderStore::path($pid));
+    }
+
+    public function test_manual_channel_survives_refresh_sweep(): void
+    {
+        $pid = 99002;
+        @unlink(\App\Services\ProviderStore::path($pid));
+
+        $s = new \App\Services\ProviderStore($pid);
+        $s->begin();
+        $s->upsertChannel(['name' => 'Src', 'url' => 'http://h/src.ts', 'group' => 'G'], 'v1');
+        $s->commit();
+        $manualId = $s->addChannel(['name' => 'My Channel', 'url' => 'http://h/manual.ts', 'group' => 'Mine']);
+        $this->assertGreaterThan(0, $manualId);
+        $this->assertSame(2, $s->channelCount());
+
+        // four refreshes that DON'T include either url -> source row eventually swept, manual stays
+        for ($i = 2; $i <= 6; $i++) {
+            $r = new \App\Services\ProviderStore($pid);
+            $r->begin();
+            $r->upsertChannel(['name' => 'Other', 'url' => 'http://h/other.ts', 'group' => 'G'], "v{$i}");
+            $r->commit();
+            $r->sweep("v{$i}");
+        }
+        $final = new \App\Services\ProviderStore($pid);
+        $urls  = array_column($final->channels(50, 0), 'url');
+        $this->assertContains('http://h/manual.ts', $urls, 'manual entry must survive sweeps');
+        $this->assertNotContains('http://h/src.ts', $urls, 'unseen source channel should be swept');
+
+        @unlink(\App\Services\ProviderStore::path($pid));
+    }
+
+    public function test_add_channel_endpoint_is_owner_scoped(): void
+    {
+        $owner = $this->user();
+        $other = $this->user();
+        $p = \App\Models\Provider::create(['user_id' => $owner->id, 'name' => 'P', 'type' => 'm3u', 'url' => 'http://h/p.m3u']);
+        @unlink(\App\Services\ProviderStore::path($p->id));
+
+        $this->actingAs($other)->postJson("/providers/{$p->id}/channels", ['name' => 'X', 'url' => 'http://h/x.ts'])->assertForbidden();
+        $this->actingAs($owner)->postJson("/providers/{$p->id}/channels", ['name' => ''])->assertStatus(422);
+        $this->actingAs($owner)->postJson("/providers/{$p->id}/channels", ['name' => 'My Ch', 'url' => 'http://h/my.ts'])
+            ->assertOk()->assertJson(['ok' => true]);
+
+        $rows = (new \App\Services\ProviderStore($p->id))->channels(10, 0);
+        $this->assertSame('My Ch', $rows[0]['name']);
+        $this->assertSame('user', $rows[0]['type']);
+
+        @unlink(\App\Services\ProviderStore::path($p->id));
+    }
+
     public function test_validator_pure_logic(): void
     {
         $this->assertTrue(ProviderValidator::contentMatchesType("#EXTM3U\n#EXTINF:-1,Foo\nhttp://x", 'm3u'));

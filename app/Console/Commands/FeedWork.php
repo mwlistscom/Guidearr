@@ -133,10 +133,11 @@ class FeedWork extends Command
         $store->upsertGroup('[Dummy]', $order, $version);
         $store->commit();
 
-        $store->sweep($version);
-        $counts = $store->counts();
+        $removed = $store->sweep($version);
+        $added   = $store->addedCount();
+        $counts  = $store->counts();
 
-        $job->log('info', "Parsed {$result['count']} channels; store now holds {$counts['channels']} channels in {$counts['groups']} groups.");
+        $job->log('info', "Parsed {$result['count']} channels (added {$added}, removed {$removed}); store now holds {$counts['channels']} channels in {$counts['groups']} groups.");
         $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
         $job->markDone();
         $job->log('info', 'Done.');

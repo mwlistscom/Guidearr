@@ -7,12 +7,31 @@ use PDO;
 /**
  * Per-provider SQLite store for ingested channels/groups.
  * One file per provider at storage/app/feeds/provider_{id}.sqlite.
- * Versioned upsert + mark-and-sweep keeps row IDs stable across runs
- * (so future playlist mappings don't churn) while pruning stale rows.
+ *
+ * Identity = stream URL, so when a provider renames a channel or swaps its
+ * logo the existing row is updated in place (not duplicated). Versioned
+ * mark-and-sweep prunes rows missing for >3 runs, but never touches manual
+ * ('user') entries the user added by hand.
  */
 class ProviderStore
 {
+    private const SCHEMA_VERSION = 2;
+    private const EDITABLE = ['name', 'tvg_id', 'tvg_name', 'tvg_logo', 'group_title', 'type', 'url'];
+
+    private const CHANNELS_DDL = 'CREATE TABLE channels (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tvg_id TEXT, tvg_name TEXT, tvg_logo TEXT,
+        group_title TEXT, name TEXT, url TEXT NOT NULL,
+        type TEXT DEFAULT \'Live\', ext TEXT,
+        version TEXT, error INTEGER DEFAULT 0,
+        UNIQUE(url)
+    )';
+
     private PDO $db;
+    private int $lastRowid = 0;
+    private int $added = 0;
+    private ?\PDOStatement $channelStmt = null;
+    private ?\PDOStatement $groupStmt = null;
 
     public function __construct(public int $providerId)
     {
@@ -21,16 +40,27 @@ class ProviderStore
         if (! is_dir($dir)) {
             @mkdir($dir, 0777, true);
         }
-        @chmod($dir, 0777); // worker (root) and php-fpm (www-data) may differ; keep the dir writable by both
+        @chmod($dir, 0777); // worker (root) and php-fpm (www-data) may differ
         $this->db = new PDO('sqlite:' . $path);
         $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-        @chmod($path, 0666); // ditto for the file itself
+        @chmod($path, 0666);
         $this->migrate();
+        $this->lastRowid = (int) $this->db->query('SELECT COALESCE(MAX(id),0) FROM channels')->fetchColumn();
     }
 
     public static function path(int $providerId): string
     {
         return storage_path('app/feeds/provider_' . $providerId . '.sqlite');
+    }
+
+    public static function exists(int $providerId): bool
+    {
+        return is_file(self::path($providerId));
+    }
+
+    public static function channelCountFor(int $providerId): int
+    {
+        return self::exists($providerId) ? (new self($providerId))->counts()['channels'] : 0;
     }
 
     private function migrate(): void
@@ -43,15 +73,27 @@ class ProviderStore
             error INTEGER DEFAULT 0,
             UNIQUE(group_title)
         )');
-        $this->db->exec('CREATE TABLE IF NOT EXISTS channels (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tvg_id TEXT, tvg_name TEXT, tvg_logo TEXT,
-            group_title TEXT, name TEXT, url TEXT NOT NULL,
-            type TEXT DEFAULT \'Live\', ext TEXT,
-            version TEXT, error INTEGER DEFAULT 0,
-            UNIQUE(url, name)
-        )');
+
+        $ver = (int) $this->db->query('PRAGMA user_version')->fetchColumn();
+        $hasChannels = $this->db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='channels'")->fetchColumn();
+
+        if (! $hasChannels) {
+            $this->db->exec(self::CHANNELS_DDL);
+        } elseif ($ver < self::SCHEMA_VERSION) {
+            // Rebuild channels keyed on URL (was url+name), keeping the latest row per URL.
+            $this->db->exec('BEGIN');
+            $this->db->exec(str_replace('CREATE TABLE channels', 'CREATE TABLE channels_new', self::CHANNELS_DDL));
+            $this->db->exec('INSERT OR IGNORE INTO channels_new
+                (tvg_id,tvg_name,tvg_logo,group_title,name,url,type,ext,version,error)
+                SELECT tvg_id,tvg_name,tvg_logo,group_title,name,url,type,ext,version,error
+                FROM channels ORDER BY id DESC');
+            $this->db->exec('DROP TABLE channels');
+            $this->db->exec('ALTER TABLE channels_new RENAME TO channels');
+            $this->db->exec('COMMIT');
+        }
+
         $this->db->exec('CREATE INDEX IF NOT EXISTS channels_group ON channels(group_title)');
+        $this->db->exec('PRAGMA user_version = ' . self::SCHEMA_VERSION);
     }
 
     public function begin(): void
@@ -66,18 +108,21 @@ class ProviderStore
         }
     }
 
-    private ?\PDOStatement $channelStmt = null;
-    private ?\PDOStatement $groupStmt = null;
+    public function addedCount(): int
+    {
+        return $this->added;
+    }
 
     public function upsertChannel(array $c, string $version): void
     {
         $this->channelStmt ??= $this->db->prepare(
             'INSERT INTO channels (tvg_id,tvg_name,tvg_logo,group_title,name,url,type,ext,version,error)
              VALUES (:tvg_id,:tvg_name,:tvg_logo,:group_title,:name,:url,:type,:ext,:version,0)
-             ON CONFLICT(url,name) DO UPDATE SET
+             ON CONFLICT(url) DO UPDATE SET
                tvg_id=excluded.tvg_id, tvg_name=excluded.tvg_name, tvg_logo=excluded.tvg_logo,
-               group_title=excluded.group_title, type=excluded.type, ext=excluded.ext,
-               version=excluded.version, error=0'
+               group_title=excluded.group_title, name=excluded.name, ext=excluded.ext,
+               version=excluded.version, error=0,
+               type=CASE WHEN channels.type=\'user\' THEN \'user\' ELSE excluded.type END'
         );
         $this->channelStmt->execute([
             ':tvg_id' => $c['tvg_id'] ?? '', ':tvg_name' => $c['tvg_name'] ?? '',
@@ -85,6 +130,30 @@ class ProviderStore
             ':name' => $c['name'] ?? '', ':url' => $c['url'] ?? '',
             ':type' => $c['type'] ?? 'Live', ':ext' => $c['ext'] ?? '', ':version' => $version,
         ]);
+
+        $id = (int) $this->db->lastInsertId();
+        if ($id > $this->lastRowid) {   // last_insert_rowid only advances on a real INSERT
+            $this->added++;
+            $this->lastRowid = $id;
+        }
+    }
+
+    /** Manually add (or revive) a channel; marked 'user' so refreshes never sweep it. */
+    public function addChannel(array $c): int
+    {
+        $stmt = $this->db->prepare(
+            'INSERT INTO channels (tvg_id,tvg_name,tvg_logo,group_title,name,url,type,ext,version,error)
+             VALUES (:tvg_id,:tvg_name,:tvg_logo,:group_title,:name,:url,\'user\',\'\',NULL,0)
+             ON CONFLICT(url) DO UPDATE SET name=excluded.name, group_title=excluded.group_title,
+               tvg_name=excluded.tvg_name, tvg_logo=excluded.tvg_logo, type=\'user\''
+        );
+        $stmt->execute([
+            ':tvg_id' => $c['tvg_id'] ?? '', ':tvg_name' => $c['tvg_name'] ?? ($c['name'] ?? ''),
+            ':tvg_logo' => $c['tvg_logo'] ?? '', ':group_title' => $c['group'] ?? '[Dummy]',
+            ':name' => $c['name'] ?? '', ':url' => $c['url'] ?? '',
+        ]);
+
+        return (int) $this->db->lastInsertId();
     }
 
     public function upsertGroup(string $title, int $order, string $version): void
@@ -102,15 +171,19 @@ class ProviderStore
         return (int) $this->db->query('SELECT COALESCE(MAX(position_order),0) FROM groups')->fetchColumn() + 10;
     }
 
-    /** Bump miss-count on rows not seen this run; delete after >3 misses. */
-    public function sweep(string $version): void
+    /** Bump miss-count on rows not seen this run; delete after >3 misses. Never sweeps manual ('user') channels. Returns channels removed. */
+    public function sweep(string $version): int
     {
-        foreach (['channels', 'groups'] as $t) {
-            $this->db->prepare("UPDATE {$t} SET error=error+1 WHERE version IS NULL OR version<>:v")
-                ->execute([':v' => $version]);
-            $this->db->prepare("UPDATE {$t} SET error=0 WHERE version=:v")->execute([':v' => $version]);
-            $this->db->exec("DELETE FROM {$t} WHERE error>3");
-        }
+        $this->db->prepare('UPDATE groups SET error=error+1 WHERE version IS NULL OR version<>:v')->execute([':v' => $version]);
+        $this->db->prepare('UPDATE groups SET error=0 WHERE version=:v')->execute([':v' => $version]);
+        $this->db->exec('DELETE FROM groups WHERE error>3');
+
+        $this->db->prepare("UPDATE channels SET error=error+1 WHERE (version IS NULL OR version<>:v) AND type<>'user'")->execute([':v' => $version]);
+        $this->db->prepare('UPDATE channels SET error=0 WHERE version=:v')->execute([':v' => $version]);
+        $del = $this->db->prepare("DELETE FROM channels WHERE error>3 AND type<>'user'");
+        $del->execute();
+
+        return $del->rowCount();
     }
 
     public function counts(): array
@@ -120,19 +193,6 @@ class ProviderStore
             'groups'   => (int) $this->db->query('SELECT COUNT(*) FROM groups')->fetchColumn(),
         ];
     }
-
-    public static function exists(int $providerId): bool
-    {
-        return is_file(self::path($providerId));
-    }
-
-    /** Channel-count without creating the file (for admin listings). */
-    public static function channelCountFor(int $providerId): int
-    {
-        return self::exists($providerId) ? (new self($providerId))->counts()['channels'] : 0;
-    }
-
-    private const EDITABLE = ['name', 'tvg_id', 'tvg_name', 'tvg_logo', 'group_title', 'type', 'url'];
 
     public function channels(int $limit, int $offset, ?string $search = null): array
     {
@@ -166,7 +226,6 @@ class ProviderStore
         return (int) $this->db->query('SELECT COUNT(*) FROM channels')->fetchColumn();
     }
 
-    /** Edit one allow-listed field of one channel. Returns false if the field is not editable. */
     public function updateChannel(int $id, string $field, $value): bool
     {
         if (! in_array($field, self::EDITABLE, true)) {
