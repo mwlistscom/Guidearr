@@ -138,9 +138,10 @@ class PlaylistEditorTest extends TestCase { use RefreshDatabase;
     $this->actingAs($u)->postJson("/playlists/{$pl->id}/reindex",["scope"=>"all"])->assertOk();
     $after=array_column($this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->json("data"),"id");
     $this->assertSame($ordered,$after); // order preserved across reindex
-    // positions are now clean multiples of 10 within each group
+    // positions are now a single flat 10/20/30 sequence across the whole playlist (group is just an attribute)
     $st=new PlaylistStore($pl->id);
-    foreach($st->groupTitles() as $t){ $rows=$st->channels(50,0,null,$t); $p=10; foreach($rows as $r){ $this->assertSame((float)$p,(float)$r["position_order"]); $p+=10; } }
+    $rows=$st->channels(1000,0); $p=10;
+    foreach($rows as $r){ $this->assertSame((float)$p,(float)$r["position_order"]); $p+=10; }
   }
 
   public function test_update_changes_settings_but_never_cipher(): void {

@@ -29,6 +29,14 @@
     .ple-act button:hover, .pl-x:hover { color:#fff; background:rgba(255,255,255,.08); }
     .ple-act svg, .pl-x svg { width:15px; height:15px; }
     .ple-split .tabulator-row.tabulator-selected { background:rgba(244,117,33,.16) !important; }
+    .ple-rowcol { cursor:pointer; user-select:none; }
+    .ple-tick { color:#f47521; font-weight:800; margin-right:.25rem; }
+    .ple-split .tabulator-row.ple-row-sel { background:rgba(244,117,33,.16) !important; }
+    .ple-selbar { position:fixed; left:50%; bottom:1.3rem; transform:translateX(-50%); display:none;
+        align-items:center; gap:.85rem; background:#1c1d21; border:1px solid #f47521; border-radius:.6rem;
+        padding:.55rem .95rem; box-shadow:0 10px 28px rgba(0,0,0,.45); z-index:900; }
+    .ple-selbar.show { display:flex; }
+    .ple-selbar #ple-sel-count { color:#e6e7ea; font-weight:700; font-size:.85rem; }
     /* dragged row: high-contrast floating chip so it reads clearly against the dark grid */
     .ple-split .tabulator-row.tabulator-moving {
         background:#f6f7f9 !important; color:#15161a !important;
@@ -134,6 +142,12 @@
     </div>
 </div>
 
+<div class="ple-selbar" id="ple-selbar">
+    <span id="ple-sel-count">0 selected</span>
+    <button class="ple-btn" onclick="GXPLE.openMoveSelected()">Move</button>
+    <button class="ple-btn secondary" onclick="GXPLE.clearSelection()">Clear</button>
+</div>
+
 <div class="ple-overlay" id="ple-gadd-overlay">
     <div class="ple-modal">
         <h3>Add group</h3>
@@ -199,6 +213,8 @@ window.GXPLE = (function () {
     const SIZE = 50;
     let plId = null, chTable = null, grTable = null, groupFilter = null, showDeleted = false, showDeletedGroups = false, gsearchTimer = null, searchTimer = null;
     let moveKind = 'channel', moveId = null, editCid = null, editManual = false, plGroups = [];
+    const selCh = new Set();    // selected channel ids for bulk move
+    let selAnchorRow = null;    // last-clicked global row, for shift-range selection
     const sleep = ms => new Promise(r => setTimeout(r, ms));
 
     // Blocking overlay that stays up until the work is done AND a minimum dwell has passed.
@@ -229,6 +245,7 @@ window.GXPLE = (function () {
     async function open(id, name) {
         console.log('GXPLE.open', id, name);
         plId = id; groupFilter = null; showDeleted = false; showDeletedGroups = false;
+        clearSelection();
         const gb = document.getElementById('gx-browse-pane'); if (gb) gb.hidden = true; // hide provider channel browser
         const gp = document.getElementById('gx-guide-pane'); if (gp) gp.hidden = true;  // hide provider guide viewer
         $('ple-name').textContent = name || '';
@@ -342,9 +359,10 @@ window.GXPLE = (function () {
             ajaxURL: '/playlists/' + plId + '/channels',
             ajaxParams: () => ({ search: $('ple-search').value || '', group: groupFilter || '', deleted: showDeleted ? 'all' : '' }),
             ajaxResponse: (u, p, r) => { $('ple-count').textContent = (r.total ?? 0) + ' channels' + (showDeleted ? ' (incl. deleted)' : ''); return r; },
-            rowFormatter: (row) => { const el = row.getElement(); if (row.getData().deleted) { el.style.opacity = '.42'; el.style.textDecoration = 'line-through'; } else { el.style.opacity = ''; el.style.textDecoration = ''; } },
+            rowFormatter: (row) => { const el = row.getElement(); const d = row.getData(); if (d.deleted) { el.style.opacity = '.42'; el.style.textDecoration = 'line-through'; } else { el.style.opacity = ''; el.style.textDecoration = ''; } el.classList.toggle('ple-row-sel', selCh.has(d.id)); },
             columns: [
-                { title: '#', field: 'row', width: 48, hozAlign: 'right', headerSort: false },
+                { title: '#', field: 'row', width: 60, hozAlign: 'right', headerSort: false, cssClass: 'ple-rowcol',
+                  formatter: c => { const d = c.getRow().getData(); return (selCh.has(d.id) ? '<span class="ple-tick">✓</span>' : '') + d.row; } },
                 { title: 'Logo', field: 'tvg_logo', width: 50, hozAlign: 'center', headerSort: false,
                   formatter: c => c.getValue() ? `<img class="ple-logo" src="${esc(c.getValue())}" onerror="this.style.display='none'">` : '' },
                 { title: 'On', field: 'enabled', width: 40, hozAlign: 'center', headerSort: false,
@@ -364,6 +382,7 @@ window.GXPLE = (function () {
         });
         chTable.on('cellClick', (e, cell) => {
             const f = cell.getField(); const d = cell.getRow().getData();
+            if (f === 'row') { onRowSelectClick(e, d); return; }
             if (f === 'enabled') { const on = !d.enabled; J('/playlists/' + plId + '/channels/' + d.id, 'PATCH', { enabled: on }); cell.getRow().update({ enabled: on }); return; }
             if (f === 'deleted') { J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', d.deleted ? { restore: true } : null).then(softReload); return; }
             if (f !== '_a') return;
@@ -388,6 +407,33 @@ window.GXPLE = (function () {
         showDeleted = !showDeleted;
         $('ple-trash-toggle').classList.toggle('on', showDeleted);
         reloadChannels();
+    }
+
+    // bulk selection (click # to toggle, shift-click for a range)
+    function onRowSelectClick(e, d) {
+        if (e.shiftKey && selAnchorRow != null) {
+            const lo = Math.min(selAnchorRow, d.row), hi = Math.max(selAnchorRow, d.row);
+            chTable.getRows().forEach(r => { const rd = r.getData(); if (rd.row >= lo && rd.row <= hi) selCh.add(rd.id); });
+        } else {
+            selCh.has(d.id) ? selCh.delete(d.id) : selCh.add(d.id);
+            selAnchorRow = d.row;
+        }
+        refreshSel();
+    }
+    function refreshSel() {
+        const n = selCh.size;
+        $('ple-sel-count').textContent = n + ' selected';
+        $('ple-selbar').classList.toggle('show', n > 0);
+        if (chTable) { try { chTable.getRows().forEach(r => r.reformat()); } catch (e) {} }
+    }
+    function clearSelection() { selCh.clear(); selAnchorRow = null; refreshSel(); }
+    function openMoveSelected() {
+        if (!selCh.size) return;
+        moveKind = 'bulk';
+        $('ple-move-title').textContent = 'Move selected channels';
+        $('ple-move-label').textContent = 'Move ' + selCh.size + ' channel' + (selCh.size === 1 ? '' : 's') + ' to start at row #';
+        $('ple-move-row').value = 1;
+        $('ple-move-overlay').classList.add('show');
     }
 
     // move modal
@@ -418,6 +464,11 @@ window.GXPLE = (function () {
     const closeChannelGuide = () => $('ple-guide-overlay').classList.remove('show');
     function applyMove() {
         const row = Math.max(1, Number($('ple-move-row').value) || 1);
+        if (moveKind === 'bulk') {
+            const ids = Array.from(selCh);
+            J('/playlists/' + plId + '/channels/move-bulk', 'POST', { ids, row }).then(() => { closeMove(); clearSelection(); softReload(); });
+            return;
+        }
         const url = moveKind === 'group' ? '/playlists/' + plId + '/groups/' + moveId + '/move' : '/playlists/' + plId + '/channels/' + moveId + '/move';
         J(url, 'POST', { row }).then(() => { closeMove(); if (moveKind === 'group') { loadGroups(); reloadChannels(); } else { softReload(); } });
     }
@@ -463,7 +514,7 @@ window.GXPLE = (function () {
         else if (e.target.id === 'ple-gsearch' && grTable) { clearTimeout(gsearchTimer); gsearchTimer = setTimeout(() => { const v = e.target.value.trim(); v ? grTable.setFilter('group_title', 'like', v) : grTable.clearFilter(); }, 200); }
     }
 
-    return { open, close, loadGroups, reloadChannels, toggleDeleted, toggleDeletedGroups, reindex, openMoveChannel, openMoveGroup, closeMove, applyMove, openChannelGuide, closeChannelGuide, openEdit, openAdd, closeEdit, saveEdit, openAddGroup, closeAddGroup, saveAddGroup, onInput };
+    return { open, close, loadGroups, reloadChannels, toggleDeleted, toggleDeletedGroups, reindex, openMoveChannel, openMoveGroup, closeMove, applyMove, openChannelGuide, closeChannelGuide, openEdit, openAdd, closeEdit, saveEdit, openAddGroup, closeAddGroup, saveAddGroup, onInput, openMoveSelected, clearSelection };
 })();
 
 if (!window.__GXPLE_BOUND) {

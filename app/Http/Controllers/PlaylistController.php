@@ -214,6 +214,25 @@ class PlaylistController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function moveChannelsBulk(Request $request, Playlist $playlist)
+    {
+        $this->authorizeOwner($playlist);
+        $v = Validator::make($request->all(), [
+            'ids'   => 'required|array|min:1',
+            'ids.*' => 'integer',
+            'row'   => 'required|integer|min:1',
+        ]);
+        if ($v->fails()) { return response()->json(['message' => $v->errors()->first()], 422); }
+
+        if (! PlaylistStore::existsFor($playlist->id)) {
+            return response()->json(['moved' => 0]);
+        }
+        $data  = $v->validated();
+        $moved = (new PlaylistStore($playlist->id))->moveChannelsBulk($data['ids'], (int) $data['row']);
+
+        return response()->json(['moved' => $moved]);
+    }
+
     public function deleteChannel(Request $request, Playlist $playlist, int $cid)
     {
         $this->authorizeOwner($playlist);

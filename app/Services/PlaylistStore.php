@@ -119,10 +119,8 @@ class PlaylistStore
         }
         $this->commit();
 
-        // per-group running position_order (continue after whatever's already there)
-        $maxPos = [];
-        $rows = $this->db->query('SELECT group_title, MAX(position_order) m FROM playlist_channels GROUP BY group_title')->fetchAll(PDO::FETCH_ASSOC);
-        foreach ($rows as $r) { $maxPos[$r['group_title']] = (float) $r['m']; }
+        // New channels append at the end of the flat order (one global running position_order).
+        $globalMax = (float) ($this->db->query('SELECT MAX(position_order) FROM playlist_channels')->fetchColumn() ?? 0.0);
 
         $cIns = $this->db->prepare(
             'INSERT OR IGNORE INTO playlist_channels (provider_id, channel_id, group_title, position_order)
@@ -130,11 +128,10 @@ class PlaylistStore
         );
         $n = 0;
         $this->begin();
-        $ps->streamForSeed(function (array $row) use ($cIns, $providerId, &$maxPos, &$channelsAdded, &$n) {
+        $ps->streamForSeed(function (array $row) use ($cIns, $providerId, &$globalMax, &$channelsAdded, &$n) {
             $g = $row['group_title'] ?: '[Dummy]';
-            $pos = ($maxPos[$g] ?? 0.0) + self::STEP;
-            $maxPos[$g] = $pos;
-            $cIns->execute([':p' => $providerId, ':c' => (int) $row['id'], ':g' => $g, ':o' => $pos]);
+            $globalMax += self::STEP;
+            $cIns->execute([':p' => $providerId, ':c' => (int) $row['id'], ':g' => $g, ':o' => $globalMax]);
             $channelsAdded += $cIns->rowCount() > 0 ? 1 : 0;
             if (++$n % 2000 === 0) { $this->commit(); usleep(20000); $this->begin(); }
         });
@@ -272,7 +269,7 @@ class PlaylistStore
             "SELECT c.id, c.provider_id, c.channel_id, c.group_title, c.position_order, c.enabled, c.deleted,
                     c.name, c.url, c.tvg_id, c.tvg_logo, c.tvg_name
              FROM playlist_channels c LEFT JOIN playlist_groups g ON g.group_title = c.group_title
-             $where ORDER BY COALESCE(g.position_order, 1e12), c.position_order, c.id LIMIT :lim OFFSET :off"
+             $where ORDER BY c.position_order, c.id LIMIT :lim OFFSET :off"
         );
         foreach ($bind as $k => $v) { $stmt->bindValue($k, $v); }
         $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
@@ -380,7 +377,7 @@ class PlaylistStore
                     c.name, c.url, c.tvg_id, c.tvg_logo, c.tvg_name
              FROM playlist_channels c LEFT JOIN playlist_groups g ON g.group_title = c.group_title
              WHERE c.enabled = 1 AND c.deleted = 0
-             ORDER BY COALESCE(g.position_order, 1e12), c.position_order, c.id"
+             ORDER BY c.position_order, c.id"
         );
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -388,64 +385,149 @@ class PlaylistStore
 
     // ---- editor: ordering (midpoint, place after the row above the target) ----
 
-    /** Move a channel so it becomes global row N (1-based), inheriting the group of the row above. */
+    /** Move a channel so it becomes global row N (1-based) in the flat order. Group is left untouched. */
     public function moveChannelToRow(int $id, int $row): void
     {
-        $cur = $this->db->prepare('SELECT group_title FROM playlist_channels WHERE id = ?');
-        $cur->execute([$id]);
-        $curGroup = $cur->fetchColumn();
-        if ($curGroup === false) { return; }
+        $exists = $this->db->prepare('SELECT 1 FROM playlist_channels WHERE id = ?');
+        $exists->execute([$id]);
+        if ($exists->fetchColumn() === false) { return; }
 
+        // Other non-deleted channels in flat order (the moving row excluded).
         $others = $this->db->prepare(
-            'SELECT c.id, c.group_title gt, c.position_order po
-             FROM playlist_channels c LEFT JOIN playlist_groups g ON g.group_title = c.group_title
-             WHERE c.id != :id AND c.deleted = 0 ORDER BY COALESCE(g.position_order, 1e12), c.position_order, c.id'
+            'SELECT id, position_order po FROM playlist_channels
+             WHERE id != :id AND deleted = 0 ORDER BY position_order, id'
         );
         $others->execute([':id' => $id]);
         $rows = $others->fetchAll(PDO::FETCH_ASSOC);
 
-        $newGroup = $curGroup;
-        $newPos = self::STEP;
-
         if (! $rows) {
-            // only channel — leave it in its group at the base
+            $newPos = self::STEP;
         } elseif ($row <= 1) {
-            $newGroup = $rows[0]['gt'];
             $newPos = (float) $rows[0]['po'] / 2.0;
         } else {
             $ai = min($row - 2, count($rows) - 1);   // anchor = the row the channel should follow
-            $anchor = $rows[$ai];
-            $newGroup = $anchor['gt'];
-            $next = null;
-            for ($j = $ai + 1; $j < count($rows); $j++) {
-                if ($rows[$j]['gt'] === $newGroup) { $next = $rows[$j]; break; }
-            }
-            $newPos = $next
-                ? (((float) $anchor['po'] + (float) $next['po']) / 2.0)
-                : ((float) $anchor['po'] + self::STEP);
-        }
-
-        $u = $this->db->prepare('UPDATE playlist_channels SET group_title = :g, position_order = :p WHERE id = :id');
-        $u->execute([':g' => $newGroup, ':p' => $newPos, ':id' => $id]);
-    }
-
-    /** Move a group so it becomes row N (1-based) among non-deleted groups. */
-    public function moveGroupToRow(int $id, int $row): void
-    {
-        $others = $this->db->prepare('SELECT id, position_order po FROM playlist_groups WHERE id != ? AND deleted = 0 ORDER BY position_order');
-        $others->execute([$id]);
-        $rows = $others->fetchAll(PDO::FETCH_ASSOC);
-        if (! $rows) { return; }
-
-        if ($row <= 1) {
-            $newPos = (float) $rows[0]['po'] / 2.0;
-        } else {
-            $ai = min($row - 2, count($rows) - 1);
             $anchor = (float) $rows[$ai]['po'];
             $next = isset($rows[$ai + 1]) ? (float) $rows[$ai + 1]['po'] : null;
             $newPos = $next !== null ? (($anchor + $next) / 2.0) : ($anchor + self::STEP);
         }
-        $this->db->prepare('UPDATE playlist_groups SET position_order = ? WHERE id = ?')->execute([$newPos, $id]);
+
+        $this->db->prepare('UPDATE playlist_channels SET position_order = :p WHERE id = :id')
+            ->execute([':p' => $newPos, ':id' => $id]);
+    }
+
+    /**
+     * Move a set of channels so the block begins at global row N (1-based) in the flat order,
+     * preserving the block's relative order. Group is left untouched (it is just an attribute).
+     * The whole playlist is renumbered step-of-10 in one transaction so the block lands exactly
+     * at row N. Returns the number of channels moved.
+     */
+    public function moveChannelsBulk(array $ids, int $targetRow): int
+    {
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        if (! $ids) {
+            return 0;
+        }
+        $targetRow = max(1, $targetRow);
+        $selected = array_flip($ids);
+
+        // Full non-deleted list in flat order.
+        $all = $this->db->query(
+            'SELECT id FROM playlist_channels WHERE deleted = 0 ORDER BY position_order, id'
+        )->fetchAll(PDO::FETCH_COLUMN);
+
+        // Split into the moving block (in its current relative order) and the rest.
+        $block = [];
+        $rest  = [];
+        foreach ($all as $cid) {
+            $cid = (int) $cid;
+            if (isset($selected[$cid])) { $block[] = $cid; } else { $rest[] = $cid; }
+        }
+        if (! $block) {
+            return 0;
+        }
+
+        // Insert the block after the first (targetRow - 1) of the remaining channels.
+        $insertAt = max(0, min($targetRow - 1, count($rest)));
+        $newOrder = array_merge(
+            array_slice($rest, 0, $insertAt),
+            $block,
+            array_slice($rest, $insertAt)
+        );
+
+        $this->begin();
+        try {
+            $upd = $this->db->prepare('UPDATE playlist_channels SET position_order = :p WHERE id = :id');
+            $pos = self::STEP;
+            foreach ($newOrder as $cid) {
+                $upd->execute([':p' => $pos, ':id' => $cid]);
+                $pos += self::STEP;
+            }
+            $this->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        return count($block);
+    }
+
+    /** Move a group so it becomes row N (1-based) among non-deleted groups. */
+    /**
+     * Move a group to position N among the groups. Under the flat model the group is only an
+     * attribute, so this gathers that group's channels into one contiguous block and places it
+     * where group N currently begins. Other channels keep their relative order; only the moved
+     * group's channels are pulled together. The whole list is then renumbered step-of-10.
+     */
+    public function moveGroupToRow(int $id, int $row): void
+    {
+        $g = $this->db->prepare('SELECT group_title FROM playlist_groups WHERE id = ?');
+        $g->execute([$id]);
+        $title = $g->fetchColumn();
+        if ($title === false) { return; }
+
+        $all = $this->db->query(
+            'SELECT id, group_title FROM playlist_channels WHERE deleted = 0 ORDER BY position_order, id'
+        )->fetchAll(PDO::FETCH_ASSOC);
+
+        $block = [];   // moving group's channels, current order
+        $rest  = [];   // everything else, current order
+        foreach ($all as $r) {
+            if ((string) $r['group_title'] === (string) $title) { $block[] = (int) $r['id']; }
+            else { $rest[] = ['id' => (int) $r['id'], 'gt' => (string) $r['group_title']]; }
+        }
+        if (! $block) { return; }
+
+        // Order of the remaining groups by first appearance.
+        $restGroups = [];
+        $seen = [];
+        foreach ($rest as $r) {
+            if (! isset($seen[$r['gt']])) { $seen[$r['gt']] = true; $restGroups[] = $r['gt']; }
+        }
+        $at = max(0, min($row - 1, count($restGroups)));
+
+        // Insertion index into $rest: where the group currently at position $at begins (end if past).
+        $insertPos = count($rest);
+        if ($at < count($restGroups)) {
+            $target = $restGroups[$at];
+            foreach ($rest as $i => $r) {
+                if ($r['gt'] === $target) { $insertPos = $i; break; }
+            }
+        }
+
+        $restIds  = array_map(static fn ($r) => $r['id'], $rest);
+        $newOrder = array_merge(
+            array_slice($restIds, 0, $insertPos),
+            $block,
+            array_slice($restIds, $insertPos)
+        );
+
+        $this->begin();
+        $upd = $this->db->prepare('UPDATE playlist_channels SET position_order = ? WHERE id = ?');
+        $pos = self::STEP;
+        foreach ($newOrder as $cid) { $upd->execute([$pos, $cid]); $pos += self::STEP; }
+        $this->commit();
     }
 
     // ---- editor: flags + manual add + edit ----
@@ -533,18 +615,26 @@ class PlaylistStore
     }
 
     /** Renumber channel position_order per group (reset to STEP each group) preserving current order. */
-    public function reindexChannels(): int
+    /**
+     * Renumber every channel to a single flat sequence (10, 20, 30 …) in one global pass.
+     * $byGroup=true orders by the legacy group-then-position display order first — used once to
+     * flatten playlists that were numbered per-group, so the flat sequence matches the old view.
+     */
+    public function reindexChannels(bool $byGroup = false): int
     {
-        $titles = $this->db->query('SELECT DISTINCT group_title FROM playlist_channels')->fetchAll(PDO::FETCH_COLUMN);
+        $order = $byGroup
+            ? 'COALESCE(g.position_order, 1e12), c.position_order, c.id'
+            : 'c.position_order, c.id';
+        $ids = $this->db->query(
+            "SELECT c.id FROM playlist_channels c LEFT JOIN playlist_groups g ON g.group_title = c.group_title
+             ORDER BY {$order}"
+        )->fetchAll(PDO::FETCH_COLUMN);
+
         $this->begin();
-        $sel = $this->db->prepare('SELECT id FROM playlist_channels WHERE group_title = ? ORDER BY position_order, id');
         $upd = $this->db->prepare('UPDATE playlist_channels SET position_order = ? WHERE id = ?');
+        $pos = self::STEP;
         $n = 0;
-        foreach ($titles as $t) {
-            $sel->execute([$t]);
-            $pos = self::STEP;
-            foreach ($sel->fetchAll(PDO::FETCH_COLUMN) as $id) { $upd->execute([$pos, $id]); $pos += self::STEP; $n++; }
-        }
+        foreach ($ids as $id) { $upd->execute([$pos, $id]); $pos += self::STEP; $n++; }
         $this->commit();
 
         return $n;

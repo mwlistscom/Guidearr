@@ -44,6 +44,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('playlists/{playlist}/groups', [\App\Http\Controllers\PlaylistController::class, 'addGroupRow'])->name('playlists.groups.add');
     Route::post('playlists/{playlist}/channels', [\App\Http\Controllers\PlaylistController::class, 'addChannel'])->name('playlists.channels.add');
     Route::patch('playlists/{playlist}/channels/{cid}', [\App\Http\Controllers\PlaylistController::class, 'updateChannel'])->name('playlists.channels.update');
+    Route::post('playlists/{playlist}/channels/move-bulk', [\App\Http\Controllers\PlaylistController::class, 'moveChannelsBulk'])->name('playlists.channels.move-bulk');
     Route::post('playlists/{playlist}/channels/{cid}/move', [\App\Http\Controllers\PlaylistController::class, 'moveChannel'])->name('playlists.channels.move');
     Route::delete('playlists/{playlist}/channels/{cid}', [\App\Http\Controllers\PlaylistController::class, 'deleteChannel'])->name('playlists.channels.delete');
     Route::patch('playlists/{playlist}/groups/{gid}', [\App\Http\Controllers\PlaylistController::class, 'updateGroup'])->name('playlists.groups.update');
