@@ -269,7 +269,9 @@ window.GXPL = (function () {
     }
     function openLinks(d) {
         $('pl-links-name').textContent = d.name || '';
-        const base = (LINKS_BASE || '').replace(/\/+$/, '');
+        // Use the admin-set base if present, otherwise the origin you're viewing through
+        // (which is the public URL whether you're direct or behind a TLS-terminating proxy).
+        const base = (LINKS_BASE || window.location.origin || '').replace(/\/+$/, '');
         const body = $('pl-links-body'); const unset = $('pl-links-unset'); const note = $('pl-links-note');
         if (!base) { body.innerHTML = ''; body.hidden = true; unset.hidden = false; note.hidden = true; $('pl-links-overlay').classList.add('show'); return; }
         unset.hidden = true; body.hidden = false; note.hidden = false;
