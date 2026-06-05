@@ -9,6 +9,9 @@ Route::view('/', 'hello')->name('home');
 Route::get('branding/icon', [BrandingController::class, 'show'])->defaults('kind', 'icon')->name('branding.icon');
 Route::get('branding/logo', [BrandingController::class, 'show'])->defaults('kind', 'logo')->name('branding.logo');
 Route::view('docs', 'docs')->name('docs');
+Route::get('license', fn () => view('license', [
+    'text' => @file_get_contents(base_path('LICENSE')) ?: 'License file not found.',
+]))->name('license');
 
 // Public playlist serving endpoints (keyed by ?key=<cipher>). No .php extension so
 // the Laravel router handles them instead of nginx trying to exec a file on disk.

@@ -149,7 +149,7 @@
                 Dashboard
             </a>
             <div class="foot">
-                <div class="ver">{{ config('app.name','Guidearr') }} v{{ config('guidearr.version') }}</div>
+                <div class="ver">{{ config('app.name','Guidearr') }} v{{ config('guidearr.version') }} &middot; <a href="{{ route('license') }}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">License</a></div>
                 <div class="who">{{ auth()->user()->email }}</div>
                 <form method="POST" action="{{ route('admin.logout') }}">@csrf<button class="ghost">Log out</button></form>
             </div>
