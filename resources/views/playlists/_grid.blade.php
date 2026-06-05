@@ -264,9 +264,9 @@ window.GXPL = (function () {
         unset.hidden = true; body.hidden = false;
         const key = encodeURIComponent(d.cipher || '');
         const links = [
-            ['M3U Link', base + '/m3u.php?key=' + key],
-            ['EPG / Guide Link', base + '/tvg.php?key=' + key],
-            ['Stream Link', base + '/strm.php?key=' + key],
+            ['M3U Link', base + '/m3u?key=' + key],
+            ['EPG / Guide Link', base + '/epg?key=' + key],
+            ['Stream Link', base + '/strm?key=' + key],
         ];
         body.innerHTML = links.map(([label, url]) => `
             <div class="pl-link-row">

@@ -210,6 +210,37 @@ class ProviderStore
         return $st->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /** Guide <channel> rows for a set of tvg-ids (chunked IN). */
+    public function guideChannelsForIds(array $tvgIds): array
+    {
+        if (! $this->hasTable('guide_channels') || ! $tvgIds) { return []; }
+        $tvgIds = array_values(array_unique(array_filter(array_map('strval', $tvgIds), fn ($v) => $v !== '')));
+        $out = [];
+        foreach (array_chunk($tvgIds, 500) as $chunk) {
+            $in = implode(',', array_fill(0, count($chunk), '?'));
+            $st = $this->db->prepare("SELECT tvg_id, display_name, icon FROM guide_channels WHERE tvg_id IN ($in)");
+            $st->execute($chunk);
+            foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) { $out[] = $r; }
+        }
+
+        return $out;
+    }
+
+    /** Stream guide <programme> rows for a set of tvg-ids whose stop >= $fromTs, ordered by channel then start. */
+    public function streamGuideProgrammesForIds(array $tvgIds, int $fromTs, callable $cb): void
+    {
+        if (! $this->hasTable('guide') || ! $tvgIds) { return; }
+        $tvgIds = array_values(array_unique(array_filter(array_map('strval', $tvgIds), fn ($v) => $v !== '')));
+        foreach (array_chunk($tvgIds, 500) as $chunk) {
+            $in = implode(',', array_fill(0, count($chunk), '?'));
+            $st = $this->db->prepare(
+                "SELECT tvg_id, start, stop, title, descr FROM guide WHERE tvg_id IN ($in) AND stop >= ? ORDER BY tvg_id, start"
+            );
+            $st->execute([...$chunk, $fromTs]);
+            while ($r = $st->fetch(PDO::FETCH_ASSOC)) { $cb($r); }
+        }
+    }
+
     /** Stream every channel (id + group + minimal data) ordered by group then id — used to seed playlists. */
     public function streamForSeed(callable $cb): void
     {

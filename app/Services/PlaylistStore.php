@@ -282,6 +282,20 @@ class PlaylistStore
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /** All enabled, non-deleted pointer rows in global (group then position) order — for the public serving endpoints. */
+    public function allForServe(): array
+    {
+        $stmt = $this->db->query(
+            "SELECT c.id, c.provider_id, c.channel_id, c.group_title,
+                    c.name, c.url, c.tvg_id, c.tvg_logo, c.tvg_name
+             FROM playlist_channels c LEFT JOIN playlist_groups g ON g.group_title = c.group_title
+             WHERE c.enabled = 1 AND c.deleted = 0
+             ORDER BY COALESCE(g.position_order, 1e12), c.position_order, c.id"
+        );
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     // ---- editor: ordering (midpoint, place after the row above the target) ----
 
     /** Move a channel so it becomes global row N (1-based), inheriting the group of the row above. */

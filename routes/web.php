@@ -10,6 +10,12 @@ Route::get('branding/icon', [BrandingController::class, 'show'])->defaults('kind
 Route::get('branding/logo', [BrandingController::class, 'show'])->defaults('kind', 'logo')->name('branding.logo');
 Route::view('docs', 'docs')->name('docs');
 
+// Public playlist serving endpoints (keyed by ?key=<cipher>). No .php extension so
+// the Laravel router handles them instead of nginx trying to exec a file on disk.
+Route::get('m3u', [\App\Http\Controllers\PlaylistServeController::class, 'm3u'])->name('serve.m3u');
+Route::get('epg', [\App\Http\Controllers\PlaylistServeController::class, 'epg'])->name('serve.epg');
+Route::get('strm', [\App\Http\Controllers\PlaylistServeController::class, 'strm'])->name('serve.strm');
+
 Route::post('email/verify-code', [VerifyEmailCodeController::class, 'store'])
     ->middleware('auth')
     ->name('verification.code');
