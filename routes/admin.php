@@ -40,6 +40,7 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::get('feeds/provider/{provider}/groups', [FeedBrowseController::class, 'groupsData'])->name('feeds.provider.groups');
             Route::get('feeds/playlist/{playlist}', [FeedBrowseController::class, 'playlist'])->name('feeds.playlist');
             Route::get('feeds/playlist/{playlist}/data', [FeedBrowseController::class, 'playlistData'])->name('feeds.playlist.data');
+            Route::get('feeds/playlist/{playlist}/groups', [FeedBrowseController::class, 'playlistGroups'])->name('feeds.playlist.groups');
             Route::patch('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'updateChannel'])->name('feeds.channel.update');
             Route::delete('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'deleteChannel'])->name('feeds.channel.delete');
 

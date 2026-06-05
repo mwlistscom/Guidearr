@@ -99,14 +99,15 @@ class FeedBrowseController extends Controller
         $size   = min(200, max(10, (int) $request->query('size', 50)));
         $page   = max(1, (int) $request->query('page', 1));
         $search = $request->query('search');
+        $group  = $request->query('group');
 
         if (! \App\Services\PlaylistStore::existsFor($playlist->id)) {
             return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
         }
 
         $store = new \App\Services\PlaylistStore($playlist->id);
-        $total = $store->channelCount($search, null, 'all');
-        $rows  = $store->channels($size, ($page - 1) * $size, $search, null, 'all');
+        $total = $store->channelCount($search, $group, 'all');
+        $rows  = $store->channels($size, ($page - 1) * $size, $search, $group, 'all');
 
         // hydrate provider-channel rows (manual rows are inline); playlist edits override provider values
         $byProvider = [];
@@ -139,6 +140,15 @@ class FeedBrowseController extends Controller
         }
 
         return response()->json(['last_page' => max(1, (int) ceil($total / $size)), 'total' => $total, 'data' => $out]);
+    }
+
+    public function playlistGroups(\App\Models\Playlist $playlist)
+    {
+        $groups = \App\Services\PlaylistStore::existsFor($playlist->id)
+            ? (new \App\Services\PlaylistStore($playlist->id))->groups()
+            : [];
+
+        return response()->json(['groups' => $groups]);
     }
 
     public function channels(Provider $provider)

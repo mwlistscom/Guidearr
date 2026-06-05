@@ -103,12 +103,12 @@
                     { title: 'Group', field: 'group_title', widthGrow: 3 },
                     { title: 'Ch', field: 'channels', width: 50, hozAlign: 'right' },
                 ],
-                rowClick: (e, row) => {
-                    const t = row.getData().group_title;
-                    if (groupFilter === t) { groupFilter = null; gtable.deselectRow(); }
-                    else { groupFilter = t; gtable.deselectRow(); row.select(); }
-                    table.setPage(1);
-                },
+            });
+            gtable.on('rowClick', (e, row) => {
+                const t = row.getData().group_title;
+                if (groupFilter === t) { groupFilter = null; gtable.deselectRow(); }
+                else { groupFilter = t; gtable.deselectRow(); row.select(); }
+                table.setPage(1);
             });
         });
 
