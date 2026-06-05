@@ -34,6 +34,12 @@
     .pl-copy.copied { background:#3fb950; }
     .pl-links-unset { font-size:.85rem; color:#cdd2da; line-height:1.5; background:rgba(244,117,33,.08);
         border:1px solid rgba(244,117,33,.3); border-radius:.5rem; padding:.7rem .8rem; }
+    .pl-links-note { font-size:.82rem; color:#9aa0aa; line-height:1.5; margin-top:.9rem; padding-top:.8rem;
+        border-top:1px solid rgba(255,255,255,.10); }
+    .pl-links-note strong { color:#cdd2da; }
+    .pl-links-note code { background:rgba(255,255,255,.08); padding:.05rem .3rem; border-radius:.25rem; }
+    .pl-links-note a { color:var(--pl-accent,#f47521); text-decoration:none; }
+    .pl-links-note a:hover { text-decoration:underline; }
     .pl-modal { background:#1b1c20; border:1px solid rgba(255,255,255,.14); border-radius:.8rem; width:100%;
         max-width:30rem; padding:1.3rem; color:#e6e7ea; max-height:84vh; overflow:auto; }
     .pl-modal h2 { font-size:1.1rem; font-weight:800; margin-bottom:1rem; }
@@ -134,7 +140,12 @@
         <div id="pl-links-body"></div>
         <div id="pl-links-unset" class="pl-links-unset" hidden>
             The public links base URL hasn't been set yet. An admin can set it under
-            <strong>Admin → Status → Playlist links</strong>.
+            <strong>Admin → Config → Playlist links</strong>.
+        </div>
+        <div id="pl-links-note" class="pl-links-note" hidden>
+            <strong>Using the Stream Link?</strong> It returns a JSON channel list for building
+            <code>.strm</code> files (Plex / Jellyfin / Emby). Generate them with
+            <a href="https://github.com/mwlistscom/GetSTRM" target="_blank" rel="noopener">GetSTRM</a>.
         </div>
         <div class="pl-actions">
             <button class="pl-btn secondary" onclick="GXPL.closeLinks()">Close</button>
@@ -259,9 +270,9 @@ window.GXPL = (function () {
     function openLinks(d) {
         $('pl-links-name').textContent = d.name || '';
         const base = (LINKS_BASE || '').replace(/\/+$/, '');
-        const body = $('pl-links-body'); const unset = $('pl-links-unset');
-        if (!base) { body.innerHTML = ''; body.hidden = true; unset.hidden = false; $('pl-links-overlay').classList.add('show'); return; }
-        unset.hidden = true; body.hidden = false;
+        const body = $('pl-links-body'); const unset = $('pl-links-unset'); const note = $('pl-links-note');
+        if (!base) { body.innerHTML = ''; body.hidden = true; unset.hidden = false; note.hidden = true; $('pl-links-overlay').classList.add('show'); return; }
+        unset.hidden = true; body.hidden = false; note.hidden = false;
         const key = encodeURIComponent(d.cipher || '');
         const links = [
             ['M3U Link', base + '/m3u?key=' + key],
