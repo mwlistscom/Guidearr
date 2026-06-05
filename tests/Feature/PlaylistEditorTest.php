@@ -169,6 +169,21 @@ class PlaylistEditorTest extends TestCase { use RefreshDatabase;
     $this->actingAs($b)->patchJson("/playlists/{$pl->id}",["name"=>"X"])->assertForbidden();
   }
 
+  public function test_playlist_channel_guide_via_guide_provider(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]);
+    $gp=Provider::create(["user_id"=>$u->id,"name"=>"EPG","type"=>"xmltv","url"=>"http://h/epg.xml","enabled"=>true,"refresh_hour"=>2]);
+    $gs=new ProviderStore($gp->id); $gs->guideReloadBegin();
+    $gs->guideChannel("cnn.us","CNN","");
+    $gs->guideProgramme(["tvg_id"=>"cnn.us","start"=>4102444800,"stop"=>4102448400,"timeshift"=>"+0000","title"=>"Future News","sub_title"=>"","desc"=>"d","category"=>"News","episode_num"=>"","icon"=>"","year"=>"","rating"=>"","info"=>null]);
+    $gs->guideReloadCommit();
+    $pl=Playlist::create(["user_id"=>$u->id,"name"=>"PL","guide_provider_id"=>$gp->id]);
+    $r=$this->actingAs($u)->getJson("/playlists/{$pl->id}/guide?tvg_id=cnn.us")->assertOk()->json();
+    $this->assertSame("Future News",$r["programmes"][0]["title"]);
+    $pl2=Playlist::create(["user_id"=>$u->id,"name"=>"NoGuide"]);
+    $r2=$this->actingAs($u)->getJson("/playlists/{$pl2->id}/guide?tvg_id=cnn.us")->assertOk()->json();
+    $this->assertSame([],$r2["programmes"]); $this->assertArrayHasKey("reason",$r2);
+  }
+
   public function test_manual_add_and_group_filter(): void {
     $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
     $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels",['name'=>'My Manual','url'=>'http://m/x.ts','group'=>'CANADA'])->assertOk();

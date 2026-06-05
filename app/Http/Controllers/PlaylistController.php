@@ -284,6 +284,26 @@ class PlaylistController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function guide(Request $request, Playlist $playlist)
+    {
+        $this->authorizeOwner($playlist);
+        $tvg = trim((string) $request->query('tvg_id', ''));
+        $gid = (int) $playlist->guide_provider_id;
+        if ($gid <= 0) {
+            return response()->json(['programmes' => [], 'reason' => 'no guide source set for this playlist']);
+        }
+        if ($tvg === '') {
+            return response()->json(['programmes' => [], 'reason' => 'this channel has no tvg-id']);
+        }
+        if (! ProviderStore::exists($gid)) {
+            return response()->json(['programmes' => [], 'reason' => 'guide provider has no data yet']);
+        }
+        $from = now()->timestamp - 6 * 3600;
+        $rows = (new ProviderStore($gid))->guideProgrammesFor($tvg, $from, 300);
+
+        return response()->json(['programmes' => $rows]);
+    }
+
     public function reindex(Request $request, Playlist $playlist)
     {
         $this->authorizeOwner($playlist);

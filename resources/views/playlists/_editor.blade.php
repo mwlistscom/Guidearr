@@ -80,6 +80,14 @@
     /* busy overlay sits over the editor tables (not the whole viewport) so it's clearly "on" the editor */
     #pl-editor-pane { position:relative; }
     #ple-busy-overlay { position:absolute; inset:0; align-items:flex-start; padding-top:5rem; z-index:90; border-radius:.5rem; }
+    .pleg-item { display:flex; gap:.7rem; padding:.45rem .6rem; border-bottom:1px solid rgba(255,255,255,.07); }
+    .pleg-time { flex:0 0 6.2rem; font-size:.72rem; color:#8ab4f8; font-family:ui-monospace,monospace; line-height:1.3; }
+    .pleg-time span { display:block; color:#6b7280; }
+    .pleg-title { font-size:.85rem; color:#e6e7ea; font-weight:600; }
+    .pleg-cat { font-size:.66rem; color:#f47521; border:1px solid rgba(244,117,33,.4); border-radius:1rem; padding:0 .4rem; margin-left:.3rem; }
+    .pleg-sub { font-size:.77rem; color:#aab; font-style:italic; }
+    .pleg-desc { font-size:.77rem; color:#9aa0aa; margin-top:.12rem; line-height:1.35; }
+    .pleg-empty { padding:1rem; color:#8a8f98; font-size:.85rem; text-align:center; }
     .ple-toolbar .ple-spacer { flex:0 0 auto; width:1.6rem; }
 </style>
 
@@ -146,6 +154,15 @@
     </div>
 </div>
 
+<div class="ple-overlay" id="ple-guide-overlay">
+    <div class="ple-modal" style="max-width:34rem;max-height:80vh;display:flex;flex-direction:column">
+        <h3 id="ple-guide-title" style="margin-bottom:.15rem">TV guide</h3>
+        <div id="ple-guide-sub" style="font-size:.74rem;color:#8a8f98;margin-bottom:.7rem"></div>
+        <div id="ple-guide-list" style="overflow:auto;flex:1;margin:0 -.3rem"></div>
+        <div class="ple-modal-actions"><button class="ple-btn secondary" onclick="GXPLE.closeChannelGuide()">Close</button></div>
+    </div>
+</div>
+
 <div class="ple-overlay" id="ple-edit-overlay">
     <div class="ple-modal">
         <h3 id="ple-edit-title">Channel</h3>
@@ -177,6 +194,7 @@ window.GXPLE = (function () {
         edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
         del:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
         restore: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v6h6"/><path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 7"/></svg>',
+        guide: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M7 7l5-4 5 4"/></svg>',
     };
     const SIZE = 50;
     let plId = null, chTable = null, grTable = null, groupFilter = null, showDeleted = false, showDeletedGroups = false, gsearchTimer = null, searchTimer = null;
@@ -211,7 +229,8 @@ window.GXPLE = (function () {
     async function open(id, name) {
         console.log('GXPLE.open', id, name);
         plId = id; groupFilter = null; showDeleted = false; showDeletedGroups = false;
-        const gb = document.getElementById('gx-browse-pane'); if (gb) gb.hidden = true; // hide provider browser
+        const gb = document.getElementById('gx-browse-pane'); if (gb) gb.hidden = true; // hide provider channel browser
+        const gp = document.getElementById('gx-guide-pane'); if (gp) gp.hidden = true;  // hide provider guide viewer
         $('ple-name').textContent = name || '';
         $('ple-search').value = ''; $('ple-gsearch').value = '';
         $('ple-trash-toggle').classList.remove('on');
@@ -339,8 +358,8 @@ window.GXPLE = (function () {
                   editor: 'list', editorParams: () => ({ values: plGroups, allowEmpty: false }), cellEdited: onEdit },
                 ...(showDeleted ? [{ title: 'Deleted', field: 'deleted', width: 64, hozAlign: 'center', headerSort: false,
                   formatter: c => `<input type="checkbox" ${c.getValue() ? 'checked' : ''} style="pointer-events:none">` }] : []),
-                { title: '', field: '_a', width: 84, hozAlign: 'center', headerSort: false,
-                  formatter: c => { const d = c.getRow().getData(); return `<span class="ple-act"><button data-a="move" title="Move to row">${ICON.move}</button><button data-a="edit" title="Edit">${ICON.edit}</button><button data-a="del" title="${d.deleted ? 'Restore' : 'Delete'}">${d.deleted ? ICON.restore : ICON.del}</button></span>`; } },
+                { title: '', field: '_a', width: 108, hozAlign: 'center', headerSort: false,
+                  formatter: c => { const d = c.getRow().getData(); return `<span class="ple-act"><button data-a="guide" title="TV guide">${ICON.guide}</button><button data-a="move" title="Move to row">${ICON.move}</button><button data-a="edit" title="Edit">${ICON.edit}</button><button data-a="del" title="${d.deleted ? 'Restore' : 'Delete'}">${d.deleted ? ICON.restore : ICON.del}</button></span>`; } },
             ],
         });
         chTable.on('cellClick', (e, cell) => {
@@ -350,6 +369,7 @@ window.GXPLE = (function () {
             if (f !== '_a') return;
             const a = e.target.closest('button')?.dataset.a; if (!a) return;
             if (a === 'move') openMoveChannel(d);
+            else if (a === 'guide') openChannelGuide(d);
             else if (a === 'edit') openEdit(d);
             else if (a === 'del') J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', d.deleted ? { restore: true } : null).then(softReload);
         });
@@ -374,6 +394,28 @@ window.GXPLE = (function () {
     function openMoveChannel(d) { moveKind = 'channel'; moveId = d.id; $('ple-move-title').textContent = 'Move channel'; $('ple-move-label').textContent = 'Move “' + (d.name || '') + '” to row #'; $('ple-move-row').value = d.row || 1; $('ple-move-overlay').classList.add('show'); }
     function openMoveGroup(d, curRow) { moveKind = 'group'; moveId = d.id; $('ple-move-title').textContent = 'Move group'; $('ple-move-label').textContent = 'Move “' + (d.group_title || '') + '” to row #'; $('ple-move-row').value = curRow || 1; $('ple-move-overlay').classList.add('show'); }
     const closeMove = () => $('ple-move-overlay').classList.remove('show');
+
+    async function openChannelGuide(d) {
+        $('ple-guide-title').textContent = d.name || d.tvg_id || 'TV guide';
+        $('ple-guide-sub').textContent = d.tvg_id ? ('tvg-id: ' + d.tvg_id) : 'no tvg-id on this channel';
+        $('ple-guide-list').innerHTML = '<div class="pleg-empty">Loading…</div>';
+        $('ple-guide-overlay').classList.add('show');
+        const { data } = await J('/playlists/' + plId + '/guide?tvg_id=' + encodeURIComponent(d.tvg_id || ''));
+        const progs = (data && data.programmes) || [];
+        if (!progs.length) { $('ple-guide-list').innerHTML = '<div class="pleg-empty">' + esc((data && data.reason) || 'No upcoming programmes.') + '</div>'; return; }
+        const fmtD = ts => new Date(ts * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const fmtT = ts => new Date(ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        $('ple-guide-list').innerHTML = progs.map(p => `
+            <div class="pleg-item">
+                <div class="pleg-time">${fmtD(p.start)}<span>–${fmtT(p.stop)}</span></div>
+                <div>
+                    <div class="pleg-title">${esc(p.title)}${p.category ? ` <span class="pleg-cat">${esc(p.category)}</span>` : ''}</div>
+                    ${p.sub_title ? `<div class="pleg-sub">${esc(p.sub_title)}</div>` : ''}
+                    ${p.descr ? `<div class="pleg-desc">${esc(p.descr)}</div>` : ''}
+                </div>
+            </div>`).join('');
+    }
+    const closeChannelGuide = () => $('ple-guide-overlay').classList.remove('show');
     function applyMove() {
         const row = Math.max(1, Number($('ple-move-row').value) || 1);
         const url = moveKind === 'group' ? '/playlists/' + plId + '/groups/' + moveId + '/move' : '/playlists/' + plId + '/channels/' + moveId + '/move';
@@ -421,7 +463,7 @@ window.GXPLE = (function () {
         else if (e.target.id === 'ple-gsearch' && grTable) { clearTimeout(gsearchTimer); gsearchTimer = setTimeout(() => { const v = e.target.value.trim(); v ? grTable.setFilter('group_title', 'like', v) : grTable.clearFilter(); }, 200); }
     }
 
-    return { open, close, loadGroups, reloadChannels, toggleDeleted, toggleDeletedGroups, reindex, openMoveChannel, openMoveGroup, closeMove, applyMove, openEdit, openAdd, closeEdit, saveEdit, openAddGroup, closeAddGroup, saveAddGroup, onInput };
+    return { open, close, loadGroups, reloadChannels, toggleDeleted, toggleDeletedGroups, reindex, openMoveChannel, openMoveGroup, closeMove, applyMove, openChannelGuide, closeChannelGuide, openEdit, openAdd, closeEdit, saveEdit, openAddGroup, closeAddGroup, saveAddGroup, onInput };
 })();
 
 if (!window.__GXPLE_BOUND) {
