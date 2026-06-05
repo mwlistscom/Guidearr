@@ -55,6 +55,20 @@ XML;
     foreach (glob(storage_path("app/feeds/*.sqlite"))?:[] as $f) @unlink($f);
   }
 
+  public function test_guide_endpoints_return_channels_and_programmes(): void {
+    $u=\App\Models\User::factory()->create(["email_verified_at"=>now()]);
+    $p=\App\Models\Provider::create(["user_id"=>$u->id,"name"=>"G","type"=>"xmltv","url"=>"http://h/epg.xml","enabled"=>true,"refresh_hour"=>2]);
+    $store=new ProviderStore($p->id); $store->guideReloadBegin();
+    $store->guideChannel("cnn.us","CNN","http://x/cnn.png");
+    $store->guideProgramme(["tvg_id"=>"cnn.us","start"=>4102444800,"stop"=>4102448400,"timeshift"=>"+0000","title"=>"Future Show","sub_title"=>"","desc"=>"d","category"=>"News","episode_num"=>"","icon"=>"","year"=>"","rating"=>"","info"=>null]);
+    $store->guideReloadCommit();
+    $ch=$this->actingAs($u)->getJson("/providers/{$p->id}/guide/channels")->assertOk()->json();
+    $this->assertSame(1,$ch["total"]); $this->assertSame("CNN",$ch["data"][0]["display_name"]); $this->assertSame(1,(int)$ch["data"][0]["programmes"]);
+    $pr=$this->actingAs($u)->getJson("/providers/{$p->id}/guide/programmes?tvg_id=cnn.us")->assertOk()->json("programmes");
+    $this->assertSame("Future Show",$pr[0]["title"]);
+    foreach (glob(storage_path("app/feeds/*.sqlite"))?:[] as $f) @unlink($f);
+  }
+
   public function test_provider_accepts_epg_url(): void {
     $u = \App\Models\User::factory()->create(['email_verified_at'=>now()]);
     $p = \App\Models\Provider::create(['user_id'=>$u->id,'name'=>'M','type'=>'m3u','url'=>'http://h/list.m3u','epg_url'=>'http://h/epg.xml.gz','enabled'=>true,'refresh_hour'=>2]);

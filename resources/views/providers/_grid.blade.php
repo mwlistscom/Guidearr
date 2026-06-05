@@ -54,6 +54,21 @@
     .gx-pane .tabulator-row .tabulator-cell { padding:3px 8px; }
     .gx-pane-ch .tabulator { border-radius:0; }
     .gx-pane-gr .tabulator { border-radius:0; }
+    /* guide (XMLTV) viewer */
+    .gx-gsplit { display:grid; grid-template-columns:1fr 1.3fr; gap:1rem; align-items:start; }
+    .gx-gsplit > div { min-width:0; }
+    .gx-logo { height:22px; max-width:44px; object-fit:contain; vertical-align:middle; }
+    .gx-guide-prog { background:#16171a; border:1px solid rgba(255,255,255,.10); border-radius:.4rem; height:56vh; display:flex; flex-direction:column; }
+    .gx-prog-head { padding:.55rem .7rem; font-weight:700; color:#e6e7ea; border-bottom:1px solid rgba(255,255,255,.10); background:#1c1d21; }
+    .gx-prog-list { overflow:auto; flex:1; }
+    .gx-prog-empty { padding:1rem; color:#8a8f98; font-size:.85rem; }
+    .gx-prog-item { display:flex; gap:.7rem; padding:.5rem .7rem; border-bottom:1px solid rgba(255,255,255,.06); }
+    .gx-prog-time { flex:0 0 6.5rem; font-size:.74rem; color:#8ab4f8; font-family:ui-monospace,monospace; line-height:1.3; }
+    .gx-prog-time span { display:block; color:#6b7280; }
+    .gx-prog-title { font-size:.86rem; color:#e6e7ea; font-weight:600; }
+    .gx-prog-cat { font-size:.68rem; color:#f47521; border:1px solid rgba(244,117,33,.4); border-radius:1rem; padding:0 .4rem; margin-left:.3rem; }
+    .gx-prog-sub { font-size:.78rem; color:#aab; font-style:italic; }
+    .gx-prog-desc { font-size:.78rem; color:#9aa0aa; margin-top:.15rem; line-height:1.35; }
     .gx-pane-filter { width:100%; box-sizing:border-box; background:#0e0f13;
         border:1px solid rgba(255,255,255,.10); border-bottom:none; border-radius:.6rem .6rem 0 0;
         color:#e6e7ea; padding:.42rem .6rem; font-size:.85rem; }
@@ -240,7 +255,7 @@ window.GXP = (function () {
                       cellClick: (e, c) => {
                             const a = e.target.closest('button')?.dataset.a; if (!a) return;
                             const d = c.getRow().getData();
-                            ({ refresh: () => GXP.refresh(d.id, d.name), browse: () => GXP.openBrowse(d.id, d.name),
+                            ({ refresh: () => GXP.refresh(d.id, d.name), browse: () => GXP.openBrowse(d.id, d.name, d.type),
                                log: () => GXP.openLog(d.id, d.name),
                                edit: () => GXP.openEdit(d.id), del: () => GXP.del(d.id, d.name) }[a])();
                       } },
@@ -249,7 +264,7 @@ window.GXP = (function () {
             table.on('rowClick', (e, row) => {   // Tabulator 6: rowClick must be registered via .on()
                 if (e.target.closest('.gx-act') || e.target.closest('input')) return; // let actions/checkbox work
                 const d = row.getData();
-                GXP.openBrowse(d.id, d.name);
+                GXP.openBrowse(d.id, d.name, d.type);
             });
         }
 
@@ -409,12 +424,14 @@ window.GXP = (function () {
         const closeLog = () => { stopFeed(); $('gx-log-overlay').classList.remove('show'); };
 
         // ----- inline channel/group browser over the provider's SQLite store -----
-        let browseTable = null, groupsTable = null, browseProvider = null, browseGroups = [], browseGroupFilter = null, searchTimer = null;
+        let browseTable = null, groupsTable = null, guideTable = null, browseProvider = null, browseGroups = [], browseGroupFilter = null, searchTimer = null;
 
         function esc(s) { return String(s ?? '').replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
 
-        async function openBrowse(id, name) {
+        async function openBrowse(id, name, type) {
             if (window.GXPLE) window.GXPLE.close();   // close the playlist editor if open
+            if ((type || '') === 'xmltv') { return openGuide(id, name); }  // guide providers show the EPG, not channels/groups
+            const gp = $('gx-guide-pane'); if (gp) gp.hidden = true;
             browseProvider = id;
             $('gx-browse-name').textContent = name || '';
             $('gx-browse-search').value = '';
@@ -560,10 +577,58 @@ window.GXP = (function () {
 
         function closeBrowse() {
             $('gx-browse-pane').hidden = true;
+            const gp = $('gx-guide-pane'); if (gp) gp.hidden = true;
             if (browseTable) { browseTable.destroy(); browseTable = null; }
             if (groupsTable) { groupsTable.destroy(); groupsTable = null; }
+            if (guideTable) { try { guideTable.destroy(); } catch (e) {} guideTable = null; }
             browseProvider = null;
             browseGroupFilter = null;
+        }
+
+        // ---- guide (XMLTV) viewer: channels on the left, that channel's programmes on the right; no groups ----
+        function openGuide(id, name) {
+            $('gx-browse-pane').hidden = true;
+            browseProvider = id;
+            $('gx-guide-name').textContent = name || '';
+            $('gx-guide-search').value = '';
+            $('gx-guide-count').textContent = '';
+            $('gx-prog-head').textContent = 'Select a channel to see its programmes';
+            $('gx-prog-list').innerHTML = '';
+            $('gx-guide-pane').hidden = false;
+            if (guideTable) { try { guideTable.destroy(); } catch (e) {} guideTable = null; }
+            guideTable = new Tabulator('#guide-channels', {
+                layout: 'fitColumns', height: '56vh', placeholder: 'No guide data — refresh this provider first.',
+                pagination: true, paginationMode: 'remote', paginationSize: 50, dataLoaderLoading: '',
+                ajaxURL: '/providers/' + id + '/guide/channels',
+                ajaxParams: () => ({ search: $('gx-guide-search').value || '' }),
+                ajaxResponse: (u, p, r) => { $('gx-guide-count').textContent = (r.total ?? 0) + ' channels'; return r; },
+                columns: [
+                    { title: 'Logo', field: 'icon', width: 52, hozAlign: 'center', headerSort: false,
+                      formatter: c => c.getValue() ? `<img class="gx-logo" src="${esc(c.getValue())}" onerror="this.style.display='none'">` : '' },
+                    { title: 'Channel', field: 'display_name', widthGrow: 3 },
+                    { title: 'tvg-id', field: 'tvg_id', widthGrow: 2 },
+                    { title: 'Progs', field: 'programmes', width: 64, hozAlign: 'right' },
+                ],
+            });
+            guideTable.on('rowClick', (e, row) => { const d = row.getData(); loadProgrammes(id, d.tvg_id, d.display_name); });
+        }
+
+        async function loadProgrammes(id, tvgId, name) {
+            $('gx-prog-head').textContent = name || tvgId;
+            $('gx-prog-list').innerHTML = '<div class="gx-prog-empty">Loading…</div>';
+            const { data } = await J('/providers/' + id + '/guide/programmes?tvg_id=' + encodeURIComponent(tvgId));
+            const progs = (data && data.programmes) || [];
+            if (!progs.length) { $('gx-prog-list').innerHTML = '<div class="gx-prog-empty">No upcoming programmes.</div>'; return; }
+            const fmt = ts => { const d = new Date(ts * 1000); return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+            $('gx-prog-list').innerHTML = progs.map(p => `
+                <div class="gx-prog-item">
+                    <div class="gx-prog-time">${fmt(p.start)}<span>–${new Date(p.stop * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span></div>
+                    <div class="gx-prog-body">
+                        <div class="gx-prog-title">${esc(p.title)}${p.category ? ` <span class="gx-prog-cat">${esc(p.category)}</span>` : ''}</div>
+                        ${p.sub_title ? `<div class="gx-prog-sub">${esc(p.sub_title)}</div>` : ''}
+                        ${p.descr ? `<div class="gx-prog-desc">${esc(p.descr)}</div>` : ''}
+                    </div>
+                </div>`).join('');
         }
 
         function toggleAddChannel(show) {
@@ -639,7 +704,7 @@ window.GXP = (function () {
             }
         }
 
-        return { init, onInput, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse, reloadGroups, toggleAddGroup, addGroup, openEditChannel, cePreview, closeEditChannel, saveEditChannel };
+        return { init, onInput, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, openGuide, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse, reloadGroups, toggleAddGroup, addGroup, openEditChannel, cePreview, closeEditChannel, saveEditChannel };
     })();
 
     // Bind document-level listeners once; they call through window.GXP so the latest code always runs.

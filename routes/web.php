@@ -49,6 +49,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('providers/{provider}/logs', [\App\Http\Controllers\ProviderController::class, 'logs'])->name('providers.logs');
     Route::get('providers/{provider}/channels', [\App\Http\Controllers\ProviderController::class, 'channels'])->name('providers.channels');
     Route::get('providers/{provider}/groups', [\App\Http\Controllers\ProviderController::class, 'groups'])->name('providers.groups');
+    Route::get('providers/{provider}/guide/channels', [\App\Http\Controllers\ProviderController::class, 'guideChannels'])->name('providers.guide.channels');
+    Route::get('providers/{provider}/guide/programmes', [\App\Http\Controllers\ProviderController::class, 'guideProgrammes'])->name('providers.guide.programmes');
     Route::post('providers/{provider}/groups', [\App\Http\Controllers\ProviderController::class, 'addGroup'])->name('providers.groups.add');
     Route::post('providers/{provider}/channels', [\App\Http\Controllers\ProviderController::class, 'addChannel'])->name('providers.channels.add');
     Route::patch('providers/{provider}/channels/{channel}', [\App\Http\Controllers\ProviderController::class, 'updateChannel'])->name('providers.channels.update');

@@ -267,6 +267,35 @@ class ProviderController extends Controller
         }
     }
 
+    public function guideChannels(Request $request, Provider $provider)
+    {
+        $this->authorizeOwner($provider);
+        $size   = min(200, max(10, (int) $request->query('size', 50)));
+        $page   = max(1, (int) $request->query('page', 1));
+        $search = $request->query('search');
+        if (! ProviderStore::exists($provider->id)) {
+            return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
+        }
+        $store = new ProviderStore($provider->id);
+        $total = $store->guideChannelCount($search);
+        $rows  = $store->guideChannelsPage($size, ($page - 1) * $size, $search);
+
+        return response()->json(['last_page' => max(1, (int) ceil($total / $size)), 'total' => $total, 'data' => $rows]);
+    }
+
+    public function guideProgrammes(Request $request, Provider $provider)
+    {
+        $this->authorizeOwner($provider);
+        $tvg = (string) $request->query('tvg_id', '');
+        if ($tvg === '' || ! ProviderStore::exists($provider->id)) {
+            return response()->json(['programmes' => []]);
+        }
+        $from = now()->timestamp - 6 * 3600;
+        $rows = (new ProviderStore($provider->id))->guideProgrammesFor($tvg, $from, 300);
+
+        return response()->json(['programmes' => $rows]);
+    }
+
     public function updateChannel(Request $request, Provider $provider, int $channel)
     {
         $this->authorizeOwner($provider);

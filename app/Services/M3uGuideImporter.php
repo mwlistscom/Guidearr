@@ -19,7 +19,13 @@ class M3uGuideImporter
     /** @return array{guide_channels?:int,programmes?:int,skipped?:string} */
     public function importGuide(Provider $provider, string $version, callable $log): array
     {
-        $url = trim((string) $provider->epg_url);
+        return $this->importUrl($provider, (string) $provider->epg_url, $version, $log);
+    }
+
+    /** Download an XMLTV URL and load it into the provider's guide tables (atomic reload). */
+    public function importUrl(Provider $provider, string $url, string $version, callable $log): array
+    {
+        $url = trim($url);
         if ($url === '') {
             return ['skipped' => 'no EPG URL'];
         }

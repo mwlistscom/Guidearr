@@ -161,6 +161,55 @@ class ProviderStore
         ];
     }
 
+    private function hasTable(string $t): bool
+    {
+        return (bool) $this->db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='" . $t . "'")->fetchColumn();
+    }
+
+    public function guideChannelCount(?string $search = null): int
+    {
+        if (! $this->hasTable('guide_channels')) { return 0; }
+        $w = ''; $b = [];
+        if ($search !== null && $search !== '') { $w = 'WHERE tvg_id LIKE :s OR display_name LIKE :s'; $b[':s'] = '%' . $search . '%'; }
+        $st = $this->db->prepare("SELECT COUNT(*) FROM guide_channels $w");
+        $st->execute($b);
+
+        return (int) $st->fetchColumn();
+    }
+
+    public function guideChannelsPage(int $limit, int $offset, ?string $search = null): array
+    {
+        if (! $this->hasTable('guide_channels')) { return []; }
+        $w = ''; $b = [];
+        if ($search !== null && $search !== '') { $w = 'WHERE gc.tvg_id LIKE :s OR gc.display_name LIKE :s'; $b[':s'] = '%' . $search . '%'; }
+        $st = $this->db->prepare(
+            "SELECT gc.tvg_id, gc.display_name, gc.icon,
+                    (SELECT COUNT(*) FROM guide g WHERE g.tvg_id = gc.tvg_id) AS programmes
+             FROM guide_channels gc $w ORDER BY gc.display_name LIMIT :l OFFSET :o"
+        );
+        foreach ($b as $k => $v) { $st->bindValue($k, $v); }
+        $st->bindValue(':l', $limit, PDO::PARAM_INT);
+        $st->bindValue(':o', $offset, PDO::PARAM_INT);
+        $st->execute();
+
+        return $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    public function guideProgrammesFor(string $tvgId, int $fromTs, int $limit = 300): array
+    {
+        if (! $this->hasTable('guide')) { return []; }
+        $st = $this->db->prepare(
+            'SELECT start, stop, title, sub_title, descr, category, episode_num, icon, year, rating
+             FROM guide WHERE tvg_id = :t AND stop >= :f ORDER BY start LIMIT :l'
+        );
+        $st->bindValue(':t', $tvgId);
+        $st->bindValue(':f', $fromTs, PDO::PARAM_INT);
+        $st->bindValue(':l', $limit, PDO::PARAM_INT);
+        $st->execute();
+
+        return $st->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     /** Stream every channel (id + group + minimal data) ordered by group then id — used to seed playlists. */
     public function streamForSeed(callable $cb): void
     {

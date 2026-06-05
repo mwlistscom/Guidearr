@@ -51,3 +51,20 @@
         </div>
     </div>
 </div>
+
+<div class="gx-browse-pane" id="gx-guide-pane" hidden>
+    <div class="gx-browse-head">
+        <h2>Guide — <span id="gx-guide-name"></span></h2>
+        <span class="gx-count" id="gx-guide-count"></span>
+    </div>
+    <div class="gx-gsplit">
+        <div class="gx-pane gx-guide-ch">
+            <input class="gx-pane-filter" id="gx-guide-search" placeholder="Filter channels…">
+            <div id="guide-channels"></div>
+        </div>
+        <div class="gx-pane gx-guide-prog">
+            <div class="gx-prog-head" id="gx-prog-head">Select a channel to see its programmes</div>
+            <div class="gx-prog-list" id="gx-prog-list"></div>
+        </div>
+    </div>
+</div>

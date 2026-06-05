@@ -81,8 +81,12 @@ class FeedWork extends Command
                     $this->ingestXtream($job, $provider);
                     return;
 
-                default: // xmltv — validation only until its ingest lands
-                    $job->log('info', strtoupper($provider->type) . ' validation only (ingest in a later build).');
+                case 'xmltv':
+                    $this->ingestXmltv($job, $provider);
+                    return;
+
+                default: // anything unexpected — validate only
+                    $job->log('info', strtoupper($provider->type) . ' validation only.');
                     $check = $validator->validate($provider->type, $provider->url, $provider->username, $provider->password);
                     if (! $check['ok']) { $this->failJob($job, $provider, $check['message']); return; }
                     $updates = ['last_status' => 'ok', 'last_refresh_at' => now()];
@@ -157,7 +161,31 @@ class FeedWork extends Command
         $job->log('info', 'Done.');
     }
 
-    /** A recoverable failure: count it, disable+drop at the threshold, otherwise requeue for another attempt. */
+    /** XMLTV provider: the URL *is* an XMLTV guide (no channel list) — load it into the guide tables. */
+    private function ingestXmltv(FeedQueue $job, Provider $provider): void
+    {
+        if (! $provider->url) { $this->failJob($job, $provider, 'No URL set.'); return; }
+        $version = substr($job->msgid, 0, 12);
+
+        try {
+            $g = (new \App\Services\M3uGuideImporter())->importUrl(
+                $provider, (string) $provider->url, $version, fn (string $m) => $job->log('info', $m)
+            );
+        } catch (Throwable $e) {
+            $this->failJob($job, $provider, 'Guide import failed: ' . $e->getMessage());
+            return;
+        }
+
+        if (isset($g['skipped'])) {
+            $this->failJob($job, $provider, 'Guide not ingested: ' . $g['skipped']);
+            return;
+        }
+
+        $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
+        $job->markDone();
+        $job->log('info', "Done. {$g['guide_channels']} guide channels, {$g['programmes']} programmes.");
+    }
+
     private function ingestXtream(FeedQueue $job, Provider $provider): void
     {
         if (! $provider->url) { $this->failJob($job, $provider, 'No URL set.'); return; }
