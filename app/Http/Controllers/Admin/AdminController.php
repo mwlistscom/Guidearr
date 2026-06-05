@@ -5,6 +5,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Playlist;
 use App\Models\Provider;
 use App\Models\User;
+use App\Services\ReleaseCheck;
 use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -18,6 +19,7 @@ class AdminController extends Controller
             'pending'   => User::where('status', 'pending')->count(),
             'banned'    => User::where('status', 'banned')->count(),
             'sys'       => $this->systemStats(),
+            'update'    => ReleaseCheck::status(),
         ]);
     }
 

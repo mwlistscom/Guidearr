@@ -14,6 +14,12 @@ return [
     ],
     'registration_requires_approval' => env('REGISTRATION_REQUIRES_APPROVAL', false),
 
+    // Update check: the admin Status page pings the GitHub Releases API (cached 6h)
+    // and shows an alert when a newer version is published. Set GUIDEARR_UPDATE_CHECK=false
+    // to disable the outbound call entirely.
+    'update_check' => (bool) env('GUIDEARR_UPDATE_CHECK', true),
+    'github_repo'  => env('GUIDEARR_GITHUB_REPO', 'mwlistscom/Guidearr'),
+
     // Background feed downloader limits (all overridable via .env).
     'feed' => [
         'max_bytes'        => (int) env('FEED_MAX_BYTES', 1288490188), // ~1.2 GB hard cap

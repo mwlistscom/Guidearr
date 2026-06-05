@@ -11,6 +11,15 @@
     };
 @endphp
 <h1>Status</h1>
+
+@if (!empty($update) && $update['available'])
+<div class="upd-alert" onclick="document.getElementById('upd-modal').style.display='flex'" role="button" tabindex="0"
+     onkeypress="if(event.key==='Enter'){document.getElementById('upd-modal').style.display='flex'}">
+    <span class="upd-dot"></span>
+    <span><strong>Update available — v{{ $update['latest'] }}.</strong> You're on v{{ $update['current'] }}. Click for update instructions.</span>
+    <span class="upd-go">→</span>
+</div>
+@endif
 <div class="stats">
     <div class="stat"><span class="n">{{ $userCount }}</span><span class="l">Users</span></div>
     <div class="stat"><span class="n">{{ $pending }}</span><span class="l">Pending</span></div>
@@ -73,4 +82,46 @@
         <button type="submit">Reload services</button>
     </form>
 </div>
+@if (!empty($update) && $update['available'])
+<div id="upd-modal" class="upd-modal" onclick="if(event.target===this)this.style.display='none'">
+    <div class="upd-box">
+        <div class="upd-head">
+            <h2>Update to v{{ $update['latest'] }}</h2>
+            <button type="button" class="upd-x" onclick="document.getElementById('upd-modal').style.display='none'">&times;</button>
+        </div>
+        <p class="muted">You're running v{{ $update['current'] }}. Update from your Guidearr directory:</p>
+        <pre class="upd-code">cd /opt/Guidearr        # your install directory
+git pull                # or download the latest release from GitHub
+docker compose up -d --build
+docker compose exec app php artisan migrate --force
+docker compose exec app php artisan optimize:clear</pre>
+        <p class="muted">The worker and scheduler restart automatically on rebuild. Review what changed before updating:</p>
+        <p><a class="upd-link" href="{{ $update['url'] }}" target="_blank" rel="noopener">View release notes on GitHub →</a></p>
+    </div>
+</div>
+@endif
+
+<style>
+    .upd-alert { display:flex; align-items:center; gap:.7rem; cursor:pointer; margin:0 0 1.4rem;
+        background:rgba(34,197,94,.12); border:1px solid rgba(34,197,94,.45); color:#bbf7d0;
+        border-radius:.6rem; padding:.7rem 1rem; font-size:.95rem; }
+    .upd-alert:hover { background:rgba(34,197,94,.18); }
+    .upd-alert .upd-dot { width:.6rem; height:.6rem; border-radius:50%; background:#22c55e; flex:0 0 auto;
+        box-shadow:0 0 0 0 rgba(34,197,94,.7); animation:upd-pulse 2s infinite; }
+    .upd-alert .upd-go { margin-left:auto; font-weight:700; }
+    @keyframes upd-pulse { 0%{box-shadow:0 0 0 0 rgba(34,197,94,.6)} 70%{box-shadow:0 0 0 .5rem rgba(34,197,94,0)} 100%{box-shadow:0 0 0 0 rgba(34,197,94,0)} }
+    .upd-modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1000;
+        align-items:center; justify-content:center; padding:1rem; }
+    .upd-box { background:#16181d; border:1px solid rgba(255,255,255,.14); border-radius:.7rem;
+        max-width:40rem; width:100%; padding:1.3rem 1.5rem; }
+    .upd-head { display:flex; align-items:center; justify-content:space-between; }
+    .upd-head h2 { margin:0; font-size:1.3rem; }
+    .upd-x { background:none; border:none; color:var(--muted); font-size:1.6rem; line-height:1; cursor:pointer; padding:0 .2rem; }
+    .upd-x:hover { color:#fff; }
+    .upd-code { background:#0c0d10; border:1px solid rgba(255,255,255,.10); border-radius:.5rem;
+        padding:.9rem 1rem; overflow:auto; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:.82rem;
+        line-height:1.6; color:#cdd2da; white-space:pre; }
+    .upd-link { color:var(--accent); text-decoration:none; font-weight:600; }
+    .upd-link:hover { text-decoration:underline; }
+</style>
 @endsection
