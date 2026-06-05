@@ -117,4 +117,10 @@ class PlaylistServeTest extends TestCase
 
         \App\Support\Settings::set('serve_max_ips', 10);
     }
+    public function test_playlist_belongs_to_user(): void
+    {
+        $u = User::factory()->create(['email_verified_at' => now()]);
+        $pl = Playlist::create(['user_id' => $u->id, 'name' => 'Rel']);
+        $this->assertTrue($pl->user->is($u));
+    }
 }

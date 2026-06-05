@@ -55,6 +55,11 @@ class Playlist extends Model
         return $this->belongsToMany(Provider::class, 'playlist_providers');
     }
 
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
+
     public function providerIds(): array
     {
         return $this->providers()->pluck('providers.id')->all();
