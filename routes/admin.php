@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminPasswordController;
 use App\Http\Controllers\Admin\EnvController;
 use App\Http\Controllers\Admin\FeedBrowseController;
+use App\Http\Controllers\Admin\LogController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\BrandingController;
 use Illuminate\Support\Facades\Route;
@@ -43,6 +44,10 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::get('feeds/playlist/{playlist}', [FeedBrowseController::class, 'playlist'])->name('feeds.playlist');
             Route::get('feeds/playlist/{playlist}/data', [FeedBrowseController::class, 'playlistData'])->name('feeds.playlist.data');
             Route::get('feeds/playlist/{playlist}/groups', [FeedBrowseController::class, 'playlistGroups'])->name('feeds.playlist.groups');
+
+            Route::get('logs', [LogController::class, 'index'])->name('logs');
+            Route::get('logs/view', [LogController::class, 'view'])->name('logs.view');
+            Route::get('logs/bundle', [LogController::class, 'bundle'])->name('logs.bundle');
             Route::patch('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'updateChannel'])->name('feeds.channel.update');
             Route::delete('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'deleteChannel'])->name('feeds.channel.delete');
 
