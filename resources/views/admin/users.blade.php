@@ -3,14 +3,24 @@
 @section('content')
 <h1>Users</h1>
 
-<div class="filters">
-    <input type="search" id="uf-search" placeholder="Filter by name or email…" autocomplete="off">
-    <select id="uf-status">
-        <option value="all">All statuses</option>
-        <option value="enabled">Enabled only</option>
-        <option value="banned">Banned only</option>
-    </select>
+<div class="usertop">
+    <div class="filters">
+        <input type="search" id="uf-search" placeholder="Filter by name or email…" autocomplete="off">
+        <select id="uf-status">
+            <option value="all">All statuses</option>
+            <option value="enabled">Enabled only</option>
+            <option value="banned">Banned only</option>
+        </select>
+    </div>
+    <a class="addbtn" href="{{ route('admin.users.create') }}">+ Add user</a>
 </div>
+<style>
+    .usertop { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1rem; }
+    .usertop .filters { margin:0; }
+    .addbtn { background:var(--accent); color:#1a1205; font-weight:700; border:none; border-radius:.5rem;
+        padding:.5rem .9rem; text-decoration:none; white-space:nowrap; }
+    .addbtn:hover { filter:brightness(1.1); }
+</style>
 
 <table id="users-table">
     <thead>

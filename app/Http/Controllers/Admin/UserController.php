@@ -14,6 +14,35 @@ class UserController extends Controller
         return view('admin.users', ['users' => User::orderByDesc('id')->get()]);
     }
 
+    public function create()
+    {
+        return view('admin.user-create');
+    }
+
+    /** Manually create an account — verified + active immediately, so a mail server isn't required. */
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'name'     => ['required', 'string', 'max:255'],
+            'email'    => ['required', 'email', 'max:255', Rule::unique('users')],
+            'role'     => ['required', Rule::in(['user', 'admin'])],
+            'password' => ['required', 'confirmed', Password::defaults()],
+        ]);
+
+        $user = new User();
+        $user->forceFill([
+            'name'                 => $validated['name'],
+            'email'                => $validated['email'],
+            'password'             => bcrypt($validated['password']),
+            'is_admin'             => $validated['role'] === 'admin',
+            'status'               => 'active',
+            'must_change_password' => false,
+            'email_verified_at'    => now(), // manual account: skip the email-verification step entirely
+        ])->save();
+
+        return redirect()->route('admin.users')->with('status', "{$user->email} created.");
+    }
+
     public function edit(User $user)
     {
         return view('admin.user-edit', ['user' => $user]);

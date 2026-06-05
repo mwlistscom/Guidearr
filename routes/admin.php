@@ -25,6 +25,8 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::post('restart', [AdminController::class, 'restart'])->name('restart');
 
             Route::get('users', [UserController::class, 'index'])->name('users');
+            Route::get('users/create', [UserController::class, 'create'])->name('users.create');
+            Route::post('users', [UserController::class, 'store'])->name('users.store');
             Route::get('users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
             Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
             Route::patch('users/{user}/toggle', [UserController::class, 'toggle'])->name('users.toggle');

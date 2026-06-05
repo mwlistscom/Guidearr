@@ -52,20 +52,114 @@
     </header>
 
     <h1>Documentation</h1>
-    <p class="lead">Guides for managing your account. More will be added over time.</p>
+    <p class="lead">How to build and manage IPTV playlists in {{ config('app.name', 'Guidearr') }} — plus account basics.</p>
 
     <nav class="toc">
         <strong>On this page</strong>
         <ul>
-            <li><a href="#twofa">Setting up two-factor authentication</a></li>
-            <li><a href="#password">Changing your password</a></li>
-            <li><a href="#email">Verifying your email</a></li>
-            <li><a href="#delete">Deleting your account</a></li>
+            <li><a href="#overview">How it fits together</a></li>
+            <li><a href="#providers">1 · Adding a provider (your source)</a></li>
+            <li><a href="#create">2 · Creating a playlist</a></li>
+            <li><a href="#channels">3 · Editing channels</a></li>
+            <li><a href="#groups">4 · Managing groups</a></li>
+            <li><a href="#links">5 · Playlist links (M3U / EPG / Stream)</a></li>
+            <li><a href="#guide">6 · The TV guide (EPG)</a></li>
+            <li><a href="#twofa">7 · Two-factor authentication</a></li>
+            <li><a href="#password">8 · Changing your password</a></li>
+            <li><a href="#email">9 · Verifying your email</a></li>
+            <li><a href="#delete">10 · Deleting your account</a></li>
         </ul>
     </nav>
 
+    <section id="overview">
+        <h2>How it fits together</h2>
+        <p>Three things work together:</p>
+        <ul class="steps">
+            <li><strong>Providers</strong> are your sources — an Xtream account, an M3U URL, or an XMLTV guide feed. {{ config('app.name', 'Guidearr') }} ingests their channels and guide data and keeps a local copy.</li>
+            <li><strong>Playlists</strong> are the lists you build <em>from</em> one or more providers: pick channels, arrange them into groups, rename and reorder, and hand out clean links.</li>
+            <li><strong>Links</strong> are the URLs you paste into your IPTV player — one for the channel list (M3U), one for the guide (EPG/XMLTV), and one stream list (for <code>.strm</code> files).</li>
+        </ul>
+        <p>The dashboard shows your <strong>Providers</strong> on the left and your <strong>Playlists</strong> on the right. Selecting a row opens its detail panel below.</p>
+    </section>
+
+    <section id="providers">
+        <h2><span class="num">1</span> Adding a provider (your source)</h2>
+        <ol>
+            <li>In the <strong>Provider</strong> panel, click the <strong>+</strong> button.</li>
+            <li>Pick a <strong>type</strong>: <strong>Xtream</strong> (username/password + server URL), <strong>M3U</strong> (a playlist URL, with an optional separate <strong>EPG URL</strong> for its guide), or <strong>XMLTV</strong> (a guide-only feed — no channels).</li>
+            <li>Give it a name, fill in the URL (and credentials for Xtream), and save.</li>
+            <li>Use the <strong>refresh</strong> button to ingest it. An update log opens — when it reads <strong>Done</strong>, the channels (and guide) are loaded.</li>
+            <li>Click a provider row to browse what came in: its channels and groups. For an <strong>XMLTV</strong> provider, you'll see the <strong>guide</strong> instead — channels on the left, that channel's programmes on the right.</li>
+        </ol>
+        <div class="note">Refreshes also run automatically on the schedule you set. If a source fails repeatedly it's disabled so it doesn't keep retrying — re-enable it after fixing the URL or credentials.</div>
+    </section>
+
+    <section id="create">
+        <h2><span class="num">2</span> Creating a playlist</h2>
+        <ol>
+            <li>In the <strong>Playlist</strong> panel, click <strong>+</strong> (create).</li>
+            <li>Enter a <strong>name</strong>.</li>
+            <li><strong>First channel #</strong> — the number the first channel gets in the M3U (e.g. 100); each following channel increments from there.</li>
+            <li><strong>Emit #EXTGRP tags</strong> — leave on if your player groups channels using <code>#EXTGRP</code> lines.</li>
+            <li><strong>IP lock</strong> (optional) — lock the playlist to a single IP address. Leave blank for normal use (a rolling device limit still applies).</li>
+            <li>Select one or more <strong>providers</strong> to seed from, and optionally a <strong>guide provider</strong> for the EPG.</li>
+            <li>Create. The playlist is filled with every channel and group from the providers you picked — ready to trim and arrange.</li>
+        </ol>
+    </section>
+
+    <section id="channels">
+        <h2><span class="num">3</span> Editing channels</h2>
+        <p>Click a playlist row to open its editor — <strong>channels on the left, groups on the right</strong>.</p>
+        <ul class="steps">
+            <li><strong>Reorder:</strong> press and drag a channel row up or down. Order here is the order players show.</li>
+            <li><strong>Move to a row #:</strong> use the move button on a row to jump it to a specific position without dragging across pages.</li>
+            <li><strong>Edit inline:</strong> double-click a cell to change the TVG-ID, TVG name, title, or M3U URL; the <strong>Group</strong> cell is a dropdown of the playlist's groups. Your edits override the provider's values for that channel.</li>
+            <li><strong>Enable / disable:</strong> the <strong>On</strong> toggle keeps a channel in the list but excludes it from the output when off.</li>
+            <li><strong>Delete / restore:</strong> deleting hides a channel from the output. Turn on <strong>Show deleted</strong> to see dimmed rows and restore them.</li>
+            <li><strong>TV guide:</strong> the <strong>G</strong> button on a row shows that channel's upcoming programmes (using the playlist's guide provider).</li>
+            <li><strong>Add a channel manually:</strong> use the add control to insert a custom channel (name, URL, group) that isn't from a provider.</li>
+            <li><strong>Page size:</strong> change how many rows show per page with the selector.</li>
+        </ul>
+        <div class="note">Edits are saved as you go. Reordering and edits never change your providers — a playlist is its own arrangement on top of them.</div>
+    </section>
+
+    <section id="groups">
+        <h2><span class="num">4</span> Managing groups</h2>
+        <p>Groups are the categories players show (US Entertainment, Sports, …). The right-hand pane manages them.</p>
+        <ul class="steps">
+            <li><strong>Reorder:</strong> drag a group to change the order its channels appear in the output.</li>
+            <li><strong>Rename:</strong> renaming a group updates every channel in it automatically.</li>
+            <li><strong>Enable / disable:</strong> the group's <strong>On</strong> toggle cascades to every channel inside it — turning a group off removes all its channels from the output.</li>
+            <li><strong>Delete:</strong> deleting a group cascades to its channels. Use <strong>show deleted groups</strong> to restore one (which restores its channels).</li>
+            <li><strong>Add a group:</strong> create an empty group with the <strong>+</strong> control, then move channels into it.</li>
+            <li><strong>Reindex:</strong> renumbers positions into clean, evenly-spaced steps (10, 20, 30 …) after lots of editing. There's a reindex button on both the channel and group toolbars.</li>
+        </ul>
+    </section>
+
+    <section id="links">
+        <h2><span class="num">5</span> Playlist links (M3U / EPG / Stream)</h2>
+        <p>On a playlist row, the <strong>Links</strong> button opens three ready-to-copy URLs:</p>
+        <ul class="steps">
+            <li><strong>M3U Link</strong> — the channel list. Paste it where your IPTV player asks for an M3U / playlist URL.</li>
+            <li><strong>EPG / Guide Link</strong> — the XMLTV guide for this playlist's channels. Paste it where the player asks for an EPG / XMLTV URL.</li>
+            <li><strong>Stream Link</strong> — a JSON channel list, used to generate <code>.strm</code> files (Plex / Jellyfin / Emby) with the <a href="https://github.com/mwlistscom/GetSTRM" target="_blank" rel="noopener">GetSTRM</a> tool.</li>
+        </ul>
+        <p>Each link carries the playlist's <strong>key</strong>. The <strong>key</strong> button on the row regenerates it — handy if a link leaks, but note it <strong>invalidates the old links</strong>, so anyone using them will need the new ones.</p>
+        <div class="note">If the Links overlay says the base URL isn't set, an administrator needs to set it under <span class="path">Admin → Config → Playlist links</span>.</div>
+    </section>
+
+    <section id="guide">
+        <h2><span class="num">6</span> The TV guide (EPG)</h2>
+        <ol>
+            <li>Add an <strong>XMLTV</strong> provider (or an <strong>M3U</strong> provider with an EPG URL) and refresh it so its guide loads.</li>
+            <li>When creating or editing a playlist, set that provider as the playlist's <strong>guide provider</strong>.</li>
+            <li>Hand out the <strong>EPG / Guide Link</strong> from the Links overlay — it serves guide data for just the channels in that playlist.</li>
+        </ol>
+        <p>The guide matches programmes to channels by <strong>tvg-id</strong>, so a channel only shows a guide if its tvg-id matches one in the guide source. You can check any channel's guide with the <strong>G</strong> button in the channel editor.</p>
+    </section>
+
     <section id="twofa">
-        <h2><span class="num">1</span> Setting up two-factor authentication (2FA)</h2>
+        <h2><span class="num">7</span> Two-factor authentication (2FA)</h2>
         <p>Two-factor authentication adds a one-time code from your phone on top of your password, so your account stays safe even if your password is exposed.</p>
         <ol>
             <li>Open <span class="path">Settings → Security</span>. You may be asked to re-enter your password first.</li>
@@ -78,7 +172,7 @@
     </section>
 
     <section id="password">
-        <h2><span class="num">2</span> Changing your password</h2>
+        <h2><span class="num">8</span> Changing your password</h2>
         <ol>
             <li>Open <span class="path">Settings → Security</span>.</li>
             <li>Under <strong>Update password</strong>, enter your current password, then your new password twice.</li>
@@ -88,7 +182,7 @@
     </section>
 
     <section id="email">
-        <h2><span class="num">3</span> Verifying your email</h2>
+        <h2><span class="num">9</span> Verifying your email</h2>
         <p>When you register, we email you a 6-digit verification code.</p>
         <ol>
             <li>Check your inbox for the message from {{ config('app.name', 'Guidearr') }} and copy the 6-digit code.</li>
@@ -99,7 +193,7 @@
     </section>
 
     <section id="delete">
-        <h2><span class="num">4</span> Deleting your account</h2>
+        <h2><span class="num">10</span> Deleting your account</h2>
         <ol>
             <li>Open <span class="path">Settings → Profile</span>.</li>
             <li>Scroll to the <strong>Delete account</strong> section at the bottom.</li>
