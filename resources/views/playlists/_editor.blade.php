@@ -401,7 +401,19 @@ window.GXPLE = (function () {
     }
 
     function reloadChannels() { if (plId) buildChannels(); }              // rebuild — for filter/column changes (search, group, show-deleted)
-    function softReload() { if (chTable) { try { chTable.replaceData(); } catch (e) { reloadChannels(); } } } // silent in-place refresh — for moves/edits/deletes (no flash, params unchanged)
+    function softReload() {                                               // silent in-place refresh for moves/edits/deletes — keeps the scroll position
+        if (!chTable) return;
+        const holder = chTable.element && chTable.element.querySelector('.tabulator-tableholder');
+        const top = holder ? holder.scrollTop : 0;
+        try {
+            chTable.replaceData().then(() => {
+                requestAnimationFrame(() => {
+                    const h = chTable.element && chTable.element.querySelector('.tabulator-tableholder');
+                    if (h) h.scrollTop = top;
+                });
+            }).catch(() => {});
+        } catch (e) { reloadChannels(); }
+    }
 
     function toggleDeleted() {
         showDeleted = !showDeleted;
