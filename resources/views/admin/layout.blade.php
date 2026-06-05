@@ -41,6 +41,9 @@
         .sidebar .dash-link:hover { color:#fff; border-color:var(--accent); background:rgba(244,117,33,.10); }
         .sidebar .dash-link svg { width:16px; height:16px; flex-shrink:0; }
         .sidebar .foot .ver { font-size:.72rem; color:var(--muted); margin-bottom:.5rem; letter-spacing:.02em; }
+        .sidebar .foot .repo { font-size:.72rem; margin-bottom:.6rem; }
+        .sidebar .foot .repo a { color:var(--accent); text-decoration:none; }
+        .sidebar .foot .repo a:hover { text-decoration:underline; }
         .sidebar .foot .who { font-size:.78rem; color:var(--muted); margin-bottom:.6rem; word-break:break-all; }
         .sidebar .foot button { width:100%; }
 
@@ -150,6 +153,7 @@
             </a>
             <div class="foot">
                 <div class="ver">{{ config('app.name','Guidearr') }} v{{ config('guidearr.version') }} &middot; <a href="{{ route('license', ['from' => 'admin']) }}" style="color:var(--accent);text-decoration:none">License</a></div>
+                <div class="repo"><a href="https://github.com/mwlistscom/Guidearr" target="_blank" rel="noopener">Repository &#8599;</a></div>
                 <div class="who">{{ auth()->user()->email }}</div>
                 <form method="POST" action="{{ route('admin.logout') }}">@csrf<button class="ghost">Log out</button></form>
             </div>

@@ -27,10 +27,6 @@
                     </flux:sidebar.item>
                 @endif
 
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/mwlistscom/Guidearr" target="_blank">
-                    {{ __('Repository') }}
-                </flux:sidebar.item>
-
                 <flux:sidebar.item icon="book-open-text" href="{{ route('docs') }}">
                     {{ __('Documentation') }}
                 </flux:sidebar.item>
