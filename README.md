@@ -1,4 +1,4 @@
-# Guidearr *do not download yet - in dev *
+# Guidearr
 
 **Guidearr** is a self‑hosted M3U / IPTV playlist editor — the same engine that runs the playlist tooling on **[RockMyM3U.com](https://rockmym3u.com)**, packaged as a standalone, Dockerized application you can run on your own server.
 
