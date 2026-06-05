@@ -3,11 +3,11 @@ services:
     build: .
     volumes: [ "./:/var/www/html" ]
     depends_on: [db]
-web:
+  web:
     image: nginx:1.27-alpine
     ports:
       - "7979:7979"            # direct TLS (existing)
-      - "192.168.3.60:8080:8080"  # plain HTTP for the local proxy only — adjust the bind to your proxy's reach
+      - "127.0.0.1:8080:8080"  # plain HTTP for the local proxy only — adjust the bind to your proxy's reach
     volumes:
       - ./:/var/www/html
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
