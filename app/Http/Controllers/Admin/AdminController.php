@@ -2,6 +2,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Playlist;
+use App\Models\Provider;
 use App\Models\User;
 use App\Support\Settings;
 use Illuminate\Http\Request;
@@ -15,7 +17,62 @@ class AdminController extends Controller
             'userCount' => User::count(),
             'pending'   => User::where('status', 'pending')->count(),
             'banned'    => User::where('status', 'banned')->count(),
+            'sys'       => $this->systemStats(),
         ]);
+    }
+
+    /** Best-effort host/app resource snapshot for the Status page. All fields are null-safe. */
+    private function systemStats(): array
+    {
+        // Disk for the filesystem that holds storage/ (where the SQLite stores grow).
+        $path = storage_path();
+        $dTotal = @disk_total_space($path) ?: 0;
+        $dFree  = @disk_free_space($path) ?: 0;
+        $dUsed  = max(0, $dTotal - $dFree);
+
+        // Memory from /proc/meminfo (host kernel; reflects the box unless cgroup-limited).
+        $mem = null;
+        if (is_readable('/proc/meminfo')) {
+            $info = [];
+            foreach (explode("\n", (string) @file_get_contents('/proc/meminfo')) as $line) {
+                if (preg_match('/^(\w+):\s+(\d+)\s*kB/', $line, $m)) {
+                    $info[$m[1]] = (int) $m[2] * 1024;
+                }
+            }
+            $mt = $info['MemTotal'] ?? 0;
+            $ma = $info['MemAvailable'] ?? 0;
+            if ($mt > 0) {
+                $mem = ['total' => $mt, 'used' => max(0, $mt - $ma), 'pct' => (int) round(($mt - $ma) / $mt * 100)];
+            }
+        }
+
+        // CPU load averages + core count.
+        $load = function_exists('sys_getloadavg') ? @sys_getloadavg() : null;
+        $cores = is_readable('/proc/cpuinfo')
+            ? max(1, substr_count((string) @file_get_contents('/proc/cpuinfo'), 'processor'))
+            : null;
+
+        // Size of the per-provider + per-playlist SQLite stores (the data that grows with usage).
+        $bytes = 0;
+        $files = 0;
+        foreach ([storage_path('app/feeds'), storage_path('app/playlists')] as $dir) {
+            foreach (glob($dir . '/*.sqlite*') ?: [] as $f) {
+                $bytes += @filesize($f) ?: 0;
+                if (str_ends_with($f, '.sqlite')) {
+                    $files++;
+                }
+            }
+        }
+
+        return [
+            'disk'   => ['total' => $dTotal, 'used' => $dUsed, 'free' => $dFree,
+                'pct' => $dTotal > 0 ? (int) round($dUsed / $dTotal * 100) : 0],
+            'mem'    => $mem,
+            'load'   => $load,
+            'cores'  => $cores,
+            'stores' => ['bytes' => $bytes, 'files' => $files],
+            'counts' => ['providers' => Provider::count(), 'playlists' => Playlist::count()],
+        ];
     }
 
     /** Config pane: serving links + rate-limit knobs. */
