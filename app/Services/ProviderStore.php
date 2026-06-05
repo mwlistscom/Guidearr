@@ -194,7 +194,7 @@ class ProviderStore
     public function enhanceGuideFromChannelNames(int $defaultMinutes = 180): array
     {
         $empty = ['examined' => 0, 'added' => 0, 'cleared' => 0];
-        if (! $this->hasTable('guide_channels') || ! $this->hasTable('guide')) {
+        if (! $this->hasTable('guide')) {
             return $empty;
         }
 
@@ -204,22 +204,43 @@ class ProviderStore
         // channel goes completely blank in the guide. Stale events keep their filler.
         $cutoff = now()->timestamp - 6 * 3600;
 
-        // Channels with no *real* programmes (none, or only filler) that have a display-name.
-        $sel = $this->db->prepare(
-            "SELECT gc.tvg_id AS tvg_id, gc.display_name AS display_name
-               FROM guide_channels gc
-              WHERE gc.display_name IS NOT NULL
-                AND TRIM(gc.display_name) != ''
-                AND NOT EXISTS (
-                    SELECT 1 FROM guide g
-                     WHERE g.tvg_id = gc.tvg_id AND g.title <> :filler
-                )"
-        );
-        $sel->execute([':filler' => self::GUIDE_FILLER_TITLE]);
-        $rows = $sel->fetchAll(\PDO::FETCH_ASSOC);
-
-        if (! $rows) {
+        // Best embedded-event name per tvg_id. The live `channels` list carries the current /
+        // upcoming event and is updated in real time by the provider; the XMLTV guide's own
+        // display-names frequently lag a day. So prefer the channel name, with the guide
+        // channel name as a fallback (xmltv-only providers have no channels table).
+        $names = [];
+        if ($this->hasTable('guide_channels')) {
+            $q = $this->db->query(
+                "SELECT tvg_id, display_name FROM guide_channels
+                  WHERE tvg_id IS NOT NULL AND TRIM(tvg_id) <> ''
+                    AND display_name IS NOT NULL AND TRIM(display_name) <> ''"
+            );
+            foreach ($q as $row) {
+                $names[(string) $row['tvg_id']] = (string) $row['display_name'];
+            }
+        }
+        if ($this->hasTable('channels')) {
+            $q = $this->db->query(
+                "SELECT tvg_id, name, tvg_name FROM channels
+                  WHERE tvg_id IS NOT NULL AND TRIM(tvg_id) <> ''"
+            );
+            foreach ($q as $row) {
+                $cand = self::pickEventName((string) ($row['name'] ?? ''), (string) ($row['tvg_name'] ?? ''));
+                if ($cand !== '') {
+                    $names[(string) $row['tvg_id']] = $cand;   // fresher than the guide xml
+                }
+            }
+        }
+        if (! $names) {
             return $empty;
+        }
+
+        // tvg_ids that already have a real (non-filler) programme — never touch those.
+        $real = [];
+        $rs = $this->db->prepare('SELECT DISTINCT tvg_id FROM guide WHERE title <> ?');
+        $rs->execute([self::GUIDE_FILLER_TITLE]);
+        foreach ($rs->fetchAll(\PDO::FETCH_COLUMN) as $t) {
+            $real[(string) $t] = true;
         }
 
         $del = $this->db->prepare('DELETE FROM guide WHERE tvg_id = ? AND title = ?');
@@ -227,25 +248,29 @@ class ProviderStore
             'INSERT OR IGNORE INTO guide (tvg_id,start,stop,timeshift,title) VALUES (?,?,?,?,?)'
         );
 
+        $examined = 0;
         $added = 0;
         $cleared = 0;
         $this->db->beginTransaction();
         try {
-            foreach ($rows as $r) {
-                $p = self::parseEmbeddedEvent((string) $r['display_name'], $defaultMinutes);
-                if ($p === null) {
-                    // Unparseable (sentinel/no event) — leave any filler in place.
-                    continue;
+            foreach ($names as $tvgId => $nm) {
+                if (isset($real[$tvgId])) {
+                    continue;   // genuine schedule already present
                 }
+                $p = self::parseEmbeddedEvent($nm, $defaultMinutes);
+                if ($p === null) {
+                    continue;   // no parseable event (sentinel / plain channel) — keep filler
+                }
+                $examined++;
                 if ($p['stop'] < $cutoff) {
                     // Event already ended and would be filtered out everywhere — keep the
                     // filler so the channel still appears in the guide.
                     continue;
                 }
                 // Replace the filler for this channel with the real event.
-                $del->execute([$r['tvg_id'], self::GUIDE_FILLER_TITLE]);
+                $del->execute([$tvgId, self::GUIDE_FILLER_TITLE]);
                 $cleared += $del->rowCount();
-                $ins->execute([$r['tvg_id'], $p['start'], $p['stop'], '+0000', $p['title']]);
+                $ins->execute([$tvgId, $p['start'], $p['stop'], '+0000', $p['title']]);
                 if ($ins->rowCount() > 0) {
                     $added++;
                 }
@@ -258,7 +283,20 @@ class ProviderStore
             throw $e;
         }
 
-        return ['examined' => count($rows), 'added' => $added, 'cleared' => $cleared];
+        return ['examined' => $examined, 'added' => $added, 'cleared' => $cleared];
+    }
+
+    /** Pick the name field that carries an embedded ISO event, preferring `name` over `tvg_name`. */
+    private static function pickEventName(string $name, string $tvgName): string
+    {
+        $iso = '/\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\)/';
+        if ($name !== '' && preg_match($iso, $name)) {
+            return $name;
+        }
+        if ($tvgName !== '' && preg_match($iso, $tvgName)) {
+            return $tvgName;
+        }
+        return '';
     }
 
     /**
@@ -276,13 +314,21 @@ class ProviderStore
             return null;
         }
 
-        // Title = text after the first "|", with the human time + the (ISO) stripped.
+        // Title = text after the first "|", truncated at the human time marker or the (ISO)
+        // start — whichever appears first. Cutting (rather than deleting in place) also drops
+        // any trailing stream id, e.g. "... (2026-06-05 20:00:05) 1395".
         $body = $name;
         if (($pos = strpos($body, '|')) !== false) {
             $body = substr($body, $pos + 1);
         }
-        $body = preg_replace('/\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\)/', '', $body);                 // (ISO)
-        $body = preg_replace('/\s+[A-Z][a-z]{2} \d{1,2} \d{1,2}:\d{2}\s?(?:AM|PM) ET\b/i', '', $body); // "Jun 04 3:00AM ET"
+        $cut = strlen($body);
+        if (preg_match('/\s+[A-Z][a-z]{2} \d{1,2} \d{1,2}:\d{2}\s?(?:AM|PM) ET\b/i', $body, $hm, PREG_OFFSET_CAPTURE)) {
+            $cut = min($cut, $hm[0][1]);   // "Jun 04 3:00AM ET"
+        }
+        if (preg_match('/\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\)/', $body, $im, PREG_OFFSET_CAPTURE)) {
+            $cut = min($cut, $im[0][1]);   // (ISO)
+        }
+        $body = substr($body, 0, $cut);
         $body = preg_replace('/^\s*[A-Z][a-z]{2}_ \d{1,2}\/\d{1,2} _ /', '', trim((string) $body));   // "Thu_ 6/4 _ "
         $body = str_replace(['`', '_'], ["'", ' '], (string) $body);
         $title = trim((string) preg_replace('/\s+/', ' ', $body));

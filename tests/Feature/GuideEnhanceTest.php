@@ -54,7 +54,7 @@ class GuideEnhanceTest extends TestCase
         $store->guideReloadCommit();
 
         $res = $store->enhanceGuideFromChannelNames();
-        $this->assertSame(4, $res['examined'], 'four no-guide channels with names should be examined');
+        $this->assertSame(2, $res['examined'], 'two channels carry a parseable event');
         $this->assertSame(2, $res['added'], 'two event channels should be enhanced');
 
         // ESPN+ programme: title cleaned, start = US Eastern epoch (seconds floored).
@@ -131,5 +131,43 @@ class GuideEnhanceTest extends TestCase
         $stale = $store->guideProgrammesFor('ESPN+020.dko', 0);
         $this->assertCount(3, $stale);
         $this->assertSame('No EVENT Today', $stale[0]['title']);
+    }
+
+    public function test_channel_name_overrides_stale_guide_xml_and_strips_trailing_id(): void
+    {
+        // "Now" mid-afternoon Jun 5: the channel-name event (8PM) is upcoming.
+        Carbon::setTestNow(Carbon::parse('2026-06-05 14:00:00', 'America/New_York'));
+
+        $store = new ProviderStore(779004);
+        $store->guideReloadBegin();
+        // Guide XML lags: stale Jun 4 event for this tvg_id, all filler.
+        $store->guideChannel('ESPN+021.dko', 'US (ESPN+ 021) | Upper Valley Nighthawks vs. Sanford Mainers Jun 04 6:30PM ET (2026-06-04 18:30:05)', '');
+        foreach ([0, 4, 8] as $h) {
+            $store->guideProgramme([
+                'tvg_id' => 'ESPN+021.dko',
+                'start' => 4102444800 + $h * 3600, 'stop' => 4102444800 + ($h + 4) * 3600,
+                'timeshift' => '+0000', 'title' => 'No EVENT Today', 'sub_title' => '',
+                'desc' => '', 'category' => '', 'episode_num' => '', 'icon' => '', 'year' => '', 'rating' => '', 'info' => null,
+            ]);
+        }
+        $store->guideReloadCommit();
+
+        // Fresh live channel name (with trailing stream id) for the SAME tvg_id.
+        $store->addChannel([
+            'tvg_id' => 'ESPN+021.dko',
+            'name' => 'US (ESPN+ 021) | Milwaukee Brewers vs. Colorado Rockies Jun 05 8:00PM ET (2026-06-05 20:00:05) 1395',
+            'url' => 'http://example/espn21',
+        ]);
+
+        $res = $store->enhanceGuideFromChannelNames();
+        $this->assertSame(1, $res['added'], 'fresh channel-name event should win over stale guide xml');
+        $this->assertSame(3, $res['cleared']);
+
+        $rows = $store->guideProgrammesFor('ESPN+021.dko', 0);
+        $this->assertCount(1, $rows);
+        // Title cleaned, trailing "1395" dropped.
+        $this->assertSame('Milwaukee Brewers vs. Colorado Rockies', $rows[0]['title']);
+        $expected = (new \DateTime('2026-06-05 20:00:00', new \DateTimeZone('America/New_York')))->getTimestamp();
+        $this->assertSame($expected, (int) $rows[0]['start']);
     }
 }

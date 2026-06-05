@@ -149,7 +149,7 @@ class XtreamImporter
                     }
                     $log($msg . '.');
                 } elseif ($enh['examined'] > 0) {
-                    $log("Guide enhance: scanned {$enh['examined']} channels with no real guide — no convertible event names found.");
+                    $log("Guide enhance: {$enh['examined']} event channels found, but their events have already ended — kept existing listings.");
                 }
             }
             $log("Guide: {$guide['guide_channels']} channels, {$guide['programmes']} programmes (stop ≥ now-6h).");
