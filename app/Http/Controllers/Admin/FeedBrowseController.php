@@ -106,40 +106,19 @@ class FeedBrowseController extends Controller
         }
 
         $store = new \App\Services\PlaylistStore($playlist->id);
-        $total = $store->channelCount($search, $group, 'all');
-        $rows  = $store->channels($size, ($page - 1) * $size, $search, $group, 'all');
+        $res   = $store->effectiveChannelPage($search, $group, 'all', $page, $size);
 
-        // hydrate provider-channel rows (manual rows are inline); playlist edits override provider values
-        $byProvider = [];
-        foreach ($rows as $r) {
-            if ((int) $r['provider_id'] > 0) { $byProvider[(int) $r['provider_id']][] = (int) $r['channel_id']; }
-        }
-        $data = [];
-        foreach ($byProvider as $pid => $ids) {
-            $data[$pid] = ProviderStore::exists($pid) ? (new ProviderStore($pid))->channelsByIds($ids) : [];
-        }
+        $out = array_map(fn (array $r) => [
+            'row'         => $r['row'],
+            'name'        => $r['name'],
+            'group_title' => $r['group_title'],
+            'tvg_id'      => $r['tvg_id'],
+            'url'         => $r['url'],
+            'enabled'     => $r['enabled'],
+            'deleted'     => $r['deleted'],
+        ], $res['rows']);
 
-        $base = ($page - 1) * $size;
-        $out = [];
-        foreach ($rows as $i => $r) {
-            $pid = (int) $r['provider_id'];
-            $src = $pid > 0 ? ($data[$pid][(int) $r['channel_id']] ?? null) : null;
-            $pick = function (string $k) use ($r, $src) {
-                $v = $r[$k] ?? '';
-                return ($v !== '' && $v !== null) ? $v : ($src[$k] ?? '');
-            };
-            $out[] = [
-                'row'         => $base + $i + 1,
-                'name'        => (string) ($pick('name') ?: ($pid > 0 && $src === null ? '(missing channel)' : '')),
-                'group_title' => (string) ($r['group_title'] ?? ''),
-                'tvg_id'      => (string) $pick('tvg_id'),
-                'url'         => (string) $pick('url'),
-                'enabled'     => (bool) $r['enabled'],
-                'deleted'     => (bool) $r['deleted'],
-            ];
-        }
-
-        return response()->json(['last_page' => max(1, (int) ceil($total / $size)), 'total' => $total, 'data' => $out]);
+        return response()->json(['last_page' => max(1, (int) ceil($res['total'] / $size)), 'total' => $res['total'], 'data' => $out]);
     }
 
     public function playlistGroups(\App\Models\Playlist $playlist)

@@ -282,6 +282,96 @@ class PlaylistStore
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /**
+     * Hydrated, paginated channel rows. The search term is matched against the
+     * *displayed* values (name / tvg_name / tvg_id / group_title) — hydrating
+     * provider-backed rows from their provider stores first — so it finds channels
+     * whose text lives in the provider store, not in the local pointer row.
+     * Returns ['total' => int, 'rows' => array] (rows already in display shape).
+     */
+    public function effectiveChannelPage(?string $search, ?string $group, string $mode, int $page, int $size): array
+    {
+        $search = ($search !== null && trim($search) !== '') ? trim($search) : null;
+        $page   = max(1, $page);
+
+        // No search: keep the efficient DB-level pagination and hydrate just this page.
+        if ($search === null) {
+            $total = $this->channelCount(null, $group, $mode);
+            $rows  = $this->channels($size, ($page - 1) * $size, null, $group, $mode);
+
+            return ['total' => $total, 'rows' => $this->hydrateChannelRows($rows, ($page - 1) * $size)];
+        }
+
+        // Search: the matchable text is hydrated, so pull the whole group/mode set,
+        // hydrate it, then filter on the effective values and paginate in PHP.
+        $rows = $this->channels(1000000, 0, null, $group, $mode);
+        $all  = $this->hydrateChannelRows($rows, 0);
+
+        $hits = array_values(array_filter($all, function (array $r) use ($search): bool {
+            foreach (['name', 'tvg_name', 'tvg_id', 'group_title'] as $k) {
+                if (mb_stripos((string) ($r[$k] ?? ''), $search) !== false) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
+
+        $total = count($hits);
+        $slice = array_slice($hits, ($page - 1) * $size, $size);
+        foreach ($slice as $i => &$r) {
+            $r['row'] = ($page - 1) * $size + $i + 1;
+        }
+        unset($r);
+
+        return ['total' => $total, 'rows' => $slice];
+    }
+
+    /** Hydrate pointer rows from their provider stores; a non-empty inline edit overrides the provider value. */
+    private function hydrateChannelRows(array $rows, int $base): array
+    {
+        $byProvider = [];
+        foreach ($rows as $r) {
+            if ((int) $r['provider_id'] > 0) {
+                $byProvider[(int) $r['provider_id']][] = (int) $r['channel_id'];
+            }
+        }
+        $data = [];
+        foreach ($byProvider as $pid => $ids) {
+            $data[$pid] = ProviderStore::exists($pid) ? (new ProviderStore($pid))->channelsByIds($ids) : [];
+        }
+
+        $out = [];
+        foreach ($rows as $i => $r) {
+            $pid = (int) $r['provider_id'];
+            $src = $pid > 0 ? ($data[$pid][(int) $r['channel_id']] ?? null) : null;
+            $pick = function (string $k) use ($r, $src) {
+                $v = $r[$k] ?? '';
+
+                return ($v !== '' && $v !== null) ? $v : ($src[$k] ?? '');
+            };
+            $name = (string) $pick('name');
+            $out[] = [
+                'id'          => (int) $r['id'],
+                'row'         => $base + $i + 1,
+                'provider_id' => $pid,
+                'channel_id'  => (int) $r['channel_id'],
+                'manual'      => $pid === 0,
+                'missing'     => $pid > 0 && $src === null,
+                'name'        => $name !== '' ? $name : ($pid > 0 && $src === null ? '(missing channel)' : ''),
+                'tvg_name'    => (string) $pick('tvg_name'),
+                'tvg_id'      => (string) $pick('tvg_id'),
+                'tvg_logo'    => (string) $pick('tvg_logo'),
+                'url'         => (string) $pick('url'),
+                'group_title' => (string) ($r['group_title'] ?? ''),
+                'enabled'     => (bool) $r['enabled'],
+                'deleted'     => (bool) $r['deleted'],
+            ];
+        }
+
+        return $out;
+    }
+
     /** All enabled, non-deleted pointer rows in global (group then position) order — for the public serving endpoints. */
     public function allForServe(): array
     {

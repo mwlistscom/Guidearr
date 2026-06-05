@@ -155,49 +155,13 @@ class PlaylistController extends Controller
             return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
         }
         $store = new PlaylistStore($playlist->id);
-        $total = $store->channelCount($search, $group, $mode);
-        $rows  = $store->channels($size, ($page - 1) * $size, $search, $group, $mode);
+        $res   = $store->effectiveChannelPage($search, $group, $mode, $page, $size);
 
-        // hydrate provider-channel rows from their provider stores (manual rows already inline)
-        $byProvider = [];
-        foreach ($rows as $r) {
-            if ((int) $r['provider_id'] > 0) { $byProvider[(int) $r['provider_id']][] = (int) $r['channel_id']; }
-        }
-        $data = [];
-        foreach ($byProvider as $pid => $ids) {
-            $data[$pid] = ProviderStore::exists($pid) ? (new ProviderStore($pid))->channelsByIds($ids) : [];
-        }
-
-        $globalBase = ($page - 1) * $size;
-        $out = [];
-        foreach ($rows as $i => $r) {
-            $pid = (int) $r['provider_id'];
-            $src = $pid > 0 ? ($data[$pid][(int) $r['channel_id']] ?? null) : null;
-            // playlist-level edit (non-empty pointer field) overrides the provider's value
-            $pick = function (string $k) use ($r, $src) {
-                $v = $r[$k] ?? '';
-                return ($v !== '' && $v !== null) ? $v : ($src[$k] ?? '');
-            };
-            $name = $pick('name');
-            $out[] = [
-                'id'          => (int) $r['id'],
-                'row'         => $globalBase + $i + 1,
-                'provider_id' => $pid,
-                'channel_id'  => (int) $r['channel_id'],
-                'manual'      => $pid === 0,
-                'missing'     => $pid > 0 && $src === null,
-                'name'        => $name !== '' ? $name : ($pid > 0 && $src === null ? '(missing channel)' : ''),
-                'tvg_name'    => $pick('tvg_name'),
-                'tvg_id'      => $pick('tvg_id'),
-                'tvg_logo'    => $pick('tvg_logo'),
-                'url'         => $pick('url'),
-                'group_title' => $r['group_title'],
-                'enabled'     => (bool) $r['enabled'],
-                'deleted'     => (bool) $r['deleted'],
-            ];
-        }
-
-        return response()->json(['last_page' => max(1, (int) ceil($total / $size)), 'total' => $total, 'data' => $out]);
+        return response()->json([
+            'last_page' => max(1, (int) ceil($res['total'] / $size)),
+            'total'     => $res['total'],
+            'data'      => $res['rows'],
+        ]);
     }
 
     public function groups(Request $request, Playlist $playlist)
