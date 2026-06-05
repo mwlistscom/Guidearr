@@ -652,7 +652,6 @@ class PlaylistStore
         return count($ids);
     }
 
-    /** Renumber channel position_order per group (reset to STEP each group) preserving current order. */
     /**
      * Renumber every channel to a single flat sequence (10, 20, 30 …) in one global pass.
      * $byGroup=true orders by the legacy group-then-position display order first — used once to
@@ -676,5 +675,20 @@ class PlaylistStore
         $this->commit();
 
         return $n;
+    }
+
+    /**
+     * True only if this playlist is still in the legacy per-group numbering (each group restarts at
+     * 10, so positions collide across groups). A flattened playlist has unique positions, so this is
+     * false — which makes the one-time flatten safe to skip and never clobber a manual flat ordering.
+     */
+    public function needsFlatten(): bool
+    {
+        $dup = $this->db->query(
+            'SELECT 1 FROM playlist_channels WHERE deleted = 0
+             GROUP BY position_order HAVING COUNT(*) > 1 LIMIT 1'
+        )->fetchColumn();
+
+        return $dup !== false;
     }
 }
