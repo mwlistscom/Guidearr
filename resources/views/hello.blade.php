@@ -65,6 +65,6 @@
             @endauth
         </div>
     </div>
-    <footer>&copy; {{ date('Y') }} {{ $appCopyright }}</footer>
+    <footer>&copy; {{ date('Y') }} {{ $appCopyright }} &middot; Free for non-commercial use</footer>
 </body>
 </html>

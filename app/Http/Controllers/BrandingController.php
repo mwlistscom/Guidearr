@@ -7,6 +7,12 @@ use Illuminate\Support\Facades\View;
 
 class BrandingController extends Controller
 {
+    /** Copyright holder — the project is owned by, and licensed by, this person. */
+    public const OWNER = 'Jules Potvin';
+
+    /** One-line licence summary shown in the footer and admin panel. Full terms live in the repo LICENSE file. */
+    public const LICENSE_SUMMARY = 'Free for personal and non-profit use. Commercial or for-profit use is prohibited without written permission.';
+
     /** The two brand assets and their bundled fallbacks. */
     private const KINDS = [
         'icon' => 'branding/icon-default.png',   // small square mark (sidebar/header/favicon)
@@ -47,6 +53,7 @@ class BrandingController extends Controller
             'hasCustomIcon' => (bool) $this->overridePath('icon'),
             'hasCustomLogo' => (bool) $this->overridePath('logo'),
             'copyright'     => self::copyright(),
+            'license'       => self::LICENSE_SUMMARY,
         ]);
     }
 
@@ -83,32 +90,10 @@ class BrandingController extends Controller
         return back()->with('status', ucfirst($kind) . ' reset to the default.');
     }
 
-    /** Footer copyright holder text (editable on the Branding page). */
+    /** Footer copyright holder. Fixed — the project is owned by its author and licensed non-commercially. */
     public static function copyright(): string
     {
-        $file = storage_path('app/branding/copyright.txt');
-
-        if (is_file($file)) {
-            $val = trim((string) file_get_contents($file));
-            if ($val !== '') {
-                return $val;
-            }
-        }
-
-        return 'Jules Potvin';
-    }
-
-    public function updateCopyright(Request $request)
-    {
-        $validated = $request->validate([
-            'copyright' => ['required', 'string', 'max:255'],
-        ]);
-
-        $text = trim(preg_replace('/[\r\n]+/', ' ', $validated['copyright']));
-
-        @file_put_contents($this->storageDir() . '/copyright.txt', $text, LOCK_EX);
-
-        return back()->with('status', 'Footer copyright updated.');
+        return self::OWNER;
     }
 
     private function normalizeKind(string $kind): string

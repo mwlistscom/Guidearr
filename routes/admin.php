@@ -47,7 +47,6 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::get('environment', [EnvController::class, 'edit'])->name('environment');            Route::put('environment', [EnvController::class, 'update'])->name('environment.update');
 
             Route::get('branding', [BrandingController::class, 'edit'])->name('branding');
-            Route::put('branding/copyright', [BrandingController::class, 'updateCopyright'])->name('branding.copyright');
             Route::post('branding/{kind}', [BrandingController::class, 'update'])->whereIn('kind', ['icon', 'logo'])->name('branding.update');
             Route::delete('branding/{kind}', [BrandingController::class, 'reset'])->whereIn('kind', ['icon', 'logo'])->name('branding.reset');
         });

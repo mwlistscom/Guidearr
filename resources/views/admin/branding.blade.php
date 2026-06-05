@@ -68,18 +68,13 @@
     @endif
 </div>
 
-{{-- ── Footer copyright ──────────────────────────────────────── --}}
-<h1 style="margin-top:2.5rem">Footer copyright</h1>
-<p class="muted">Shown at the bottom of the landing page as <code>&copy; {{ date('Y') }} &lt;your text&gt;</code>. The year updates automatically.</p>
+{{-- ── Copyright & licence (read-only) ──────────────────────── --}}
+<h1 style="margin-top:2.5rem">Copyright &amp; licence</h1>
+<p class="muted">This project is owned by its author and licensed for non-commercial use. These terms are fixed.</p>
 
-<div class="card" style="max-width:34rem">
-    <form method="POST" action="{{ route('admin.branding.copyright') }}">
-        @csrf @method('PUT')
-        <label>Copyright holder</label>
-        <input type="text" name="copyright" value="{{ old('copyright', $copyright) }}" maxlength="255" required>
-        <div style="margin-top:1.3rem">
-            <button type="submit">Save copyright</button>
-        </div>
-    </form>
+<div class="card" style="max-width:40rem">
+    <p style="margin:0 0 .5rem"><strong>&copy; {{ date('Y') }} {{ $copyright }}.</strong> All rights reserved.</p>
+    <p class="muted" style="margin:0">{{ $license }}</p>
+    <p class="muted" style="margin:.7rem 0 0;font-size:.8rem">Full terms: <code>LICENSE</code> in the project root.</p>
 </div>
 @endsection
