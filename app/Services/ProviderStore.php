@@ -191,12 +191,18 @@ class ProviderStore
      *   added    = real event programmes inserted
      *   cleared  = "No EVENT Today" filler rows removed
      */
-    public function enhanceGuideFromChannelNames(int $defaultMinutes = 120): array
+    public function enhanceGuideFromChannelNames(int $defaultMinutes = 180): array
     {
         $empty = ['examined' => 0, 'added' => 0, 'cleared' => 0];
         if (! $this->hasTable('guide_channels') || ! $this->hasTable('guide')) {
             return $empty;
         }
+
+        // The EPG feed and the GUIDE popup only surface programmes whose stop is within
+        // the last 6h or later. An embedded event that has already ended is therefore
+        // invisible everywhere — so we must NOT strip a channel's filler for it, or the
+        // channel goes completely blank in the guide. Stale events keep their filler.
+        $cutoff = now()->timestamp - 6 * 3600;
 
         // Channels with no *real* programmes (none, or only filler) that have a display-name.
         $sel = $this->db->prepare(
@@ -229,6 +235,11 @@ class ProviderStore
                 $p = self::parseEmbeddedEvent((string) $r['display_name'], $defaultMinutes);
                 if ($p === null) {
                     // Unparseable (sentinel/no event) — leave any filler in place.
+                    continue;
+                }
+                if ($p['stop'] < $cutoff) {
+                    // Event already ended and would be filtered out everywhere — keep the
+                    // filler so the channel still appears in the guide.
                     continue;
                 }
                 // Replace the filler for this channel with the real event.

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Services\ProviderStore;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Tests\TestCase;
 
 class GuideEnhanceTest extends TestCase
@@ -18,8 +19,17 @@ class GuideEnhanceTest extends TestCase
         }
     }
 
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
+    }
+
     public function test_synthesizes_programmes_from_embedded_event_names(): void
     {
+        // Freeze "now" before the embedded events so they count as current/upcoming.
+        Carbon::setTestNow(Carbon::parse('2026-06-04 06:00:00', 'America/New_York'));
+
         $store = new ProviderStore(779001);
         $store->guideReloadBegin();
 
@@ -53,9 +63,9 @@ class GuideEnhanceTest extends TestCase
         $this->assertSame('The Pat McAfee Show', $espn[0]['title']);
         $expected = (new \DateTime('2026-06-04 12:00:00', new \DateTimeZone('America/New_York')))->getTimestamp();
         $this->assertSame($expected, (int) $espn[0]['start']);
-        $this->assertSame($expected + 120 * 60, (int) $espn[0]['stop']);
+        $this->assertSame($expected + 180 * 60, (int) $espn[0]['stop']);
 
-        // SN+ programme: underscores normalized, backtick→apostrophe path exercised elsewhere.
+        // SN+ programme: underscores normalized.
         $sn = $store->guideProgrammesFor('SNplus.13', 0);
         $this->assertCount(1, $sn);
         $this->assertSame('Vegas @ Carolina Game 2', $sn[0]['title']);
@@ -70,6 +80,8 @@ class GuideEnhanceTest extends TestCase
 
     public function test_enhance_is_idempotent(): void
     {
+        Carbon::setTestNow(Carbon::parse('2026-06-04 06:00:00', 'America/New_York'));
+
         $store = new ProviderStore(779002);
         $store->guideReloadBegin();
         $store->guideChannel('ESPNplus.8', 'US (ESPN+ 008) | The Pat McAfee Show Jun 04 12:00PM ET (2026-06-04 12:00:05)', '');
@@ -81,50 +93,43 @@ class GuideEnhanceTest extends TestCase
         $this->assertCount(1, $store->guideProgrammesFor('ESPNplus.8', 0));
     }
 
-    public function test_replaces_no_event_filler_with_real_event(): void
+    public function test_replaces_filler_for_live_event_but_keeps_it_for_stale_event(): void
     {
+        // "Now" is mid-afternoon Jun 5: the Brewers game (8PM) is upcoming; the Jun 4 game is over.
+        Carbon::setTestNow(Carbon::parse('2026-06-05 14:00:00', 'America/New_York'));
+
         $store = new ProviderStore(779003);
         $store->guideReloadBegin();
 
-        // All-filler channel ("No EVENT Today") with a real event embedded in its name.
+        // LIVE/upcoming event, all filler -> filler replaced with the real event.
         $store->guideChannel('ESPN+021.dko', 'US (ESPN+ 021) | Milwaukee Brewers vs. Colorado Rockies Jun 05 8:00PM ET (2026-06-05 20:00:05)', '');
-        foreach ([0, 4, 8] as $h) {
-            $store->guideProgramme([
-                'tvg_id' => 'ESPN+021.dko',
-                'start' => 4102444800 + $h * 3600, 'stop' => 4102444800 + ($h + 4) * 3600,
-                'timeshift' => '+0000', 'title' => 'No EVENT Today', 'sub_title' => '',
-                'desc' => '', 'category' => '', 'episode_num' => '', 'icon' => '', 'year' => '', 'rating' => '', 'info' => null,
-            ]);
-        }
+        // STALE event (yesterday), all filler -> filler KEPT so the channel stays visible.
+        $store->guideChannel('ESPN+020.dko', 'US (ESPN+ 020) | Upper Valley Nighthawks vs. Sanford Mainers Jun 04 6:30PM ET (2026-06-04 18:30:05)', '');
 
-        // Channel with a genuine programme (+ a filler row) — must be left completely alone.
-        $store->guideChannel('ESPN+099.dko', 'US (ESPN+ 099) | Some Big Game (2026-06-05 18:00:00)', '');
-        $store->guideProgramme([
-            'tvg_id' => 'ESPN+099.dko', 'start' => 4102444800, 'stop' => 4102448400,
-            'timeshift' => '+0000', 'title' => 'Actual Scheduled Show', 'sub_title' => '',
-            'desc' => '', 'category' => '', 'episode_num' => '', 'icon' => '', 'year' => '', 'rating' => '', 'info' => null,
-        ]);
-        $store->guideProgramme([
-            'tvg_id' => 'ESPN+099.dko', 'start' => 4102448400, 'stop' => 4102452000,
-            'timeshift' => '+0000', 'title' => 'No EVENT Today', 'sub_title' => '',
-            'desc' => '', 'category' => '', 'episode_num' => '', 'icon' => '', 'year' => '', 'rating' => '', 'info' => null,
-        ]);
+        foreach (['ESPN+021.dko', 'ESPN+020.dko'] as $cid) {
+            foreach ([0, 4, 8] as $h) {
+                $store->guideProgramme([
+                    'tvg_id' => $cid,
+                    'start' => 4102444800 + $h * 3600, 'stop' => 4102444800 + ($h + 4) * 3600,
+                    'timeshift' => '+0000', 'title' => 'No EVENT Today', 'sub_title' => '',
+                    'desc' => '', 'category' => '', 'episode_num' => '', 'icon' => '', 'year' => '', 'rating' => '', 'info' => null,
+                ]);
+            }
+        }
         $store->guideReloadCommit();
 
         $res = $store->enhanceGuideFromChannelNames();
-        $this->assertSame(3, $res['cleared'], 'the three filler rows on the all-filler channel are removed');
+        $this->assertSame(3, $res['cleared'], 'only the live channel loses its filler');
         $this->assertSame(1, $res['added']);
 
-        // All-filler channel: filler gone, real event in its place.
-        $p = $store->guideProgrammesFor('ESPN+021.dko', 0);
-        $this->assertCount(1, $p);
-        $this->assertSame('Milwaukee Brewers vs. Colorado Rockies', $p[0]['title']);
-        $expected = (new \DateTime('2026-06-05 20:00:00', new \DateTimeZone('America/New_York')))->getTimestamp();
-        $this->assertSame($expected, (int) $p[0]['start']);
+        // Live channel: filler gone, real event in place.
+        $live = $store->guideProgrammesFor('ESPN+021.dko', 0);
+        $this->assertCount(1, $live);
+        $this->assertSame('Milwaukee Brewers vs. Colorado Rockies', $live[0]['title']);
 
-        // Real-schedule channel: untouched (keeps both its real show and its own filler row).
-        $titles = array_column($store->guideProgrammesFor('ESPN+099.dko', 0), 'title');
-        $this->assertContains('Actual Scheduled Show', $titles);
-        $this->assertContains('No EVENT Today', $titles, 'channel with a real schedule is left alone');
+        // Stale channel: untouched, still has its three filler rows (channel stays in the guide).
+        $stale = $store->guideProgrammesFor('ESPN+020.dko', 0);
+        $this->assertCount(3, $stale);
+        $this->assertSame('No EVENT Today', $stale[0]['title']);
     }
 }
