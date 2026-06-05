@@ -22,7 +22,26 @@
     </tbody>
 </table>
 
+<h2 class="sec">{{ $user->name }}'s playlists</h2>
+<table class="dtbl">
+    <thead><tr><th>Playlist</th><th style="width:8rem">Channels</th><th style="width:7rem">Groups</th><th style="width:6rem">Enabled</th><th style="width:7rem"></th></tr></thead>
+    <tbody>
+    @forelse ($playlists as $r)
+        <tr>
+            <td>{{ $r['playlist']->name }}</td>
+            <td>{{ number_format($r['channels']) }}</td>
+            <td>{{ number_format($r['groups']) }}</td>
+            <td>{{ $r['playlist']->enabled ? 'Yes' : 'No' }}</td>
+            <td><a class="btn accent" href="{{ route('admin.feeds.playlist', $r['playlist']) }}">Browse</a></td>
+        </tr>
+    @empty
+        <tr><td colspan="5" style="color:var(--muted)">This user has no playlists.</td></tr>
+    @endforelse
+    </tbody>
+</table>
+
 <style>
+    .sec { font-size:1.05rem; font-weight:700; margin:1.8rem 0 .5rem; }
     table.dtbl { width:100%; border-collapse:collapse; font-size:.9rem; }
     table.dtbl th, table.dtbl td { text-align:left; padding:.55rem .7rem; border-bottom:1px solid rgba(255,255,255,.08); }
     table.dtbl th { color:var(--muted); font-weight:600; }

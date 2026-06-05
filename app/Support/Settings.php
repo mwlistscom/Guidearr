@@ -52,4 +52,20 @@ class Settings
     {
         return rtrim((string) self::get('links_base_url', ''), '/');
     }
+
+    /** Max unique IPs allowed per playlist within the rolling window before serving is throttled. */
+    public static function serveMaxIps(): int
+    {
+        $v = (int) self::get('serve_max_ips', 10);
+
+        return $v > 0 ? $v : 10;
+    }
+
+    /** Length of the rolling unique-IP window, in hours. */
+    public static function serveWindowHours(): int
+    {
+        $v = (int) self::get('serve_window_hours', 4);
+
+        return $v > 0 ? $v : 4;
+    }
 }

@@ -12,18 +12,29 @@ class AdminController extends Controller
     public function index()
     {
         return view('admin.dashboard', [
-            'userCount'    => User::count(),
-            'pending'      => User::where('status', 'pending')->count(),
-            'banned'       => User::where('status', 'banned')->count(),
-            'linksBaseUrl' => Settings::linksBaseUrl(),
+            'userCount' => User::count(),
+            'pending'   => User::where('status', 'pending')->count(),
+            'banned'    => User::where('status', 'banned')->count(),
         ]);
     }
 
-    /** Save the public base URL used to build playlist M3U/EPG/Stream links. */
+    /** Config pane: serving links + rate-limit knobs. */
+    public function config()
+    {
+        return view('admin.config', [
+            'linksBaseUrl'     => Settings::linksBaseUrl(),
+            'serveMaxIps'      => Settings::serveMaxIps(),
+            'serveWindowHours' => Settings::serveWindowHours(),
+        ]);
+    }
+
+    /** Save the config pane (links base URL + rolling unique-IP rate limit). */
     public function updateSettings(Request $request)
     {
         $data = $request->validate([
-            'links_base_url' => ['nullable', 'string', 'max:300'],
+            'links_base_url'     => ['nullable', 'string', 'max:300'],
+            'serve_max_ips'      => ['required', 'integer', 'min:1', 'max:100000'],
+            'serve_window_hours' => ['required', 'integer', 'min:1', 'max:168'],
         ]);
 
         $url = trim((string) ($data['links_base_url'] ?? ''));
@@ -34,8 +45,10 @@ class AdminController extends Controller
         }
 
         Settings::set('links_base_url', rtrim($url, '/'));
+        Settings::set('serve_max_ips', (int) $data['serve_max_ips']);
+        Settings::set('serve_window_hours', (int) $data['serve_window_hours']);
 
-        return redirect()->route('admin.dashboard')->with('status', 'Playlist links base URL saved.');
+        return redirect()->route('admin.config')->with('status', 'Configuration saved.');
     }
 
     /**

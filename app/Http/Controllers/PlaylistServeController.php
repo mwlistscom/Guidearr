@@ -21,9 +21,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class PlaylistServeController extends Controller
 {
-    private const WINDOW_HOURS = 4;
-    private const MAX_IPS = 10;
-
     public function m3u(Request $request)
     {
         [$playlist, $deny] = $this->gate($request, 'm3u');
@@ -181,6 +178,9 @@ class PlaylistServeController extends Controller
     /** Rolling unique-IP limit. Returns true if this request pushes the playlist over the cap. */
     private function rateLimited(int $playlistId, string $ip): bool
     {
+        $maxIps = \App\Support\Settings::serveMaxIps();
+        $window = \App\Support\Settings::serveWindowHours();
+
         $now = now();
         DB::table('playlist_ip_log')->upsert(
             [['playlist_id' => $playlistId, 'ip' => $ip, 'last_seen' => $now]],
@@ -188,7 +188,7 @@ class PlaylistServeController extends Controller
             ['last_seen' => $now]
         );
 
-        $cutoff = Carbon::now()->subHours(self::WINDOW_HOURS);
+        $cutoff = Carbon::now()->subHours($window);
         DB::table('playlist_ip_log')
             ->where('playlist_id', $playlistId)
             ->where('last_seen', '<', $cutoff)
@@ -200,7 +200,7 @@ class PlaylistServeController extends Controller
             ->distinct()
             ->count('ip');
 
-        return $count > self::MAX_IPS;
+        return $count > $maxIps;
     }
 
     private function touch(Playlist $playlist): void

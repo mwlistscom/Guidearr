@@ -20,6 +20,7 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
 
         Route::middleware('admin.password')->group(function () {
             Route::get('/', [AdminController::class, 'index'])->name('dashboard');
+            Route::get('config', [AdminController::class, 'config'])->name('config');
             Route::put('settings', [AdminController::class, 'updateSettings'])->name('settings.update');
             Route::post('restart', [AdminController::class, 'restart'])->name('restart');
 
@@ -37,6 +38,8 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::get('feeds/provider/{provider}', [FeedBrowseController::class, 'channels'])->name('feeds.provider');
             Route::get('feeds/provider/{provider}/data', [FeedBrowseController::class, 'channelsData'])->name('feeds.provider.data');
             Route::get('feeds/provider/{provider}/groups', [FeedBrowseController::class, 'groupsData'])->name('feeds.provider.groups');
+            Route::get('feeds/playlist/{playlist}', [FeedBrowseController::class, 'playlist'])->name('feeds.playlist');
+            Route::get('feeds/playlist/{playlist}/data', [FeedBrowseController::class, 'playlistData'])->name('feeds.playlist.data');
             Route::patch('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'updateChannel'])->name('feeds.channel.update');
             Route::delete('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'deleteChannel'])->name('feeds.channel.delete');
 

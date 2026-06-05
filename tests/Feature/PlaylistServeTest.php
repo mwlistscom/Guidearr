@@ -19,6 +19,7 @@ class PlaylistServeTest extends TestCase
         parent::setUp();
         foreach (glob(storage_path('app/playlists/*.sqlite')) ?: [] as $f) { @unlink($f); }
         foreach (glob(storage_path('app/feeds/*.sqlite')) ?: [] as $f) { @unlink($f); }
+        @unlink(storage_path('app/settings/app.json'));
     }
 
     private function buildPlaylist(User $u, ?int $guideId = null): Playlist
@@ -100,5 +101,20 @@ class PlaylistServeTest extends TestCase
 
         $body = $this->get("/m3u?key=serveKey1234")->getContent();
         $this->assertStringContainsString("Access Denied", $body);
+    }
+    public function test_rate_limit_honours_configured_max(): void
+    {
+        \App\Support\Settings::set('serve_max_ips', 1);
+        $u = User::factory()->create(['email_verified_at' => now()]);
+        $this->buildPlaylist($u);
+
+        // first IP ok
+        $this->get('/m3u?key=serveKey1234')->assertOk();
+        // second distinct IP pushes over the cap of 1 -> throttled
+        $body = $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.22'])
+            ->get('/m3u?key=serveKey1234')->getContent();
+        $this->assertStringContainsString('Too Many Devices', $body);
+
+        \App\Support\Settings::set('serve_max_ips', 10);
     }
 }

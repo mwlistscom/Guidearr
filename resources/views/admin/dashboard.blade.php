@@ -10,27 +10,10 @@
 </div>
 <div class="grid">
     <a class="tile" href="{{ route('admin.users') }}"><h3>Users</h3><p>Authorize, ban, or delete accounts.</p></a>
+    <a class="tile" href="{{ route('admin.feeds') }}"><h3>Feeds</h3><p>Browse providers and playlists.</p></a>
+    <a class="tile" href="{{ route('admin.config') }}"><h3>Config</h3><p>Serving links and rate limits.</p></a>
     <a class="tile" href="{{ route('admin.environment') }}"><h3>Environment</h3><p>Edit .env variables safely.</p></a>
     <a class="tile" href="{{ route('admin.branding') }}"><h3>Branding</h3><p>Upload and manage the app icon.</p></a>
-</div>
-
-<h2 style="margin-top:2rem">Playlist links</h2>
-<div class="card" style="max-width:46rem">
-    <p class="muted">Public base URL that the <strong>Links</strong> overlay (M3U / EPG / Stream) builds playlist links from. Because the app runs in Docker behind a reverse proxy, it can't reliably detect its own public address &mdash; set it here. Use the <strong>site origin only</strong> (scheme, host, and port &mdash; <em>no path</em>); the app appends <code>/m3u</code>, <code>/epg</code>, <code>/strm</code> and <code>?key=</code> itself.</p>
-    @error('links_base_url')<p style="color:#f87171;margin:.2rem 0">{{ $message }}</p>@enderror
-    <form method="POST" action="{{ route('admin.settings.update') }}">
-        @csrf
-        @method('PUT')
-        <input type="text" name="links_base_url" value="{{ old('links_base_url', $linksBaseUrl) }}"
-               placeholder="https://fidonet.corp.potvin.us:7979"
-               style="width:100%;padding:.5rem .6rem;border-radius:.5rem;border:1px solid rgba(255,255,255,.18);background:#16171a;color:#e6e7ea;font-family:ui-monospace,monospace;margin:.3rem 0 .6rem">
-        <button type="submit">Save</button>
-    </form>
-    @if($linksBaseUrl)
-        <p class="muted" style="margin-top:.7rem">Example: <code>{{ $linksBaseUrl }}/m3u?key=&lt;playlist-key&gt;</code></p>
-    @else
-        <p class="muted" style="margin-top:.7rem">Not set &mdash; the Links overlay will tell users it isn't configured yet.</p>
-    @endif
 </div>
 
 <h2 style="margin-top:2rem">Maintenance</h2>

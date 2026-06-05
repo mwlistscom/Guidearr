@@ -75,7 +75,70 @@ class FeedBrowseController extends Controller
             'channels' => ProviderStore::channelCountFor($p->id),
         ]);
 
-        return view('admin.feeds.providers', compact('user', 'rows'));
+        $playlists = \App\Models\Playlist::where('user_id', $user->id)->orderBy('name')->get()->map(function ($pl) {
+            $counts = \App\Services\PlaylistStore::existsFor($pl->id)
+                ? (new \App\Services\PlaylistStore($pl->id))->counts()
+                : ['channels' => 0, 'groups' => 0];
+
+            return ['playlist' => $pl, 'channels' => $counts['channels'], 'groups' => $counts['groups']];
+        });
+
+        return view('admin.feeds.providers', compact('user', 'rows', 'playlists'));
+    }
+
+    /** Admin read-only browse of a single playlist's channels. */
+    public function playlist(\App\Models\Playlist $playlist)
+    {
+        $playlist->loadMissing('user');
+
+        return view('admin.feeds.playlist', compact('playlist'));
+    }
+
+    public function playlistData(Request $request, \App\Models\Playlist $playlist)
+    {
+        $size   = min(200, max(10, (int) $request->query('size', 50)));
+        $page   = max(1, (int) $request->query('page', 1));
+        $search = $request->query('search');
+
+        if (! \App\Services\PlaylistStore::existsFor($playlist->id)) {
+            return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
+        }
+
+        $store = new \App\Services\PlaylistStore($playlist->id);
+        $total = $store->channelCount($search, null, 'all');
+        $rows  = $store->channels($size, ($page - 1) * $size, $search, null, 'all');
+
+        // hydrate provider-channel rows (manual rows are inline); playlist edits override provider values
+        $byProvider = [];
+        foreach ($rows as $r) {
+            if ((int) $r['provider_id'] > 0) { $byProvider[(int) $r['provider_id']][] = (int) $r['channel_id']; }
+        }
+        $data = [];
+        foreach ($byProvider as $pid => $ids) {
+            $data[$pid] = ProviderStore::exists($pid) ? (new ProviderStore($pid))->channelsByIds($ids) : [];
+        }
+
+        $base = ($page - 1) * $size;
+        $out = [];
+        foreach ($rows as $i => $r) {
+            $pid = (int) $r['provider_id'];
+            $src = $pid > 0 ? ($data[$pid][(int) $r['channel_id']] ?? null) : null;
+            $pick = function (string $k) use ($r, $src) {
+                $v = $r[$k] ?? '';
+                return ($v !== '' && $v !== null) ? $v : ($src[$k] ?? '');
+            };
+            $out[] = [
+                'row'         => $base + $i + 1,
+                'name'        => (string) ($pick('name') ?: ($pid > 0 && $src === null ? '(missing channel)' : '')),
+                'group_title' => (string) ($r['group_title'] ?? ''),
+                'tvg_id'      => (string) $pick('tvg_id'),
+                'url'         => (string) $pick('url'),
+                'enabled'     => (bool) $r['enabled'],
+                'deleted'     => (bool) $r['deleted'],
+            ];
+        }
+
+        return response()->json(['last_page' => max(1, (int) ceil($total / $size)), 'total' => $total, 'data' => $out]);
     }
 
     public function channels(Provider $provider)
