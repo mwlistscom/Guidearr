@@ -183,7 +183,8 @@ class FeedWork extends Command
 
         $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
         $job->markDone();
-        $job->log('info', "Done. {$g['guide_channels']} guide channels, {$g['programmes']} programmes.");
+        $enh = ! empty($g['enhanced']) ? " ({$g['enhanced']} enhanced)" : '';
+        $job->log('info', "Done. {$g['guide_channels']} guide channels, {$g['programmes']} programmes{$enh}.");
     }
 
     private function ingestXtream(FeedQueue $job, Provider $provider): void
@@ -212,7 +213,8 @@ class FeedWork extends Command
 
         $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
         $job->markDone();
-        $job->log('info', "Done. {$r['channels']} channels, {$r['groups']} groups, {$r['guide_channels']} guide channels, {$r['programmes']} programmes.");
+        $enh = ! empty($r['enhanced']) ? " ({$r['enhanced']} enhanced)" : '';
+        $job->log('info', "Done. {$r['channels']} channels, {$r['groups']} groups, {$r['guide_channels']} guide channels, {$r['programmes']} programmes{$enh}.");
     }
 
     /** A recoverable failure: count it, disable+drop at the threshold, otherwise requeue for another attempt. */

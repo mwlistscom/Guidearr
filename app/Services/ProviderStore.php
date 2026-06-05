@@ -167,12 +167,13 @@ class ProviderStore
      *   "US (ESPN+ 008) | The Pat McAfee Show Jun 04 12:00PM ET (2026-06-04 12:00:05)"
      *   "CA (SN+ 012) | Toronto @ Atlanta (2026-06-04 18:30:00)"
      * The parenthesized ISO time is the start (US Eastern); the text after "|" is the title.
-     * Runs on the LIVE guide tables after a reload commit. Returns programmes added.
+     * Runs on the LIVE guide tables after a reload commit.
+     * @return array{examined:int,added:int} channels with no guide examined, and programmes added
      */
-    public function enhanceGuideFromChannelNames(int $defaultMinutes = 120): int
+    public function enhanceGuideFromChannelNames(int $defaultMinutes = 120): array
     {
         if (! $this->hasTable('guide_channels') || ! $this->hasTable('guide')) {
-            return 0;
+            return ['examined' => 0, 'added' => 0];
         }
 
         // Guide channels that ended up with zero programmes.
@@ -186,7 +187,7 @@ class ProviderStore
         )->fetchAll(\PDO::FETCH_ASSOC);
 
         if (! $rows) {
-            return 0;
+            return ['examined' => 0, 'added' => 0];
         }
 
         $ins = $this->db->prepare(
@@ -214,7 +215,7 @@ class ProviderStore
             throw $e;
         }
 
-        return $made;
+        return ['examined' => count($rows), 'added' => $made];
     }
 
     /**

@@ -114,7 +114,7 @@ class XtreamImporter
         $log("Streams: {$n} processed (removed {$removed}); store holds {$counts['channels']} channels in {$counts['groups']} groups.");
 
         // 3) XMLTV guide -> guide tables (atomic reload)
-        $guide = ['guide_channels' => 0, 'programmes' => 0];
+        $guide = ['guide_channels' => 0, 'programmes' => 0, 'enhanced' => 0];
         $log('Downloading XMLTV guide (this can take a while)…');
         $xmltvUrl = "{$base}/xmltv.php?username=" . rawurlencode($user) . '&password=' . rawurlencode($pass);
         $path     = ProviderStore::xmltvPath($provider->id);
@@ -139,10 +139,14 @@ class XtreamImporter
             $guide = $store->guideReloadCommit();
             @unlink($path);
             if ($provider->enhance_guide) {
-                $added = $store->enhanceGuideFromChannelNames();
-                if ($added > 0) {
-                    $guide['programmes'] = ($guide['programmes'] ?? 0) + $added;
-                    $log("Guide enhanced: +{$added} event programmes for channels with no guide data.");
+                $enh = $store->enhanceGuideFromChannelNames();
+                $guide['enhanced'] = $enh['added'];
+                if ($enh['added'] > 0) {
+                    $guide['programmes'] = ($guide['programmes'] ?? 0) + $enh['added'];
+                    $log("Guide enhanced: {$enh['added']} event/PPV channels given guide data from their names "
+                        . "(of {$enh['examined']} channels with no guide); +{$enh['added']} programmes added.");
+                } elseif ($enh['examined'] > 0) {
+                    $log("Guide enhance: scanned {$enh['examined']} channels with no guide — no convertible event names found.");
                 }
             }
             $log("Guide: {$guide['guide_channels']} channels, {$guide['programmes']} programmes (stop ≥ now-6h).");
@@ -156,6 +160,7 @@ class XtreamImporter
             'groups'         => $counts['groups'],
             'guide_channels' => $guide['guide_channels'],
             'programmes'     => $guide['programmes'],
+            'enhanced'       => $guide['enhanced'] ?? 0,
             'removed'        => $removed,
         ];
     }

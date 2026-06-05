@@ -83,10 +83,14 @@ class M3uGuideImporter
         @unlink($xmlPath);
 
         if ($provider->enhance_guide) {
-            $added = $store->enhanceGuideFromChannelNames();
-            if ($added > 0) {
-                $guide['programmes'] = ($guide['programmes'] ?? 0) + $added;
-                $log("Guide enhanced: +{$added} event programmes for channels with no guide data.");
+            $enh = $store->enhanceGuideFromChannelNames();
+            $guide['enhanced'] = $enh['added'];
+            if ($enh['added'] > 0) {
+                $guide['programmes'] = ($guide['programmes'] ?? 0) + $enh['added'];
+                $log("Guide enhanced: {$enh['added']} event/PPV channels given guide data from their names "
+                    . "(of {$enh['examined']} channels with no guide); +{$enh['added']} programmes added.");
+            } elseif ($enh['examined'] > 0) {
+                $log("Guide enhance: scanned {$enh['examined']} channels with no guide — no convertible event names found.");
             }
         }
 

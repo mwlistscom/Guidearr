@@ -43,8 +43,9 @@ class GuideEnhanceTest extends TestCase
         ]);
         $store->guideReloadCommit();
 
-        $added = $store->enhanceGuideFromChannelNames();
-        $this->assertSame(2, $added, 'two event channels should be enhanced');
+        $res = $store->enhanceGuideFromChannelNames();
+        $this->assertSame(4, $res['examined'], 'four no-guide channels with names should be examined');
+        $this->assertSame(2, $res['added'], 'two event channels should be enhanced');
 
         // ESPN+ programme: title cleaned, start = US Eastern epoch (seconds floored).
         $espn = $store->guideProgrammesFor('ESPNplus.8', 0);
@@ -74,9 +75,9 @@ class GuideEnhanceTest extends TestCase
         $store->guideChannel('ESPNplus.8', 'US (ESPN+ 008) | The Pat McAfee Show Jun 04 12:00PM ET (2026-06-04 12:00:05)', '');
         $store->guideReloadCommit();
 
-        $this->assertSame(1, $store->enhanceGuideFromChannelNames());
+        $this->assertSame(1, $store->enhanceGuideFromChannelNames()['added']);
         // Second pass: the channel now has a programme, so nothing new is added.
-        $this->assertSame(0, $store->enhanceGuideFromChannelNames());
+        $this->assertSame(0, $store->enhanceGuideFromChannelNames()['added']);
         $this->assertCount(1, $store->guideProgrammesFor('ESPNplus.8', 0));
     }
 }
