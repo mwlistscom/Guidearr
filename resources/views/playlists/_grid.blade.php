@@ -40,6 +40,8 @@
     .pl-btn { background:var(--pl-accent); color:#fff; border:none; border-radius:.5rem; padding:.5rem 1rem;
         font-weight:700; cursor:pointer; font-size:.88rem; }
     .pl-btn.secondary { background:#2a2c31; color:#cdd2da; }
+    .pl-btn.danger-btn { background:#dc2626; }
+    .pl-btn.danger-btn:hover { background:#ef4444; }
 </style>
 
 <div class="pl-wrap">
@@ -79,6 +81,43 @@
     </div>
 </div>
 
+<div class="pl-overlay" id="pl-edit-overlay">
+    <div class="pl-modal">
+        <h2>Edit playlist</h2>
+        <input type="hidden" id="pl-e-id">
+        <div class="pl-field"><label>Name *</label><input type="text" id="pl-e-name"></div>
+        <div class="pl-field"><label>IP lock (optional)</label><input type="text" id="pl-e-iplock" placeholder="leave blank for none"></div>
+        <div class="pl-field"><label>First channel #</label><input type="number" id="pl-e-chstart" min="1"></div>
+        <div class="pl-field"><label class="pl-check"><input type="checkbox" id="pl-e-extgrp"> Emit #EXTGRP group tags</label></div>
+        <div class="pl-field"><label class="pl-check"><input type="checkbox" id="pl-e-enabled"> Enabled</label></div>
+        <div class="pl-field">
+            <label>TV guide source</label>
+            <select id="pl-e-guide"><option value="">No guide</option></select>
+        </div>
+        <div class="pl-field">
+            <label>Encryption key (read-only)</label>
+            <input type="text" id="pl-e-key" disabled>
+            <div class="pl-hint">Use the key icon in the Actions column to generate a new one.</div>
+        </div>
+        <div class="pl-err" id="pl-e-err"></div>
+        <div class="pl-actions">
+            <button class="pl-btn secondary" onclick="GXPL.closeEdit()">Cancel</button>
+            <button class="pl-btn" onclick="GXPL.saveEdit()">Save</button>
+        </div>
+    </div>
+</div>
+
+<div class="pl-overlay" id="pl-confirm-overlay">
+    <div class="pl-modal" style="max-width:24rem">
+        <h2 id="pl-confirm-title">Confirm</h2>
+        <p id="pl-confirm-msg" style="font-size:.9rem;color:#cdd2da;line-height:1.5;margin-bottom:.4rem"></p>
+        <div class="pl-actions">
+            <button class="pl-btn secondary" onclick="GXPL.closeConfirm()">Cancel</button>
+            <button class="pl-btn" id="pl-confirm-btn" onclick="GXPL.runConfirm()">Confirm</button>
+        </div>
+    </div>
+</div>
+
 <script>
 window.GXPL = (function () {
     const $ = id => document.getElementById(id);
@@ -98,6 +137,7 @@ window.GXPL = (function () {
         link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
         edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
         del:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+        key:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M11.4 11.4 21 1.8"/><path d="m16 6 3 3"/><path d="m18.5 3.5 3 3"/></svg>',
     };
     let table = null;
 
@@ -105,33 +145,40 @@ window.GXPL = (function () {
         const el = $('playlist-grid');
         if (!el || !window.Tabulator) return;
         if (table) { try { table.destroy(); } catch (e) {} table = null; }
+        const onEdit = (cell) => {
+            const f = cell.getField(); const body = {}; body[f] = cell.getValue();
+            J('/playlists/' + cell.getRow().getData().id, 'PATCH', body);
+        };
         table = new Tabulator(el, {
             layout: 'fitColumns', maxHeight: '70vh', placeholder: 'No playlists yet — use + to create one.',
+            editTriggerEvent: 'dblclick',
             ajaxURL: '{{ route('playlists.data') }}',
             columns: [
-                { title: 'Name', field: 'name', widthGrow: 3 },
+                { title: 'Name', field: 'name', widthGrow: 3, editor: 'input', cellEdited: onEdit },
                 { title: 'Key', field: 'cipher', widthGrow: 2, formatter: c => `<span class="pl-key">${esc(c.getValue())}</span>` },
-                { title: 'First Ch #', field: 'channel_start', width: 100, hozAlign: 'right' },
+                { title: 'First Ch #', field: 'channel_start', width: 100, hozAlign: 'right', editor: 'number', cellEdited: onEdit },
                 { title: 'Channels', field: 'channels', width: 100, hozAlign: 'right' },
                 { title: 'Groups', field: 'groups', width: 90, hozAlign: 'right' },
                 { title: 'Enabled', field: 'enabled', width: 90, hozAlign: 'center',
                   formatter: c => `<input type="checkbox" ${c.getValue() ? 'checked' : ''} style="pointer-events:none">` },
-                { title: 'Actions', field: '_act', width: 130, hozAlign: 'center', headerSort: false,
+                { title: 'Actions', field: '_act', width: 158, hozAlign: 'center', headerSort: false,
                   formatter: () => `<span class="pl-act">
                         <button data-a="links" title="Links">${ICON.link}</button>
-                        <button data-a="edit" title="Edit playlist">${ICON.edit}</button>
-                        <button data-a="del" class="danger" title="Delete">${ICON.del}</button></span>`,
+                        <button data-a="key" title="Generate new encryption key">${ICON.key}</button>
+                        <button data-a="edit" title="Edit playlist settings">${ICON.edit}</button>
+                        <button data-a="del" class="danger" title="Delete playlist">${ICON.del}</button></span>`,
                   cellClick: (e, c) => {
                         const a = e.target.closest('button')?.dataset.a; if (!a) return;
                         const d = c.getRow().getData();
-                        if (a === 'del') del(d.id, d.name);
-                        else if (a === 'edit') { window.GXPLE && window.GXPLE.open(d.id, d.name); }
+                        if (a === 'del') confirmDelete(d);
+                        else if (a === 'key') confirmRotateKey(d);
+                        else if (a === 'edit') openEdit(d);
                         else alert('Playlist links arrive with the serving phase.');
                   } },
             ],
         });
         table.on('rowClick', (e, row) => {   // select a playlist to open its editor below
-            if (e.target.closest('button') || e.target.closest('input')) return;
+            if (e.target.closest('button') || e.target.closest('input') || e.target.closest('.tabulator-editing')) return;
             const d = row.getData();
             window.GXPLE && window.GXPLE.open(d.id, d.name);
         });
@@ -168,13 +215,60 @@ window.GXPL = (function () {
         closeCreate(); reload();
     }
 
-    async function del(id, name) {
-        if (!confirm('Delete playlist "' + (name || '') + '"? This removes its channel list (providers are untouched).')) return;
-        await J('/playlists/' + id, 'DELETE');
-        reload();
+    // ---- confirm overlay (delete + key rotation) ----
+    let confirmFn = null;
+    function confirmAction(title, message, btnLabel, danger, fn) {
+        confirmFn = fn;
+        $('pl-confirm-title').textContent = title;
+        $('pl-confirm-msg').textContent = message;
+        const b = $('pl-confirm-btn'); b.textContent = btnLabel; b.classList.toggle('danger-btn', !!danger);
+        $('pl-confirm-overlay').classList.add('show');
+    }
+    const closeConfirm = () => { $('pl-confirm-overlay').classList.remove('show'); confirmFn = null; };
+    async function runConfirm() { const fn = confirmFn; closeConfirm(); if (fn) await fn(); }
+
+    function confirmDelete(d) {
+        confirmAction('Delete playlist', 'Delete “' + (d.name || '') + '”? This permanently removes the playlist and its channel-list file. Your providers are untouched.', 'Delete', true,
+            async () => { await J('/playlists/' + d.id, 'DELETE'); reload(); });
+    }
+    function confirmRotateKey(d) {
+        confirmAction('Generate new key', 'Generate a new encryption key for “' + (d.name || '') + '”? The current key (' + (d.cipher || '') + ') stops working immediately and any URLs using it will break.', 'Generate new key', false,
+            async () => { await J('/playlists/' + d.id + '/rotate-key', 'POST', {}); reload(); });
     }
 
-    return { init, reload, openCreate, closeCreate, create, del };
+    // ---- edit settings overlay (everything except the key) ----
+    async function openEdit(d) {
+        $('pl-e-id').value = d.id;
+        $('pl-e-name').value = d.name || '';
+        $('pl-e-iplock').value = d.iplock || '';
+        $('pl-e-chstart').value = d.channel_start || 100;
+        $('pl-e-extgrp').checked = !!d.extgrp_tags;
+        $('pl-e-enabled').checked = !!d.enabled;
+        $('pl-e-key').value = d.cipher || '';
+        $('pl-e-err').textContent = '';
+        const { data } = await J('{{ route('playlists.options') }}');
+        const provs = (data && data.providers) || [];
+        $('pl-e-guide').innerHTML = '<option value="">No guide</option>' + provs.map(p => `<option value="${p.id}" ${Number(d.guide_provider_id) === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+        $('pl-edit-overlay').classList.add('show');
+    }
+    const closeEdit = () => $('pl-edit-overlay').classList.remove('show');
+    async function saveEdit() {
+        const id = $('pl-e-id').value;
+        const name = $('pl-e-name').value.trim();
+        if (!name) { $('pl-e-err').textContent = 'Name is required.'; return; }
+        const { ok, data } = await J('/playlists/' + id, 'PATCH', {
+            name,
+            iplock: $('pl-e-iplock').value.trim(),
+            channel_start: Number($('pl-e-chstart').value) || 100,
+            extgrp_tags: $('pl-e-extgrp').checked,
+            enabled: $('pl-e-enabled').checked,
+            guide_provider_id: Number($('pl-e-guide').value) || null,
+        });
+        if (!ok) { $('pl-e-err').textContent = data.message || 'Could not save.'; return; }
+        closeEdit(); reload();
+    }
+
+    return { init, reload, openCreate, closeCreate, create, openEdit, closeEdit, saveEdit, confirmDelete, confirmRotateKey, closeConfirm, runConfirm };
 })();
 
 if (!window.__GXPL_BOUND) {

@@ -143,6 +143,32 @@ class PlaylistEditorTest extends TestCase { use RefreshDatabase;
     foreach($st->groupTitles() as $t){ $rows=$st->channels(50,0,null,$t); $p=10; foreach($rows as $r){ $this->assertSame((float)$p,(float)$r["position_order"]); $p+=10; } }
   }
 
+  public function test_update_changes_settings_but_never_cipher(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]);
+    $pl=Playlist::create(["user_id"=>$u->id,"name"=>"Old","channel_start"=>100]);
+    $origKey=$pl->cipher;
+    $r=$this->actingAs($u)->patchJson("/playlists/{$pl->id}",["name"=>"New Name","channel_start"=>500,"cipher"=>"HACKEDKEY123","enabled"=>false])->assertOk();
+    $pl->refresh();
+    $this->assertSame("New Name",$pl->name);
+    $this->assertSame(500,$pl->channel_start);
+    $this->assertFalse((bool)$pl->enabled);
+    $this->assertSame($origKey,$pl->cipher); // cipher NOT editable
+  }
+
+  public function test_rotate_key_changes_cipher(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]);
+    $pl=Playlist::create(["user_id"=>$u->id,"name"=>"PL"]);
+    $old=$pl->cipher;
+    $new=$this->actingAs($u)->postJson("/playlists/{$pl->id}/rotate-key")->assertOk()->json("cipher");
+    $this->assertNotSame($old,$new); $pl->refresh(); $this->assertSame($new,$pl->cipher);
+  }
+
+  public function test_update_rejects_other_users_playlist(): void {
+    $a=User::factory()->create(["email_verified_at"=>now()]); $b=User::factory()->create(["email_verified_at"=>now()]);
+    $pl=Playlist::create(["user_id"=>$a->id,"name"=>"A"]);
+    $this->actingAs($b)->patchJson("/playlists/{$pl->id}",["name"=>"X"])->assertForbidden();
+  }
+
   public function test_manual_add_and_group_filter(): void {
     $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
     $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels",['name'=>'My Manual','url'=>'http://m/x.ts','group'=>'CANADA'])->assertOk();

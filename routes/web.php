@@ -25,6 +25,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('playlists/options', [\App\Http\Controllers\PlaylistController::class, 'options'])->name('playlists.options');
     Route::post('playlists', [\App\Http\Controllers\PlaylistController::class, 'store'])->name('playlists.store');
     Route::delete('playlists/{playlist}', [\App\Http\Controllers\PlaylistController::class, 'destroy'])->name('playlists.destroy');
+    Route::patch('playlists/{playlist}', [\App\Http\Controllers\PlaylistController::class, 'update'])->name('playlists.update');
+    Route::post('playlists/{playlist}/rotate-key', [\App\Http\Controllers\PlaylistController::class, 'rotateKey'])->name('playlists.rotateKey');
     Route::get('playlists/{playlist}/channels', [\App\Http\Controllers\PlaylistController::class, 'channels'])->name('playlists.channels');
     Route::get('playlists/{playlist}/groups', [\App\Http\Controllers\PlaylistController::class, 'groups'])->name('playlists.groups');
     Route::post('playlists/{playlist}/groups', [\App\Http\Controllers\PlaylistController::class, 'addGroupRow'])->name('playlists.groups.add');

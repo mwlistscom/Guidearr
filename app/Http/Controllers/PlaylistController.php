@@ -97,6 +97,44 @@ class PlaylistController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    public function update(Request $request, Playlist $playlist)
+    {
+        $this->authorizeOwner($playlist);
+        $v = Validator::make($request->all(), [
+            'name'              => 'sometimes|required|string|max:64',
+            'iplock'            => 'nullable|string|max:64',
+            'channel_start'     => 'sometimes|integer|min:1|max:1000000',
+            'extgrp_tags'       => 'sometimes|boolean',
+            'enabled'           => 'sometimes|boolean',
+            'guide_provider_id' => 'nullable|integer',
+        ]);
+        if ($v->fails()) { return response()->json(['message' => $v->errors()->first()], 422); }
+
+        $own = Provider::where('user_id', Auth::id())->pluck('id')->all();
+        if ($request->has('name'))          { $playlist->name = (string) $request->input('name'); }
+        if ($request->has('iplock'))        { $playlist->iplock = $request->input('iplock') ?: null; }
+        if ($request->has('channel_start')) { $playlist->channel_start = (int) $request->input('channel_start'); }
+        if ($request->has('extgrp_tags'))   { $playlist->extgrp_tags = $request->boolean('extgrp_tags'); }
+        if ($request->has('enabled'))       { $playlist->enabled = $request->boolean('enabled'); }
+        if ($request->has('guide_provider_id')) {
+            $g = (int) $request->input('guide_provider_id', 0);
+            $playlist->guide_provider_id = ($g && in_array($g, $own, true)) ? $g : null;
+        }
+        // cipher is intentionally NOT editable here
+        $playlist->save();
+
+        return response()->json(['ok' => true] + $playlist->toGridArray());
+    }
+
+    public function rotateKey(Playlist $playlist)
+    {
+        $this->authorizeOwner($playlist);
+        $playlist->cipher = Playlist::freshCipher();
+        $playlist->save();
+
+        return response()->json(['ok' => true, 'cipher' => $playlist->cipher]);
+    }
+
     private function authorizeOwner(Playlist $playlist): void
     {
         abort_unless($playlist->user_id === Auth::id(), 403);

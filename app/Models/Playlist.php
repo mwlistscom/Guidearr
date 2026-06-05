@@ -71,6 +71,8 @@ class Playlist extends Model
             'iplock'        => $this->iplock,
             'cipher'        => $this->cipher,
             'channel_start' => $this->channel_start,
+            'extgrp_tags'   => (bool) $this->extgrp_tags,
+            'guide_provider_id' => $this->guide_provider_id,
             'enabled'       => (bool) $this->enabled,
             'channels'      => $counts['channels'],
             'groups'        => $counts['groups'],
