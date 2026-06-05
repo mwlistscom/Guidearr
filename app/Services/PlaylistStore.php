@@ -480,48 +480,86 @@ class PlaylistStore
      * where group N currently begins. Other channels keep their relative order; only the moved
      * group's channels are pulled together. The whole list is then renumbered step-of-10.
      */
+    /**
+     * Move a group to position N among the groups (group-pane order). The group is just an
+     * attribute, so this relocates only the group's LARGEST contiguous run of channels to sit
+     * in front of the group that should follow it. Channels of this group that were deliberately
+     * moved elsewhere (separate, smaller runs) are left exactly where they are. The pane order
+     * (playlist_groups.position_order) is updated to match, and the list is renumbered 10/20/30.
+     */
     public function moveGroupToRow(int $id, int $row): void
     {
         $g = $this->db->prepare('SELECT group_title FROM playlist_groups WHERE id = ?');
         $g->execute([$id]);
         $title = $g->fetchColumn();
         if ($title === false) { return; }
+        $row = max(1, $row);
 
+        // 1) Reorder the group pane so this group becomes the N-th group.
+        $others = $this->db->prepare('SELECT id, position_order po FROM playlist_groups WHERE id != ? AND deleted = 0 ORDER BY position_order, id');
+        $others->execute([$id]);
+        $paneRows = $others->fetchAll(PDO::FETCH_ASSOC);
+        if ($paneRows) {
+            if ($row <= 1) {
+                $newPos = (float) $paneRows[0]['po'] / 2.0;
+            } else {
+                $ai = min($row - 2, count($paneRows) - 1);
+                $anchor = (float) $paneRows[$ai]['po'];
+                $next = isset($paneRows[$ai + 1]) ? (float) $paneRows[$ai + 1]['po'] : null;
+                $newPos = $next !== null ? (($anchor + $next) / 2.0) : ($anchor + self::STEP);
+            }
+            $this->db->prepare('UPDATE playlist_groups SET position_order = ? WHERE id = ?')->execute([$newPos, $id]);
+        }
+
+        // 2) Relocate only the group's largest contiguous channel run.
         $all = $this->db->query(
-            'SELECT id, group_title FROM playlist_channels WHERE deleted = 0 ORDER BY position_order, id'
+            'SELECT id, group_title gt FROM playlist_channels WHERE deleted = 0 ORDER BY position_order, id'
         )->fetchAll(PDO::FETCH_ASSOC);
+        if (! $all) { return; }
 
-        $block = [];   // moving group's channels, current order
-        $rest  = [];   // everything else, current order
-        foreach ($all as $r) {
-            if ((string) $r['group_title'] === (string) $title) { $block[] = (int) $r['id']; }
-            else { $rest[] = ['id' => (int) $r['id'], 'gt' => (string) $r['group_title']]; }
-        }
+        $runsFor = static function (string $name) use ($all): array {
+            $runs = []; $cur = [];
+            foreach ($all as $r) {
+                if ((string) $r['gt'] === $name) { $cur[] = (int) $r['id']; }
+                elseif ($cur) { $runs[] = $cur; $cur = []; }
+            }
+            if ($cur) { $runs[] = $cur; }
+            return $runs;
+        };
+        $largest = static function (array $runs): array {
+            $best = [];
+            foreach ($runs as $rn) { if (count($rn) > count($best)) { $best = $rn; } }
+            return $best;
+        };
+
+        $block = $largest($runsFor((string) $title));   // the main block only; scattered runs stay put
         if (! $block) { return; }
+        $blockSet = array_flip($block);
 
-        // Order of the remaining groups by first appearance.
-        $restGroups = [];
-        $seen = [];
-        foreach ($rest as $r) {
-            if (! isset($seen[$r['gt']])) { $seen[$r['gt']] = true; $restGroups[] = $r['gt']; }
+        $rest = [];
+        foreach ($all as $r) {
+            if (! isset($blockSet[(int) $r['id']])) { $rest[] = ['id' => (int) $r['id'], 'gt' => (string) $r['gt']]; }
         }
-        $at = max(0, min($row - 1, count($restGroups)));
 
-        // Insertion index into $rest: where the group currently at position $at begins (end if past).
-        $insertPos = count($rest);
-        if ($at < count($restGroups)) {
-            $target = $restGroups[$at];
-            foreach ($rest as $i => $r) {
-                if ($r['gt'] === $target) { $insertPos = $i; break; }
+        // The group this one should sit in front of = the group now at pane position N (excluding self).
+        $paneTitles = $this->db->prepare(
+            'SELECT group_title FROM playlist_groups WHERE deleted = 0 AND group_title != ? ORDER BY position_order, id'
+        );
+        $paneTitles->execute([$title]);
+        $paneTitles = $paneTitles->fetchAll(PDO::FETCH_COLUMN);
+
+        $insertPos = count($rest);   // default: append at the end
+        $at = max(0, min($row - 1, count($paneTitles)));
+        if ($at < count($paneTitles)) {
+            $targetRun = $largest($runsFor((string) $paneTitles[$at]));   // insert before the target's main run
+            $firstId = $targetRun[0] ?? null;
+            if ($firstId !== null) {
+                foreach ($rest as $i => $r) { if ((int) $r['id'] === $firstId) { $insertPos = $i; break; } }
             }
         }
 
         $restIds  = array_map(static fn ($r) => $r['id'], $rest);
-        $newOrder = array_merge(
-            array_slice($restIds, 0, $insertPos),
-            $block,
-            array_slice($restIds, $insertPos)
-        );
+        $newOrder = array_merge(array_slice($restIds, 0, $insertPos), $block, array_slice($restIds, $insertPos));
 
         $this->begin();
         $upd = $this->db->prepare('UPDATE playlist_channels SET position_order = ? WHERE id = ?');
