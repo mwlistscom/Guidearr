@@ -82,6 +82,14 @@ class M3uGuideImporter
         $guide = $store->guideReloadCommit();
         @unlink($xmlPath);
 
+        if ($provider->enhance_guide) {
+            $added = $store->enhanceGuideFromChannelNames();
+            if ($added > 0) {
+                $guide['programmes'] = ($guide['programmes'] ?? 0) + $added;
+                $log("Guide enhanced: +{$added} event programmes for channels with no guide data.");
+            }
+        }
+
         $log("Guide: {$guide['guide_channels']} channels, {$guide['programmes']} programmes (stop ≥ now-6h).");
 
         return $guide;

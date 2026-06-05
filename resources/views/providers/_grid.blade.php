@@ -155,6 +155,8 @@
             </div>
         </div>
         <div class="gx-field gx-check"><input type="checkbox" id="f-enabled"><label style="margin:0">Enabled</label></div>
+        <div class="gx-field gx-check" title="When a guide is imported, build EPG entries for event/PPV channels (ESPN+, PPV, Peacock, SN+/TSN+…) that have no guide data, by reading the upcoming event embedded in the channel name. Leave on.">
+            <input type="checkbox" id="f-enhance"><label style="margin:0">Enhance Guide</label></div>
         <div class="gx-err" id="gx-form-err"></div>
         <div class="gx-modal-actions">
             <button class="gx-btn secondary" onclick="GXP.closeForm()">Cancel</button>
@@ -290,6 +292,7 @@ window.GXP = (function () {
             $('f-myshift').value = d.myshift ?? 0;
             $('f-refresh').value = (d.refresh_hour === null || d.refresh_hour === undefined) ? '' : d.refresh_hour;
             $('f-enabled').checked = !!d.enabled;
+            $('f-enhance').checked = (d.enhance_guide ?? true);
             $('gx-form-err').textContent = '';
             syncType();
         }
@@ -320,6 +323,7 @@ window.GXP = (function () {
             myshift: parseInt($('f-myshift').value || '0', 10),
             refresh_hour: $('f-refresh').value === '' ? null : parseInt($('f-refresh').value, 10),
             enabled: $('f-enabled').checked,
+            enhance_guide: $('f-enhance').checked,
         });
 
         async function save() {

@@ -12,7 +12,7 @@ class Provider extends Model
 
     protected $fillable = [
         'user_id', 'name', 'type', 'url', 'epg_url', 'username', 'password',
-        'timeshift', 'myshift', 'enabled', 'refresh_hour', 'refresh_minute',
+        'timeshift', 'myshift', 'enabled', 'enhance_guide', 'refresh_hour', 'refresh_minute',
         'last_refresh_at', 'last_status', 'last_touch_at',
     ];
 
@@ -20,6 +20,7 @@ class Provider extends Model
     {
         return [
             'enabled'         => 'boolean',
+            'enhance_guide'   => 'boolean',
             'myshift'         => 'integer',
             'refresh_hour'    => 'integer',
             'refresh_minute'  => 'integer',

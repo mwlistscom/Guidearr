@@ -82,6 +82,7 @@ class ProviderController extends Controller
             'refresh_hour' => $provider->refresh_hour,
             'refresh_minute' => $provider->refresh_minute,
             'enabled'      => (bool) $provider->enabled,
+            'enhance_guide' => (bool) $provider->enhance_guide,
         ]);
     }
 
@@ -399,6 +400,7 @@ class ProviderController extends Controller
             'myshift'      => ['nullable', 'integer', 'between:-23,23'],
             'refresh_hour' => ['nullable', 'integer', 'between:0,23'],
             'enabled'      => ['nullable', 'boolean'],
+            'enhance_guide' => ['nullable', 'boolean'],
         ]);
     }
 

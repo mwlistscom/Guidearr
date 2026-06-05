@@ -161,6 +161,108 @@ class ProviderStore
         ];
     }
 
+    /**
+     * Synthesize EPG entries for event/PPV channels that imported with NO programmes
+     * but carry an upcoming event in their display-name, e.g.:
+     *   "US (ESPN+ 008) | The Pat McAfee Show Jun 04 12:00PM ET (2026-06-04 12:00:05)"
+     *   "CA (SN+ 012) | Toronto @ Atlanta (2026-06-04 18:30:00)"
+     * The parenthesized ISO time is the start (US Eastern); the text after "|" is the title.
+     * Runs on the LIVE guide tables after a reload commit. Returns programmes added.
+     */
+    public function enhanceGuideFromChannelNames(int $defaultMinutes = 120): int
+    {
+        if (! $this->hasTable('guide_channels') || ! $this->hasTable('guide')) {
+            return 0;
+        }
+
+        // Guide channels that ended up with zero programmes.
+        $rows = $this->db->query(
+            "SELECT gc.tvg_id AS tvg_id, gc.display_name AS display_name
+               FROM guide_channels gc
+               LEFT JOIN guide g ON g.tvg_id = gc.tvg_id
+              WHERE g.tvg_id IS NULL
+                AND gc.display_name IS NOT NULL
+                AND TRIM(gc.display_name) != ''"
+        )->fetchAll(\PDO::FETCH_ASSOC);
+
+        if (! $rows) {
+            return 0;
+        }
+
+        $ins = $this->db->prepare(
+            'INSERT OR IGNORE INTO guide (tvg_id,start,stop,timeshift,title) VALUES (?,?,?,?,?)'
+        );
+
+        $made = 0;
+        $this->db->beginTransaction();
+        try {
+            foreach ($rows as $r) {
+                $p = self::parseEmbeddedEvent((string) $r['display_name'], $defaultMinutes);
+                if ($p === null) {
+                    continue;
+                }
+                $ins->execute([$r['tvg_id'], $p['start'], $p['stop'], '+0000', $p['title']]);
+                if ($ins->rowCount() > 0) {
+                    $made++;
+                }
+            }
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        return $made;
+    }
+
+    /**
+     * Parse one embedded-event display-name into a programme, or null if not convertible.
+     * @return array{start:int,stop:int,title:string}|null
+     */
+    private static function parseEmbeddedEvent(string $name, int $defaultMinutes): ?array
+    {
+        // Must carry an ISO start time in parentheses.
+        if (! preg_match('/\((\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})\)/', $name, $m)) {
+            return null;
+        }
+        // Skip far-future sentinel slots (e.g. 2098-12-31 = "no event scheduled").
+        if ((int) $m[1] >= 2090) {
+            return null;
+        }
+
+        // Title = text after the first "|", with the human time + the (ISO) stripped.
+        $body = $name;
+        if (($pos = strpos($body, '|')) !== false) {
+            $body = substr($body, $pos + 1);
+        }
+        $body = preg_replace('/\(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\)/', '', $body);                 // (ISO)
+        $body = preg_replace('/\s+[A-Z][a-z]{2} \d{1,2} \d{1,2}:\d{2}\s?(?:AM|PM) ET\b/i', '', $body); // "Jun 04 3:00AM ET"
+        $body = preg_replace('/^\s*[A-Z][a-z]{2}_ \d{1,2}\/\d{1,2} _ /', '', trim((string) $body));   // "Thu_ 6/4 _ "
+        $body = str_replace(['`', '_'], ["'", ' '], (string) $body);
+        $title = trim((string) preg_replace('/\s+/', ' ', $body));
+        if ($title === '') {
+            return null;
+        }
+
+        // Embedded times are US Eastern; floor jitter seconds to :00.
+        try {
+            $start = (new \DateTime(
+                sprintf('%s-%s-%s %s:%s:00', $m[1], $m[2], $m[3], $m[4], $m[5]),
+                new \DateTimeZone('America/New_York')
+            ))->getTimestamp();
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        return [
+            'start' => $start,
+            'stop'  => $start + $defaultMinutes * 60,
+            'title' => $title,
+        ];
+    }
+
     private function hasTable(string $t): bool
     {
         return (bool) $this->db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='" . $t . "'")->fetchColumn();
