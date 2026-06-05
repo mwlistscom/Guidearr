@@ -3,6 +3,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\Settings;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 
 class AdminController extends Controller
@@ -10,10 +12,30 @@ class AdminController extends Controller
     public function index()
     {
         return view('admin.dashboard', [
-            'userCount' => User::count(),
-            'pending'   => User::where('status', 'pending')->count(),
-            'banned'    => User::where('status', 'banned')->count(),
+            'userCount'    => User::count(),
+            'pending'      => User::where('status', 'pending')->count(),
+            'banned'       => User::where('status', 'banned')->count(),
+            'linksBaseUrl' => Settings::linksBaseUrl(),
         ]);
+    }
+
+    /** Save the public base URL used to build playlist M3U/EPG/Stream links. */
+    public function updateSettings(Request $request)
+    {
+        $data = $request->validate([
+            'links_base_url' => ['nullable', 'string', 'max:300'],
+        ]);
+
+        $url = trim((string) ($data['links_base_url'] ?? ''));
+        if ($url !== '' && ! preg_match('~^https?://~i', $url)) {
+            return back()
+                ->withErrors(['links_base_url' => 'Enter a full URL starting with http:// or https://'])
+                ->withInput();
+        }
+
+        Settings::set('links_base_url', rtrim($url, '/'));
+
+        return redirect()->route('admin.dashboard')->with('status', 'Playlist links base URL saved.');
     }
 
     /**

@@ -24,6 +24,16 @@
     .pl-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-start;
         justify-content:center; padding-top:6vh; z-index:60; }
     .pl-overlay.show { display:flex; }
+    .pl-link-row { margin:.55rem 0 .9rem; }
+    .pl-link-row label { display:block; font-size:.8rem; color:#9aa0aa; margin-bottom:.25rem; }
+    .pl-link-line { display:flex; gap:.5rem; align-items:stretch; }
+    .pl-link-line input { flex:1; min-width:0; padding:.45rem .55rem; border-radius:.45rem; border:1px solid rgba(255,255,255,.16);
+        background:#16171a; color:#e6e7ea; font-family:ui-monospace,monospace; font-size:.78rem; }
+    .pl-copy { background:var(--pl-accent,#f47521); border:none; color:#10120f; font-weight:700; border-radius:.45rem;
+        padding:0 .8rem; cursor:pointer; white-space:nowrap; }
+    .pl-copy.copied { background:#3fb950; }
+    .pl-links-unset { font-size:.85rem; color:#cdd2da; line-height:1.5; background:rgba(244,117,33,.08);
+        border:1px solid rgba(244,117,33,.3); border-radius:.5rem; padding:.7rem .8rem; }
     .pl-modal { background:#1b1c20; border:1px solid rgba(255,255,255,.14); border-radius:.8rem; width:100%;
         max-width:30rem; padding:1.3rem; color:#e6e7ea; max-height:84vh; overflow:auto; }
     .pl-modal h2 { font-size:1.1rem; font-weight:800; margin-bottom:1rem; }
@@ -118,9 +128,24 @@
     </div>
 </div>
 
+<div class="pl-overlay" id="pl-links-overlay">
+    <div class="pl-modal" style="max-width:34rem">
+        <h2>Playlist Links — <span id="pl-links-name"></span></h2>
+        <div id="pl-links-body"></div>
+        <div id="pl-links-unset" class="pl-links-unset" hidden>
+            The public links base URL hasn't been set yet. An admin can set it under
+            <strong>Admin → Status → Playlist links</strong>.
+        </div>
+        <div class="pl-actions">
+            <button class="pl-btn secondary" onclick="GXPL.closeLinks()">Close</button>
+        </div>
+    </div>
+</div>
+
 <script>
 window.GXPL = (function () {
     const $ = id => document.getElementById(id);
+    const LINKS_BASE = @json(\App\Support\Settings::linksBaseUrl());
     const csrf = () => document.querySelector('meta[name=csrf-token]')?.content || '';
     const J = async (url, method = 'GET', body = null) => {
         const r = await fetch(url, {
@@ -173,7 +198,7 @@ window.GXPL = (function () {
                         if (a === 'del') confirmDelete(d);
                         else if (a === 'key') confirmRotateKey(d);
                         else if (a === 'edit') openEdit(d);
-                        else alert('Playlist links arrive with the serving phase.');
+                        else if (a === 'links') openLinks(d);
                   } },
             ],
         });
@@ -231,6 +256,37 @@ window.GXPL = (function () {
         confirmAction('Delete playlist', 'Delete “' + (d.name || '') + '”? This permanently removes the playlist and its channel-list file. Your providers are untouched.', 'Delete', true,
             async () => { await J('/playlists/' + d.id, 'DELETE'); reload(); });
     }
+    function openLinks(d) {
+        $('pl-links-name').textContent = d.name || '';
+        const base = (LINKS_BASE || '').replace(/\/+$/, '');
+        const body = $('pl-links-body'); const unset = $('pl-links-unset');
+        if (!base) { body.innerHTML = ''; body.hidden = true; unset.hidden = false; $('pl-links-overlay').classList.add('show'); return; }
+        unset.hidden = true; body.hidden = false;
+        const key = encodeURIComponent(d.cipher || '');
+        const links = [
+            ['M3U Link', base + '/m3u.php?key=' + key],
+            ['EPG / Guide Link', base + '/tvg.php?key=' + key],
+            ['Stream Link', base + '/strm.php?key=' + key],
+        ];
+        body.innerHTML = links.map(([label, url]) => `
+            <div class="pl-link-row">
+                <label>${esc(label)}</label>
+                <div class="pl-link-line">
+                    <input type="text" readonly value="${esc(url)}" onclick="this.select()">
+                    <button class="pl-copy" type="button" data-url="${esc(url)}">Copy</button>
+                </div>
+            </div>`).join('');
+        body.querySelectorAll('.pl-copy').forEach(btn => btn.addEventListener('click', async () => {
+            const url = btn.dataset.url;
+            try { await navigator.clipboard.writeText(url); }
+            catch (e) { const i = btn.previousElementSibling; i.select(); document.execCommand('copy'); }
+            btn.classList.add('copied'); const t = btn.textContent; btn.textContent = 'Copied';
+            setTimeout(() => { btn.classList.remove('copied'); btn.textContent = t; }, 1200);
+        }));
+        $('pl-links-overlay').classList.add('show');
+    }
+    const closeLinks = () => $('pl-links-overlay').classList.remove('show');
+
     function confirmRotateKey(d) {
         confirmAction('Generate new key', 'Generate a new encryption key for “' + (d.name || '') + '”? The current key (' + (d.cipher || '') + ') stops working immediately and any URLs using it will break.', 'Generate new key', false,
             async () => { await J('/playlists/' + d.id + '/rotate-key', 'POST', {}); reload(); });
@@ -268,7 +324,7 @@ window.GXPL = (function () {
         closeEdit(); reload();
     }
 
-    return { init, reload, openCreate, closeCreate, create, openEdit, closeEdit, saveEdit, confirmDelete, confirmRotateKey, closeConfirm, runConfirm };
+    return { init, reload, openCreate, closeCreate, create, openEdit, closeEdit, saveEdit, confirmDelete, confirmRotateKey, closeConfirm, runConfirm, openLinks, closeLinks };
 })();
 
 if (!window.__GXPL_BOUND) {
