@@ -86,11 +86,14 @@ class M3uGuideImporter
             $enh = $store->enhanceGuideFromChannelNames();
             $guide['enhanced'] = $enh['added'];
             if ($enh['added'] > 0) {
-                $guide['programmes'] = ($guide['programmes'] ?? 0) + $enh['added'];
-                $log("Guide enhanced: {$enh['added']} event/PPV channels given guide data from their names "
-                    . "(of {$enh['examined']} channels with no guide); +{$enh['added']} programmes added.");
+                $guide['programmes'] = $store->guideCounts()['programmes']; // filler removed, events inserted
+                $msg = "Guide enhanced: {$enh['added']} event/PPV channels given real guide data from their names";
+                if ($enh['cleared'] > 0) {
+                    $msg .= "; replaced {$enh['cleared']} \"No EVENT Today\" filler entries";
+                }
+                $log($msg . '.');
             } elseif ($enh['examined'] > 0) {
-                $log("Guide enhance: scanned {$enh['examined']} channels with no guide — no convertible event names found.");
+                $log("Guide enhance: scanned {$enh['examined']} channels with no real guide — no convertible event names found.");
             }
         }
 

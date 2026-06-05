@@ -18,6 +18,9 @@ class ProviderStore
     private const SCHEMA_VERSION = 4;
     private const EDITABLE = ['name', 'tvg_id', 'tvg_name', 'tvg_logo', 'group_title', 'type', 'url'];
 
+    /** Placeholder title that event/PPV providers stuff into otherwise-empty guide slots. */
+    private const GUIDE_FILLER_TITLE = 'No EVENT Today';
+
     private const CHANNELS_DDL = 'CREATE TABLE channels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         tvg_id TEXT, tvg_name TEXT, tvg_logo TEXT,
@@ -170,41 +173,70 @@ class ProviderStore
      * Runs on the LIVE guide tables after a reload commit.
      * @return array{examined:int,added:int} channels with no guide examined, and programmes added
      */
+    /**
+     * Synthesize EPG entries for event/PPV channels whose real schedule is unknown but
+     * whose display-name carries the upcoming event, e.g.:
+     *   "US (ESPN+ 021) | Milwaukee Brewers vs. Colorado Rockies Jun 05 8:00PM ET (2026-06-05 20:00:05)"
+     *
+     * Targets channels with NO *real* programmes — i.e. either zero programmes, or guide
+     * rows that are entirely "No EVENT Today" filler. For those we drop the filler and
+     * insert the real event. Channels that already carry a genuine schedule are left alone,
+     * so we never clobber real guide data.
+     *
+     * The parenthesized ISO time is the start (US Eastern); the text after "|" is the title.
+     * Runs on the LIVE guide tables after a reload commit.
+     *
+     * @return array{examined:int,added:int,cleared:int}
+     *   examined = candidate channels (no real schedule, has a name)
+     *   added    = real event programmes inserted
+     *   cleared  = "No EVENT Today" filler rows removed
+     */
     public function enhanceGuideFromChannelNames(int $defaultMinutes = 120): array
     {
+        $empty = ['examined' => 0, 'added' => 0, 'cleared' => 0];
         if (! $this->hasTable('guide_channels') || ! $this->hasTable('guide')) {
-            return ['examined' => 0, 'added' => 0];
+            return $empty;
         }
 
-        // Guide channels that ended up with zero programmes.
-        $rows = $this->db->query(
+        // Channels with no *real* programmes (none, or only filler) that have a display-name.
+        $sel = $this->db->prepare(
             "SELECT gc.tvg_id AS tvg_id, gc.display_name AS display_name
                FROM guide_channels gc
-               LEFT JOIN guide g ON g.tvg_id = gc.tvg_id
-              WHERE g.tvg_id IS NULL
-                AND gc.display_name IS NOT NULL
-                AND TRIM(gc.display_name) != ''"
-        )->fetchAll(\PDO::FETCH_ASSOC);
+              WHERE gc.display_name IS NOT NULL
+                AND TRIM(gc.display_name) != ''
+                AND NOT EXISTS (
+                    SELECT 1 FROM guide g
+                     WHERE g.tvg_id = gc.tvg_id AND g.title <> :filler
+                )"
+        );
+        $sel->execute([':filler' => self::GUIDE_FILLER_TITLE]);
+        $rows = $sel->fetchAll(\PDO::FETCH_ASSOC);
 
         if (! $rows) {
-            return ['examined' => 0, 'added' => 0];
+            return $empty;
         }
 
+        $del = $this->db->prepare('DELETE FROM guide WHERE tvg_id = ? AND title = ?');
         $ins = $this->db->prepare(
             'INSERT OR IGNORE INTO guide (tvg_id,start,stop,timeshift,title) VALUES (?,?,?,?,?)'
         );
 
-        $made = 0;
+        $added = 0;
+        $cleared = 0;
         $this->db->beginTransaction();
         try {
             foreach ($rows as $r) {
                 $p = self::parseEmbeddedEvent((string) $r['display_name'], $defaultMinutes);
                 if ($p === null) {
+                    // Unparseable (sentinel/no event) — leave any filler in place.
                     continue;
                 }
+                // Replace the filler for this channel with the real event.
+                $del->execute([$r['tvg_id'], self::GUIDE_FILLER_TITLE]);
+                $cleared += $del->rowCount();
                 $ins->execute([$r['tvg_id'], $p['start'], $p['stop'], '+0000', $p['title']]);
                 if ($ins->rowCount() > 0) {
-                    $made++;
+                    $added++;
                 }
             }
             $this->db->commit();
@@ -215,7 +247,7 @@ class ProviderStore
             throw $e;
         }
 
-        return ['examined' => count($rows), 'added' => $made];
+        return ['examined' => count($rows), 'added' => $added, 'cleared' => $cleared];
     }
 
     /**

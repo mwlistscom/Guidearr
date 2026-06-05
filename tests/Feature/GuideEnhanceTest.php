@@ -80,4 +80,51 @@ class GuideEnhanceTest extends TestCase
         $this->assertSame(0, $store->enhanceGuideFromChannelNames()['added']);
         $this->assertCount(1, $store->guideProgrammesFor('ESPNplus.8', 0));
     }
+
+    public function test_replaces_no_event_filler_with_real_event(): void
+    {
+        $store = new ProviderStore(779003);
+        $store->guideReloadBegin();
+
+        // All-filler channel ("No EVENT Today") with a real event embedded in its name.
+        $store->guideChannel('ESPN+021.dko', 'US (ESPN+ 021) | Milwaukee Brewers vs. Colorado Rockies Jun 05 8:00PM ET (2026-06-05 20:00:05)', '');
+        foreach ([0, 4, 8] as $h) {
+            $store->guideProgramme([
+                'tvg_id' => 'ESPN+021.dko',
+                'start' => 4102444800 + $h * 3600, 'stop' => 4102444800 + ($h + 4) * 3600,
+                'timeshift' => '+0000', 'title' => 'No EVENT Today', 'sub_title' => '',
+                'desc' => '', 'category' => '', 'episode_num' => '', 'icon' => '', 'year' => '', 'rating' => '', 'info' => null,
+            ]);
+        }
+
+        // Channel with a genuine programme (+ a filler row) — must be left completely alone.
+        $store->guideChannel('ESPN+099.dko', 'US (ESPN+ 099) | Some Big Game (2026-06-05 18:00:00)', '');
+        $store->guideProgramme([
+            'tvg_id' => 'ESPN+099.dko', 'start' => 4102444800, 'stop' => 4102448400,
+            'timeshift' => '+0000', 'title' => 'Actual Scheduled Show', 'sub_title' => '',
+            'desc' => '', 'category' => '', 'episode_num' => '', 'icon' => '', 'year' => '', 'rating' => '', 'info' => null,
+        ]);
+        $store->guideProgramme([
+            'tvg_id' => 'ESPN+099.dko', 'start' => 4102448400, 'stop' => 4102452000,
+            'timeshift' => '+0000', 'title' => 'No EVENT Today', 'sub_title' => '',
+            'desc' => '', 'category' => '', 'episode_num' => '', 'icon' => '', 'year' => '', 'rating' => '', 'info' => null,
+        ]);
+        $store->guideReloadCommit();
+
+        $res = $store->enhanceGuideFromChannelNames();
+        $this->assertSame(3, $res['cleared'], 'the three filler rows on the all-filler channel are removed');
+        $this->assertSame(1, $res['added']);
+
+        // All-filler channel: filler gone, real event in its place.
+        $p = $store->guideProgrammesFor('ESPN+021.dko', 0);
+        $this->assertCount(1, $p);
+        $this->assertSame('Milwaukee Brewers vs. Colorado Rockies', $p[0]['title']);
+        $expected = (new \DateTime('2026-06-05 20:00:00', new \DateTimeZone('America/New_York')))->getTimestamp();
+        $this->assertSame($expected, (int) $p[0]['start']);
+
+        // Real-schedule channel: untouched (keeps both its real show and its own filler row).
+        $titles = array_column($store->guideProgrammesFor('ESPN+099.dko', 0), 'title');
+        $this->assertContains('Actual Scheduled Show', $titles);
+        $this->assertContains('No EVENT Today', $titles, 'channel with a real schedule is left alone');
+    }
 }
