@@ -162,12 +162,23 @@ class PlaylistController extends Controller
         return response()->json(['last_page' => max(1, (int) ceil($total / $size)), 'total' => $total, 'data' => $out]);
     }
 
-    public function groups(Playlist $playlist)
+    public function groups(Request $request, Playlist $playlist)
     {
         $this->authorizeOwner($playlist);
         $store = PlaylistStore::existsFor($playlist->id) ? new PlaylistStore($playlist->id) : null;
+        $includeDeleted = $request->query('deleted') === 'all';
 
-        return response()->json(['groups' => $store ? $store->groups() : []]);
+        return response()->json(['groups' => $store ? $store->groups($includeDeleted) : []]);
+    }
+
+    public function addGroupRow(Request $request, Playlist $playlist)
+    {
+        $this->authorizeOwner($playlist);
+        $v = Validator::make($request->all(), ['group_title' => 'required|string|max:128']);
+        if ($v->fails()) { return response()->json(['message' => $v->errors()->first()], 422); }
+        $id = (new PlaylistStore($playlist->id))->addGroup((string) $request->input('group_title'));
+
+        return response()->json(['id' => $id]);
     }
 
     public function addChannel(Request $request, Playlist $playlist)
@@ -213,7 +224,7 @@ class PlaylistController extends Controller
     {
         $this->authorizeOwner($playlist);
         $store = new PlaylistStore($playlist->id);
-        if ($request->has('enabled')) { $store->setGroupFlag($gid, 'enabled', $request->boolean('enabled')); }
+        if ($request->has('enabled')) { $store->setGroupFlagCascade($gid, 'enabled', $request->boolean('enabled')); }
         if ($request->filled('group_title')) { $store->renameGroup($gid, (string) $request->input('group_title')); }
 
         return response()->json(['ok' => true]);
@@ -230,7 +241,7 @@ class PlaylistController extends Controller
     public function deleteGroup(Request $request, Playlist $playlist, int $gid)
     {
         $this->authorizeOwner($playlist);
-        (new PlaylistStore($playlist->id))->setGroupFlag($gid, 'deleted', ! $request->boolean('restore'));
+        (new PlaylistStore($playlist->id))->setGroupFlagCascade($gid, 'deleted', ! $request->boolean('restore'));
 
         return response()->json(['ok' => true]);
     }

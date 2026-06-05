@@ -96,6 +96,38 @@ class PlaylistEditorTest extends TestCase { use RefreshDatabase;
     $this->assertSame(2,$ca["total"]); // channels followed the rename
   }
 
+  public function test_group_delete_cascades_to_channels(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]); $pl=$this->seeded($u);
+    $st=new PlaylistStore($pl->id); $g=collect($st->groups())->firstWhere("group_title","CANADA");
+    $this->assertSame(4,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json("total"));
+    $this->actingAs($u)->deleteJson("/playlists/{$pl->id}/groups/{$g['id']}")->assertOk(); // delete CANADA + its 2 channels
+    $this->assertSame(2,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json("total")); // only US-ENT left visible
+    $this->assertSame(4,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?deleted=all")->json("total")); // all still present
+    $this->actingAs($u)->deleteJson("/playlists/{$pl->id}/groups/{$g['id']}",["restore"=>true])->assertOk(); // restore cascades back
+    $this->assertSame(4,$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels")->json("total"));
+  }
+
+  public function test_group_disable_cascades_to_channels(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]); $pl=$this->seeded($u);
+    $st=new PlaylistStore($pl->id); $g=collect($st->groups())->firstWhere("group_title","CANADA");
+    $this->actingAs($u)->patchJson("/playlists/{$pl->id}/groups/{$g['id']}",["enabled"=>false])->assertOk();
+    $ca=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?group=CANADA")->json("data");
+    foreach($ca as $row) $this->assertFalse($row["enabled"]); // all CANADA channels disabled
+  }
+
+  public function test_add_group_and_show_deleted_groups(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]); $pl=$this->seeded($u);
+    $this->actingAs($u)->postJson("/playlists/{$pl->id}/groups",["group_title"=>"MY NEW GROUP"])->assertOk();
+    $titles=array_column($this->actingAs($u)->getJson("/playlists/{$pl->id}/groups")->json("groups"),"group_title");
+    $this->assertContains("MY NEW GROUP",$titles);
+    $st=new PlaylistStore($pl->id); $g=collect($st->groups())->firstWhere("group_title","CANADA");
+    $this->actingAs($u)->deleteJson("/playlists/{$pl->id}/groups/{$g['id']}")->assertOk();
+    $vis=array_column($this->actingAs($u)->getJson("/playlists/{$pl->id}/groups")->json("groups"),"group_title");
+    $this->assertNotContains("CANADA",$vis); // hidden by default
+    $all=array_column($this->actingAs($u)->getJson("/playlists/{$pl->id}/groups?deleted=all")->json("groups"),"group_title");
+    $this->assertContains("CANADA",$all); // shown in show-deleted
+  }
+
   public function test_manual_add_and_group_filter(): void {
     $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
     $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels",['name'=>'My Manual','url'=>'http://m/x.ts','group'=>'CANADA'])->assertOk();

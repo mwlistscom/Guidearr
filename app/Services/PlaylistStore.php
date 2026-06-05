@@ -193,14 +193,50 @@ class PlaylistStore
         return count($dead);
     }
 
-    public function groups(): array
+    public function groups(bool $includeDeleted = false): array
     {
+        $where = $includeDeleted ? '' : 'WHERE g.deleted = 0';
+
         return $this->db->query(
-            'SELECT g.id, g.group_title, g.position_order, g.enabled, g.deleted,
+            "SELECT g.id, g.group_title, g.position_order, g.enabled, g.deleted,
                     (SELECT COUNT(*) FROM playlist_channels c WHERE c.group_title = g.group_title AND c.deleted = 0) AS channels
-             FROM playlist_groups g WHERE g.deleted = 0
-             ORDER BY g.position_order, g.group_title'
+             FROM playlist_groups g $where
+             ORDER BY g.position_order, g.group_title"
         )->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** Set a group flag (enabled|deleted) AND cascade the same flag to every channel in the group. */
+    public function setGroupFlagCascade(int $id, string $field, bool $on): bool
+    {
+        if (! in_array($field, ['enabled', 'deleted'], true)) { return false; }
+        $cur = $this->db->prepare('SELECT group_title FROM playlist_groups WHERE id = ?');
+        $cur->execute([$id]);
+        $title = $cur->fetchColumn();
+        if ($title === false) { return false; }
+
+        $this->begin();
+        $this->db->prepare("UPDATE playlist_groups SET {$field} = ? WHERE id = ?")->execute([$on ? 1 : 0, $id]);
+        $this->db->prepare("UPDATE playlist_channels SET {$field} = ? WHERE group_title = ?")->execute([$on ? 1 : 0, $title]);
+        $this->commit();
+
+        return $on;
+    }
+
+    /** Create a new (empty) group at the end of the order. Returns its id (or an existing match). */
+    public function addGroup(string $title): int
+    {
+        $title = trim($title);
+        if ($title === '') { return 0; }
+        $ex = $this->db->prepare('SELECT id FROM playlist_groups WHERE group_title = ?');
+        $ex->execute([$title]);
+        if ($id = $ex->fetchColumn()) {
+            $this->db->prepare('UPDATE playlist_groups SET deleted = 0 WHERE id = ?')->execute([$id]); // un-delete if it was hidden
+            return (int) $id;
+        }
+        $o = $this->nextGroupOrder();
+        $this->db->prepare('INSERT INTO playlist_groups (group_title, position_order) VALUES (?, ?)')->execute([$title, $o]);
+
+        return (int) $this->db->lastInsertId();
     }
 
     // ---- editor: channel listing (global order via group join) ----
