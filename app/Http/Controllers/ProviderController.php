@@ -75,6 +75,7 @@ class ProviderController extends Controller
             'name'         => $provider->name,
             'type'         => $provider->type,
             'url'          => $provider->url,
+            'epg_url'      => $provider->epg_url,
             'username'     => $provider->username,
             'password'     => $provider->password, // decrypted by the cast, for the owner's form
             'myshift'      => $provider->myshift,
@@ -363,6 +364,7 @@ class ProviderController extends Controller
             'name'         => ['required', 'string', 'max:128'],
             'type'         => ['required', Rule::in(Provider::TYPES)],
             'url'          => [$manual ? 'nullable' : 'required', 'nullable', 'string', 'max:1024', 'url'],
+            'epg_url'      => ['nullable', 'string', 'max:1024', 'url'],
             'username'     => [$xtream ? 'required' : 'nullable', 'nullable', 'string', 'max:255'],
             'password'     => [$xtream ? 'required' : 'nullable', 'nullable', 'string', 'max:255'],
             'myshift'      => ['nullable', 'integer', 'between:-23,23'],

@@ -28,28 +28,36 @@ class XmltvParser
 
         $channels = 0;
         $programmes = 0;
+        $errors = 0;
 
         try {
             while (@$r->read()) {
+                // Process to the end even if individual nodes are malformed: each node is
+                // guarded, we always advance, and we bail only after a flood of errors.
                 while ($r->name === 'channel') {
-                    $node = self::expand($r);
-                    if ($node !== null) {
-                        $c = self::channel($node);
-                        if ($c['tvg_id'] !== '') {
-                            $onChannel($c);
-                            $channels++;
+                    try {
+                        $node = self::expand($r);
+                        if ($node !== null) {
+                            $c = self::channel($node);
+                            if ($c['tvg_id'] !== '') { $onChannel($c); $channels++; }
                         }
+                    } catch (\Throwable $e) {
+                        if (++$errors > 100) { break 2; }
                     }
                     @$r->next();
                 }
                 while ($r->name === 'programme') {
-                    $node = self::expand($r);
-                    if ($node !== null) {
-                        $p = self::programme($node);
-                        if ($p['tvg_id'] !== '' && ($minStop === null || $p['stop'] >= $minStop)) {
-                            $onProgramme($p);
-                            $programmes++;
+                    try {
+                        $node = self::expand($r);
+                        if ($node !== null) {
+                            $p = self::programme($node);
+                            if ($p['tvg_id'] !== '' && ($minStop === null || $p['stop'] >= $minStop)) {
+                                $onProgramme($p);
+                                $programmes++;
+                            }
                         }
+                    } catch (\Throwable $e) {
+                        if (++$errors > 100) { break 2; }
                     }
                     @$r->next();
                 }
@@ -59,6 +67,24 @@ class XmltvParser
         }
 
         return ['channels' => $channels, 'programmes' => $programmes];
+    }
+
+    /**
+     * Cheap up-front guard: many providers hand back an HTML login/error page or junk
+     * instead of XMLTV. Sniff the first bytes and reject anything that looks like a web
+     * page so we never feed garbage into the parser (mirrors the rockmym3u reference).
+     */
+    public static function looksLikeXml(string $path): bool
+    {
+        $h = @fopen($path, 'rb');
+        if (! $h) { return false; }
+        $head = (string) fread($h, 512);
+        fclose($h);
+        $head = ltrim($head, "\xEF\xBB\xBF \t\r\n");      // strip BOM/whitespace
+        $low = strtolower($head);
+        if (str_contains($low, '<!doctype html') || str_contains($low, '<html')) { return false; }
+
+        return str_contains($low, '<?xml') || str_contains($low, '<tv');
     }
 
     private static function expand(XMLReader $r): ?\SimpleXMLElement

@@ -126,6 +126,7 @@
         </div>
         <div class="gx-field" data-when="url"><label id="f-url-label">URL</label><input id="f-url" maxlength="1024" placeholder="https://…"></div>
         <div class="gx-field" data-when="xtream"><label>Username</label><input id="f-username" maxlength="255"></div>
+        <div class="gx-field" data-when="m3u"><label>EPG / XMLTV URL (optional)</label><input id="f-epg" maxlength="1024" placeholder="https://…/epg.xml or .xml.gz"></div>
         <div class="gx-field" data-when="xtream"><label>Password</label><input id="f-password" type="password" maxlength="255"></div>
         <div class="gx-row2">
             <div class="gx-field"><label>EPG shift (hrs)</label><input id="f-myshift" type="number" min="-23" max="23" value="0"></div>
@@ -258,7 +259,7 @@ window.GXP = (function () {
             const t = $('f-type').value;
             document.querySelectorAll('[data-when]').forEach(el => {
                 const w = el.dataset.when;
-                el.style.display = ((w === 'url' && t !== 'manual') || (w === 'xtream' && t === 'xtream')) ? '' : 'none';
+                el.style.display = ((w === 'url' && t !== 'manual') || (w === 'xtream' && t === 'xtream') || (w === 'm3u' && t === 'm3u')) ? '' : 'none';
             });
             $('f-url-label').textContent = t === 'xtream' ? 'Server URL' : 'URL';
         }
@@ -268,6 +269,7 @@ window.GXP = (function () {
             $('f-name').value = d.name ?? '';
             $('f-type').value = d.type ?? 'xtream';
             $('f-url').value = d.url ?? '';
+            $('f-epg').value = d.epg_url ?? '';
             $('f-username').value = d.username ?? '';
             $('f-password').value = d.password ?? '';
             $('f-myshift').value = d.myshift ?? 0;
@@ -297,6 +299,7 @@ window.GXP = (function () {
             name: $('f-name').value.trim(),
             type: $('f-type').value,
             url: $('f-url').value.trim() || null,
+            epg_url: $('f-epg').value.trim() || null,
             username: $('f-username').value.trim() || null,
             password: $('f-password').value,
             myshift: parseInt($('f-myshift').value || '0', 10),

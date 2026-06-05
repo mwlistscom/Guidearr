@@ -11,7 +11,7 @@ class Provider extends Model
     public const TYPES = ['xtream', 'm3u', 'xmltv', 'manual'];
 
     protected $fillable = [
-        'user_id', 'name', 'type', 'url', 'username', 'password',
+        'user_id', 'name', 'type', 'url', 'epg_url', 'username', 'password',
         'timeshift', 'myshift', 'enabled', 'refresh_hour', 'refresh_minute',
         'last_refresh_at', 'last_status', 'last_touch_at',
     ];

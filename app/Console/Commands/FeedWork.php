@@ -142,6 +142,16 @@ class FeedWork extends Command
         $counts  = $store->counts();
 
         $job->log('info', "Parsed {$result['count']} channels (added {$added}, removed {$removed}); store now holds {$counts['channels']} channels in {$counts['groups']} groups.");
+
+        // Optional XMLTV/EPG guide for this m3u provider — never fails the channel ingest.
+        if (trim((string) $provider->epg_url) !== '') {
+            try {
+                (new \App\Services\M3uGuideImporter())->importGuide($provider, $version, fn (string $m) => $job->log('info', $m));
+            } catch (Throwable $e) {
+                $job->log('warning', 'Guide import error (channels kept): ' . $e->getMessage());
+            }
+        }
+
         $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
         $job->markDone();
         $job->log('info', 'Done.');
