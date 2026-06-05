@@ -29,7 +29,7 @@
         </div>
         <h1>License</h1>
         <pre>{{ $text }}</pre>
-        <a class="back" href="{{ url('/') }}">&larr; Back</a>
+        <a class="back" href="{{ $back }}">&larr; Back</a>
     </div>
 </body>
 </html>
