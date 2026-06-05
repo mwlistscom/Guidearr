@@ -245,4 +245,17 @@ class PlaylistController extends Controller
 
         return response()->json(['ok' => true]);
     }
+
+    public function reindex(Request $request, Playlist $playlist)
+    {
+        $this->authorizeOwner($playlist);
+        if (! PlaylistStore::existsFor($playlist->id)) { return response()->json(['ok' => true, 'count' => 0]); }
+        $store = new PlaylistStore($playlist->id);
+        $scope = $request->input('scope', 'all');
+        $count = 0;
+        if ($scope === 'channels' || $scope === 'all') { $count += $store->reindexChannels(); }
+        if ($scope === 'groups' || $scope === 'all') { $count += $store->reindexGroups(); }
+
+        return response()->json(['ok' => true, 'count' => $count]);
+    }
 }

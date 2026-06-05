@@ -77,7 +77,10 @@
     .ple-btn.secondary { background:#2a2c31; color:#cdd2da; }
     .ple-spinner { width:34px; height:34px; margin:0 auto; border:3px solid rgba(255,255,255,.18); border-top-color:#f47521; border-radius:50%; animation:ple-spin .8s linear infinite; }
     @keyframes ple-spin { to { transform:rotate(360deg); } }
-    #ple-busy-overlay { z-index:90; }
+    /* busy overlay sits over the editor tables (not the whole viewport) so it's clearly "on" the editor */
+    #pl-editor-pane { position:relative; }
+    #ple-busy-overlay { position:absolute; inset:0; align-items:flex-start; padding-top:5rem; z-index:90; border-radius:.5rem; }
+    .ple-toolbar .ple-spacer { flex:0 0 auto; width:1.6rem; }
 </style>
 
 <div class="ple-pane" id="pl-editor-pane" hidden>
@@ -94,6 +97,8 @@
                 <button title="Add manual channel" onclick="GXPLE.openAdd()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
                 <button title="Refresh" onclick="GXPLE.reloadChannels()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
                 <button title="Show deleted (undelete)" id="ple-trash-toggle" onclick="GXPLE.toggleDeleted()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                <span class="ple-spacer"></span>
+                <button title="Reindex channel order (10, 20, 30…)" onclick="GXPLE.reindex('channels')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M4 6h1v4M4 10h2M6 14H4l2 3v1H4"/></svg></button>
             </div>
         </div>
         <div>
@@ -103,6 +108,8 @@
                 <button title="Add group" onclick="GXPLE.openAddGroup()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button>
                 <button title="Refresh groups" onclick="GXPLE.loadGroups()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg></button>
                 <button title="Show deleted groups" id="ple-gtrash-toggle" onclick="GXPLE.toggleDeletedGroups()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                <span class="ple-spacer"></span>
+                <button title="Reindex group order (10, 20, 30…)" onclick="GXPLE.reindex('groups')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M4 6h1v4M4 10h2M6 14H4l2 3v1H4"/></svg></button>
             </div>
         </div>
     </div>
@@ -282,6 +289,13 @@ window.GXPLE = (function () {
         $('ple-gtrash-toggle').classList.toggle('on', showDeletedGroups);
         loadGroups();
     }
+    function reindex(scope) {
+        runBusy(scope === 'groups' ? 'Renumbering groups (10, 20, 30…)…' : 'Renumbering channels (10, 20, 30…)…', async () => {
+            await J('/playlists/' + plId + '/reindex', 'POST', { scope });
+            if (scope === 'groups') { await loadGroups(); }
+            reloadChannels();
+        });
+    }
     function openAddGroup() { $('ple-gadd-name').value = ''; $('ple-gadd-err').textContent = ''; $('ple-gadd-overlay').classList.add('show'); }
     const closeAddGroup = () => $('ple-gadd-overlay').classList.remove('show');
     async function saveAddGroup() {
@@ -407,7 +421,7 @@ window.GXPLE = (function () {
         else if (e.target.id === 'ple-gsearch' && grTable) { clearTimeout(gsearchTimer); gsearchTimer = setTimeout(() => { const v = e.target.value.trim(); v ? grTable.setFilter('group_title', 'like', v) : grTable.clearFilter(); }, 200); }
     }
 
-    return { open, close, loadGroups, reloadChannels, toggleDeleted, toggleDeletedGroups, openMoveChannel, openMoveGroup, closeMove, applyMove, openEdit, openAdd, closeEdit, saveEdit, openAddGroup, closeAddGroup, saveAddGroup, onInput };
+    return { open, close, loadGroups, reloadChannels, toggleDeleted, toggleDeletedGroups, reindex, openMoveChannel, openMoveGroup, closeMove, applyMove, openEdit, openAdd, closeEdit, saveEdit, openAddGroup, closeAddGroup, saveAddGroup, onInput };
 })();
 
 if (!window.__GXPLE_BOUND) {

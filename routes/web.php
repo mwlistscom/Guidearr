@@ -35,6 +35,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::patch('playlists/{playlist}/groups/{gid}', [\App\Http\Controllers\PlaylistController::class, 'updateGroup'])->name('playlists.groups.update');
     Route::post('playlists/{playlist}/groups/{gid}/move', [\App\Http\Controllers\PlaylistController::class, 'moveGroup'])->name('playlists.groups.move');
     Route::delete('playlists/{playlist}/groups/{gid}', [\App\Http\Controllers\PlaylistController::class, 'deleteGroup'])->name('playlists.groups.delete');
+    Route::post('playlists/{playlist}/reindex', [\App\Http\Controllers\PlaylistController::class, 'reindex'])->name('playlists.reindex');
     Route::get('providers/feed/{msgid}', [\App\Http\Controllers\ProviderController::class, 'feed'])->name('providers.feed');
     Route::post('providers', [\App\Http\Controllers\ProviderController::class, 'store'])->name('providers.store');
     Route::get('providers/{provider}', [\App\Http\Controllers\ProviderController::class, 'show'])->name('providers.show');

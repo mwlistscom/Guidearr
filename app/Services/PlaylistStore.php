@@ -414,4 +414,35 @@ class PlaylistStore
     {
         return $this->db->query('SELECT group_title FROM playlist_groups WHERE deleted = 0 ORDER BY position_order')->fetchAll(PDO::FETCH_COLUMN);
     }
+
+    /** Renumber group position_order to clean increments (10,20,30…) preserving current order. */
+    public function reindexGroups(): int
+    {
+        $ids = $this->db->query('SELECT id FROM playlist_groups ORDER BY position_order, id')->fetchAll(PDO::FETCH_COLUMN);
+        $this->begin();
+        $upd = $this->db->prepare('UPDATE playlist_groups SET position_order = ? WHERE id = ?');
+        $pos = self::STEP;
+        foreach ($ids as $id) { $upd->execute([$pos, $id]); $pos += self::STEP; }
+        $this->commit();
+
+        return count($ids);
+    }
+
+    /** Renumber channel position_order per group (reset to STEP each group) preserving current order. */
+    public function reindexChannels(): int
+    {
+        $titles = $this->db->query('SELECT DISTINCT group_title FROM playlist_channels')->fetchAll(PDO::FETCH_COLUMN);
+        $this->begin();
+        $sel = $this->db->prepare('SELECT id FROM playlist_channels WHERE group_title = ? ORDER BY position_order, id');
+        $upd = $this->db->prepare('UPDATE playlist_channels SET position_order = ? WHERE id = ?');
+        $n = 0;
+        foreach ($titles as $t) {
+            $sel->execute([$t]);
+            $pos = self::STEP;
+            foreach ($sel->fetchAll(PDO::FETCH_COLUMN) as $id) { $upd->execute([$pos, $id]); $pos += self::STEP; $n++; }
+        }
+        $this->commit();
+
+        return $n;
+    }
 }

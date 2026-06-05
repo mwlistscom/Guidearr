@@ -128,6 +128,21 @@ class PlaylistEditorTest extends TestCase { use RefreshDatabase;
     $this->assertContains("CANADA",$all); // shown in show-deleted
   }
 
+  public function test_reindex_preserves_order_and_cleans_positions(): void {
+    $u=User::factory()->create(["email_verified_at"=>now()]); $pl=$this->seeded($u);
+    $before=array_column($this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->json("data"),"id");
+    // do a few moves to create fractional position_orders
+    $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels/{$before[3]}/move",["row"=>1])->assertOk();
+    $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels/{$before[0]}/move",["row"=>2])->assertOk();
+    $ordered=array_column($this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->json("data"),"id");
+    $this->actingAs($u)->postJson("/playlists/{$pl->id}/reindex",["scope"=>"all"])->assertOk();
+    $after=array_column($this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->json("data"),"id");
+    $this->assertSame($ordered,$after); // order preserved across reindex
+    // positions are now clean multiples of 10 within each group
+    $st=new PlaylistStore($pl->id);
+    foreach($st->groupTitles() as $t){ $rows=$st->channels(50,0,null,$t); $p=10; foreach($rows as $r){ $this->assertSame((float)$p,(float)$r["position_order"]); $p+=10; } }
+  }
+
   public function test_manual_add_and_group_filter(): void {
     $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
     $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels",['name'=>'My Manual','url'=>'http://m/x.ts','group'=>'CANADA'])->assertOk();
