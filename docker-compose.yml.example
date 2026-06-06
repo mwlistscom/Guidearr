@@ -1,10 +1,14 @@
 services:
   app:
     build: .
+    restart: unless-stopped
     volumes: [ "./:/var/www/html" ]
-    depends_on: [db]
+    depends_on:
+      db:
+        condition: service_healthy
   web:
     image: nginx:1.27-alpine
+    restart: unless-stopped
     ports:
       - "7979:7979"            # direct TLS (existing)
       - "127.0.0.1:8080:8080"  # plain HTTP for the local proxy only — adjust the bind to your proxy's reach
@@ -22,8 +26,15 @@ services:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
     volumes: [ "dbdata:/var/lib/mysql" ]
     ports: [ "33060:3306" ]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
   mailpit:
     image: axllent/mailpit:latest
+    restart: unless-stopped
     ports: [ "8025:8025" ]
   worker:
     build: .
@@ -32,8 +43,9 @@ services:
     working_dir: /var/www/html
     command: php artisan feed:work --sleep=15
     volumes: [ "./:/var/www/html" ]
-    depends_on: [db]
-
+    depends_on:
+      db:
+        condition: service_healthy
   scheduler:
     build: .
     restart: unless-stopped
@@ -41,6 +53,8 @@ services:
     working_dir: /var/www/html
     command: php artisan schedule:work
     volumes: [ "./:/var/www/html" ]
-    depends_on: [db]
+    depends_on:
+      db:
+        condition: service_healthy
 volumes:
   dbdata:

@@ -27,3 +27,8 @@ yarn-error.log
 /storage/app/branding/
 /certs/
 docker-compose.yml
+
+# Guidearr heartbeat runtime + secrets (never commit)
+health/heartbeat.log
+health/state/
+health/heartbeat.env
