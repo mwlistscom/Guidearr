@@ -28,19 +28,49 @@ class FeedWork extends Command
         $this->info("feed:work started on {$this->host}");
 
         do {
-            $job = FeedQueue::claimNext($this->host);
-            if (! $job) {
-                if ($this->option('once')) { $this->line('No queued jobs.'); return self::SUCCESS; }
-                sleep($sleep);
+            // Record liveness BEFORE touching the DB, so a DB outage shows up as
+            // "worker alive, DB down" (fresh beat + failing db check) rather than
+            // "worker dead" (stale beat). health:check / the heartbeat read this.
+            $this->beat();
+
+            try {
+                $job = FeedQueue::claimNext($this->host);
+
+                if (! $job) {
+                    if ($this->option('once')) { $this->line('No queued jobs.'); return self::SUCCESS; }
+                    sleep($sleep);
+                    continue;
+                }
+
+                $this->processJob($job, $downloader, $validator);
+            } catch (Throwable $e) {
+                // Infrastructure failure (e.g. the DB went away): a single failed query
+                // must NOT kill the daemon. Log it, back off briefly, and keep looping --
+                // the loop self-heals the moment the DB is reachable again. This is the
+                // difference between a momentary blip and a silent multi-hour outage.
+                $this->error('feed:work loop error: ' . $e->getMessage());
+                report($e);
+                if ($this->option('once')) { return self::FAILURE; }
+                sleep(min(60, $sleep * 2));
                 continue;
             }
-
-            $this->processJob($job, $downloader, $validator);
 
             if ($this->option('once')) {
                 return self::SUCCESS;
             }
         } while (true);
+    }
+
+    /** Write a liveness timestamp the health probe can read; never throws. */
+    private function beat(): void
+    {
+        try {
+            $dir = storage_path('app/health');
+            if (! is_dir($dir)) { @mkdir($dir, 0775, true); }
+            @file_put_contents($dir . '/worker.beat', (string) time());
+        } catch (Throwable $e) {
+            // a failing heartbeat must never break the work loop
+        }
     }
 
     private function processJob(FeedQueue $job, M3uDownloader $downloader, ProviderValidator $validator): void
@@ -183,8 +213,7 @@ class FeedWork extends Command
 
         $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
         $job->markDone();
-        $enh = ! empty($g['enhanced']) ? " ({$g['enhanced']} enhanced)" : '';
-        $job->log('info', "Done. {$g['guide_channels']} guide channels, {$g['programmes']} programmes{$enh}.");
+        $job->log('info', "Done. {$g['guide_channels']} guide channels, {$g['programmes']} programmes.");
     }
 
     private function ingestXtream(FeedQueue $job, Provider $provider): void
@@ -213,8 +242,7 @@ class FeedWork extends Command
 
         $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
         $job->markDone();
-        $enh = ! empty($r['enhanced']) ? " ({$r['enhanced']} enhanced)" : '';
-        $job->log('info', "Done. {$r['channels']} channels, {$r['groups']} groups, {$r['guide_channels']} guide channels, {$r['programmes']} programmes{$enh}.");
+        $job->log('info', "Done. {$r['channels']} channels, {$r['groups']} groups, {$r['guide_channels']} guide channels, {$r['programmes']} programmes.");
     }
 
     /** A recoverable failure: count it, disable+drop at the threshold, otherwise requeue for another attempt. */

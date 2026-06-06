@@ -51,6 +51,8 @@ class M3uDownloader
             CURLOPT_ENCODING       => 'gzip,deflate',
             CURLOPT_CONNECTTIMEOUT => (int) $cfg['connect_timeout'],
             CURLOPT_TIMEOUT        => (int) $cfg['timeout'],
+            CURLOPT_LOW_SPEED_LIMIT => (int) ($cfg['low_speed_limit'] ?? 1024),
+            CURLOPT_LOW_SPEED_TIME  => (int) ($cfg['low_speed_time'] ?? 60),
             CURLOPT_SSL_VERIFYPEER => (bool) $cfg['verify_tls'],
             CURLOPT_SSL_VERIFYHOST => $cfg['verify_tls'] ? 2 : 0,
             CURLOPT_BUFFERSIZE     => 1024 * 256,

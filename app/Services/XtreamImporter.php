@@ -180,8 +180,10 @@ class XtreamImporter
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_CONNECTTIMEOUT => 30,
-            CURLOPT_TIMEOUT => 1200,
+            CURLOPT_CONNECTTIMEOUT => (int) config('guidearr.feed.connect_timeout', 30),
+            CURLOPT_TIMEOUT => (int) config('guidearr.feed.timeout', 1200),
+            CURLOPT_LOW_SPEED_LIMIT => (int) config('guidearr.feed.low_speed_limit', 1024),
+            CURLOPT_LOW_SPEED_TIME => (int) config('guidearr.feed.low_speed_time', 60),
             CURLOPT_HTTPHEADER => ['Accept: application/json, */*;q=0.8', 'User-Agent: Guidearr/1.x'],
             CURLOPT_WRITEFUNCTION => function ($c, $data) use (&$bytes, &$buf) {
                 $bytes += strlen($data);
@@ -225,8 +227,10 @@ class XtreamImporter
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_CONNECTTIMEOUT => 30,
-            CURLOPT_TIMEOUT => 1200,
+            CURLOPT_CONNECTTIMEOUT => (int) config('guidearr.feed.connect_timeout', 30),
+            CURLOPT_TIMEOUT => (int) config('guidearr.feed.timeout', 1200),
+            CURLOPT_LOW_SPEED_LIMIT => (int) config('guidearr.feed.low_speed_limit', 1024),
+            CURLOPT_LOW_SPEED_TIME => (int) config('guidearr.feed.low_speed_time', 60),
             CURLOPT_HTTPHEADER => ['Accept: application/xml, text/xml, */*;q=0.8', 'User-Agent: Guidearr/1.x'],
             CURLOPT_WRITEFUNCTION => function ($c, $data) use (&$bytes, $fo) {
                 $len = strlen($data);
