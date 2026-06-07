@@ -2,8 +2,21 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3 and v1.22.5. Intermediate entries
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5 and v1.22.6. Intermediate entries
 > (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.22.6 — Automatic nginx log rotation · 2026-06-07
+
+**Added**
+- The bundled web server now keeps its own logs bounded automatically: `docker/nginx-logrotate.sh`
+  runs inside the `web` container (via the nginx image's `/docker-entrypoint.d/`) and trims
+  `nginx-access.log` / `nginx-error.log` to a recent tail once they pass a size cap — checked
+  daily, no host cron or logrotate to set up. It runs as root in nginx's container (the logs are
+  root-owned) and relies on nginx's `O_APPEND` writes so the in-place trim stays clean.
+  Tunable: `NGINX_LOG_MAX_BYTES` (15 MB), `NGINX_LOG_KEEP_BYTES` (5 MB), `NGINX_LOG_INTERVAL` (daily).
+  `docker-compose.yml.example` mounts it on the `web` service.
 
 ---
 

@@ -15,6 +15,7 @@ services:
     volumes:
       - ./:/var/www/html
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx-logrotate.sh:/docker-entrypoint.d/99-nginx-logrotate.sh:ro
       - ./certs:/etc/ssl/tunarr:ro
     depends_on: [app]
   db:
