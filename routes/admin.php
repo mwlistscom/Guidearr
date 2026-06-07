@@ -48,6 +48,7 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
 
             Route::get('logs', [LogController::class, 'index'])->name('logs');
             Route::get('logs/view', [LogController::class, 'view'])->name('logs.view');
+            Route::post('logs/clear', [LogController::class, 'clear'])->name('logs.clear');
             Route::get('logs/bundle', [LogController::class, 'bundle'])->name('logs.bundle');
 
             Route::get('maintenance', [MaintenanceController::class, 'index'])->name('maintenance');

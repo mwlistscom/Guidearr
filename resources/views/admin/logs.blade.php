@@ -3,7 +3,8 @@
 @section('content')
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <h1>Logs</h1>
-<p class="muted">Application logs from <code>storage/logs</code>. The newest entries are at the bottom.</p>
+<p class="muted">Application logs from <code>storage/logs</code>. The newest entries are at the bottom.
+   <code>nginx-access.log</code> / <code>nginx-error.log</code> appear only when you're running Guidearr's bundled web server.</p>
 
 <div class="logbar">
     <select id="lg-file">
@@ -21,6 +22,7 @@
     </select>
     <input id="lg-filter" placeholder="Filter shown lines…" autocomplete="off">
     <button id="lg-refresh" type="button">Refresh</button>
+    <button id="lg-clear" type="button" class="danger">Clear</button>
     <span class="spacer"></span>
     <a class="dl" href="{{ route('admin.logs.bundle') }}">Download log bundle (.tar.gz)</a>
 </div>
@@ -35,6 +37,10 @@
         background:#0e0f13; border:1px solid rgba(255,255,255,.18); color:#e6e7ea; border-radius:.45rem; padding:.4rem .6rem; }
     .logbar input { flex:1; min-width:10rem; }
     .logbar button { cursor:pointer; }
+    .logbar button.danger { border-color:#7f1d1d; color:#fca5a5; }
+    .logbar button.danger:hover { background:#7f1d1d; color:#fff; }
+    .logbar button:disabled { opacity:.4; cursor:not-allowed; }
+    .logbar button:disabled:hover { background:#0e0f13; color:#fca5a5; }
     .logbar .spacer { flex:1; }
     .logbar .dl { background:var(--accent); color:#1a1205; font-weight:700; border:none; border-radius:.45rem;
         padding:.45rem .8rem; text-decoration:none; white-space:nowrap; }
@@ -64,6 +70,7 @@
 
     async function load() {
         const file = $('lg-file').value;
+        syncClear();
         if (!file) { view.textContent = 'No log files.'; return; }
         view.textContent = 'Loading…';
         try {
@@ -92,9 +99,34 @@
         });
     }
 
+    function syncClear() {
+        const isNginx = /^nginx-/.test($('lg-file').value);
+        $('lg-clear').disabled = isNginx;
+        $('lg-clear').title = isNginx ? 'nginx logs are rotated on the host, not cleared here' : '';
+    }
+
     $('lg-file').addEventListener('change', load);
     $('lg-lines').addEventListener('change', load);
     $('lg-refresh').addEventListener('click', load);
+    $('lg-clear').addEventListener('click', async () => {
+        const file = $('lg-file').value;
+        if (!file) return;
+        if (!confirm('Clear all contents of ' + file + '?\nThis empties the file and cannot be undone.')) return;
+        try {
+            const r = await fetch('{{ route('admin.logs.clear') }}', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name=csrf-token]').content,
+                },
+                body: JSON.stringify({ file }),
+            });
+            const d = await r.json();
+            if (!r.ok) { alert(d.error || 'Could not clear log.'); return; }
+            load(); // refresh the now-empty view
+        } catch (e) { alert('Error clearing log.'); }
+    });
     let t = null;
     $('lg-filter').addEventListener('input', () => { clearTimeout(t); t = setTimeout(applyFilter, 200); });
 
