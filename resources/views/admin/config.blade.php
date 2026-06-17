@@ -17,7 +17,7 @@
         <p class="muted">Public base URL the <strong>Links</strong> overlay (M3U / EPG / Stream) builds from. Running in Docker behind a reverse proxy, the app can't reliably detect its own public address &mdash; set it here. Use the <strong>site origin only</strong> (scheme, host, port &mdash; <em>no path</em>); the app appends <code>/m3u</code>, <code>/epg</code>, <code>/strm</code> and <code>?key=</code> itself.</p>
         @error('links_base_url')<p class="err">{{ $message }}</p>@enderror
         <input type="text" name="links_base_url" value="{{ old('links_base_url', $linksBaseUrl) }}"
-               placeholder="https://fidonet.corp.potvin.us:7979" class="fld mono">
+               placeholder="https://guidearr.example.com:7979" class="fld mono">
         @if($linksBaseUrl)
             <p class="muted small">Example: <code>{{ $linksBaseUrl }}/m3u?key=&lt;playlist-key&gt;</code></p>
         @else

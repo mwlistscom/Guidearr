@@ -23,10 +23,10 @@ Standard deploy (code-only — **no migration**):
 
 ```bash
 # PowerShell (your PC)
-scp "$env:USERPROFILE\Downloads\guidearr-v1.22.3-worker-resilience.tar.gz" jules@fidonet.corp.potvin.us:/home/jules/Guidearr/
+scp "$env:USERPROFILE\Downloads\guidearr-v1.22.3-worker-resilience.tar.gz" jules@guidearr.example.com:/home/jules/Guidearr/
 ```
 ```bash
-# fidonet
+# on the docker host
 cd /opt/Guidearr
 sudo tar xzf /home/jules/Guidearr/guidearr-v1.22.3-worker-resilience.tar.gz -C /opt/Guidearr
 docker compose exec app php artisan optimize:clear
@@ -72,7 +72,7 @@ services:
 
 Apply:
 ```bash
-# fidonet
+# on the docker host
 cd /opt/Guidearr
 docker compose up -d        # recreates services with the new depends_on/healthcheck
 docker compose ps           # db should show (healthy); app/worker/scheduler running
@@ -84,7 +84,7 @@ docker compose ps           # db should show (healthy); app/worker/scheduler run
 ## 3. Install the heartbeat (host cron)
 
 ```bash
-# fidonet
+# on the docker host
 cd /opt/Guidearr/health
 cp heartbeat.env.example heartbeat.env
 $EDITOR heartbeat.env            # set SMTP_* and MAIL_TO at minimum
@@ -100,7 +100,7 @@ crontab -l | grep heartbeat
 
 Keep the log from growing unbounded:
 ```bash
-# fidonet — /etc/logrotate.d/guidearr-heartbeat
+# on the docker host — /etc/logrotate.d/guidearr-heartbeat
 /opt/Guidearr/health/heartbeat.log {
     weekly
     rotate 8
