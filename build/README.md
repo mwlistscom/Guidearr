@@ -115,7 +115,7 @@ mkdir -p certs
 #    drop fullchain.pem + privkey.pem into ./certs, or generate a self-signed pair
 
 # 4. Point nginx at your hostname
-#    edit docker/nginx.conf -> server_name <your-host>;   (default is fidonet.corp.potvin.us)
+#    edit docker/nginx.conf -> server_name <your-host>;   (e.g. guidearr.example.com)
 
 # 5. Build and start the stack
 docker compose up -d --build

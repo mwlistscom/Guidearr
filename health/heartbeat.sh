@@ -2,7 +2,7 @@
 #
 # Guidearr host heartbeat
 # -----------------------
-# Runs on the DOCKER HOST (e.g. fidonet), every 5 minutes via cron. Checks the
+# Runs on the DOCKER HOST, every 5 minutes via cron. Checks the
 # stack and the host, auto-restarts wedged services, and emails the admin when
 # something is wrong -- without spamming (one alert per issue per cooldown, plus
 # a single "recovered" note when it clears).
