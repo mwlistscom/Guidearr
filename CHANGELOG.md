@@ -7,6 +7,17 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## v1.22.7 — Hostname placeholder cleanup · 2026-06-17 *(unreleased)*
+
+**Changed**
+- Removed the internal hostname from docs, examples and the admin config placeholder,
+  replacing it with the generic `guidearr.example.com` and neutral "docker host" wording
+  (`README.md`, `build/README.md`, `health/README.md`, `health/heartbeat.sh`,
+  `resources/views/admin/config.blade.php`). The live `docker/nginx.conf` already used
+  `server_name _;`, so it needed no change.
+
+---
+
 ## v1.22.6 — Automatic nginx log rotation · 2026-06-07
 
 **Added**
