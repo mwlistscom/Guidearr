@@ -92,19 +92,19 @@
                 @else
                     <ol>
                         <li>Create an app at <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener" style="color:var(--accent)">Meta for Developers</a> and add the <strong>Facebook Login</strong> product.</li>
-                        <li>Facebook Login → Settings → add this <strong>Valid OAuth Redirect URI</strong>:
+                        <li><strong>Facebook Login → Settings</strong>: turn on <strong>Client OAuth Login</strong> and <strong>Web OAuth Login</strong>, then add this exact <strong>Valid OAuth Redirect URI</strong> — this is what lets sign-in work (without it Facebook shows <em>"URL Blocked"</em>):
                             <div class="url-row"><code>{{ $urls['facebook'] }}</code><button type="button" class="copy-btn" data-copy="{{ $urls['facebook'] }}">Copy</button></div>
                         </li>
-                        <li>App Settings → Basic → <strong>User Data Deletion</strong>. Choose one option:
-                            <div style="margin:.3rem 0 .1rem">• <em>Data Deletion Callback URL</em> (automatic — recommended):</div>
+                        <li><strong>Settings → Basic → User Data Deletion</strong>: pick <em>one</em>:
+                            <div style="margin:.3rem 0 .1rem">• <em>Data Deletion Callback URL</em> (automatic — a server-to-server endpoint, not a page you open):</div>
                             <div class="url-row"><code>{{ $urls['facebook_data_deletion'] }}</code><button type="button" class="copy-btn" data-copy="{{ $urls['facebook_data_deletion'] }}">Copy</button></div>
                             <div style="margin:.3rem 0 .1rem">• <em>or Data Deletion Instructions URL</em> (a help page):</div>
                             <div class="url-row"><code>{{ $urls['data_deletion_instructions'] }}</code><button type="button" class="copy-btn" data-copy="{{ $urls['data_deletion_instructions'] }}">Copy</button></div>
                         </li>
-                        <li>Set the <strong>Privacy Policy URL</strong>:
+                        <li>Also on <strong>Settings → Basic</strong>: add <code>{{ parse_url($urls['base'], PHP_URL_HOST) }}</code> under <strong>App Domains</strong>, and set the <strong>Privacy Policy URL</strong>:
                             <div class="url-row"><code>{{ $urls['privacy'] }}</code><button type="button" class="copy-btn" data-copy="{{ $urls['privacy'] }}">Copy</button></div>
                         </li>
-                        <li>Paste the <strong>App ID</strong> and <strong>App secret</strong> above, tick <em>Enable</em>, and Save.</li>
+                        <li>Paste the <strong>App ID</strong> and <strong>App secret</strong> above, tick <em>Enable Facebook sign-in</em>, and Save.</li>
                     </ol>
                 @endif
             </div>
