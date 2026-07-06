@@ -2,7 +2,7 @@
 @section('title', 'Config')
 @section('content')
 <h1>Config</h1>
-<p class="muted" style="margin-bottom:1.2rem">Settings for the public serving endpoints. Stored in <code>storage/app/settings</code>, so they survive container restarts and don't require an <code>.env</code> edit.</p>
+<p class="muted" style="margin-bottom:1.2rem">Application settings for the public serving endpoints and background workers. Stored in <code>storage/app/settings</code>, so they survive container restarts and don't require an <code>.env</code> edit.</p>
 
 @if (session('status'))
     <div class="ok">{{ session('status') }}</div>
@@ -36,6 +36,17 @@
             <label>Window (hours)
                 @error('serve_window_hours')<span class="err">{{ $message }}</span>@enderror
                 <input type="number" name="serve_window_hours" min="1" max="168" value="{{ old('serve_window_hours', $serveWindowHours) }}" class="fld">
+            </label>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Background workers</h2>
+        <p class="muted">Maximum number of feed workers to run at once. The supervisor starts extra workers only when providers are queued and stops them as the backlog drains, up to this limit. <strong>1</strong> keeps the classic single worker; raise it to refresh many providers in parallel &mdash; but only as high as the box's spare CPU and memory allow (each worker downloads and parses a feed independently). Takes effect within a few seconds; no restart needed.</p>
+        <div class="row">
+            <label>Worker limit
+                @error('worker_limit')<span class="err">{{ $message }}</span>@enderror
+                <input type="number" name="worker_limit" min="1" max="16" value="{{ old('worker_limit', $workerLimit) }}" class="fld">
             </label>
         </div>
     </div>

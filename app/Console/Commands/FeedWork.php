@@ -15,6 +15,7 @@ class FeedWork extends Command
 {
     protected $signature = 'feed:work
         {--once : Process a single job then exit}
+        {--drain : Process jobs back-to-back until the queue is empty, then exit (no idle wait)}
         {--sleep=15 : Seconds to wait between polls when the queue is empty}';
 
     protected $description = 'Process queued provider feeds: claim a job, download/parse the source into its store, and log under its msgid';
@@ -37,7 +38,9 @@ class FeedWork extends Command
                 $job = FeedQueue::claimNext($this->host);
 
                 if (! $job) {
-                    if ($this->option('once')) { $this->line('No queued jobs.'); return self::SUCCESS; }
+                    // --once and --drain both exit once nothing is left to claim; --drain
+                    // keeps looping while jobs remain. Only the daemon mode sleeps and re-polls.
+                    if ($this->option('once') || $this->option('drain')) { $this->line('No queued jobs.'); return self::SUCCESS; }
                     sleep($sleep);
                     continue;
                 }

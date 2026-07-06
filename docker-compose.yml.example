@@ -42,7 +42,7 @@ services:
     restart: unless-stopped
     user: www-data
     working_dir: /var/www/html
-    command: php artisan feed:work --sleep=15
+    command: php artisan feed:supervise --sleep=15
     volumes: [ "./:/var/www/html" ]
     depends_on:
       db:

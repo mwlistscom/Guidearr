@@ -84,6 +84,7 @@ class AdminController extends Controller
             'linksBaseUrl'     => Settings::linksBaseUrl(),
             'serveMaxIps'      => Settings::serveMaxIps(),
             'serveWindowHours' => Settings::serveWindowHours(),
+            'workerLimit'      => Settings::workerLimit(),
         ]);
     }
 
@@ -94,6 +95,7 @@ class AdminController extends Controller
             'links_base_url'     => ['nullable', 'string', 'max:300'],
             'serve_max_ips'      => ['required', 'integer', 'min:1', 'max:100000'],
             'serve_window_hours' => ['required', 'integer', 'min:1', 'max:168'],
+            'worker_limit'       => ['required', 'integer', 'min:1', 'max:16'],
         ]);
 
         $url = trim((string) ($data['links_base_url'] ?? ''));
@@ -106,6 +108,7 @@ class AdminController extends Controller
         Settings::set('links_base_url', rtrim($url, '/'));
         Settings::set('serve_max_ips', (int) $data['serve_max_ips']);
         Settings::set('serve_window_hours', (int) $data['serve_window_hours']);
+        Settings::set('worker_limit', (int) $data['worker_limit']);
 
         return redirect()->route('admin.config')->with('status', 'Configuration saved.');
     }

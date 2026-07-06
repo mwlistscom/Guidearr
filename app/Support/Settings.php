@@ -68,4 +68,14 @@ class Settings
 
         return $v > 0 ? $v : 4;
     }
+
+    /**
+     * Max concurrent feed workers the supervisor may run. 1 (the default) matches the
+     * historical single-worker behavior; raise it to parallelise a backlog of many
+     * providers when the box has spare CPU/RAM. Clamped to a sane 1–16.
+     */
+    public static function workerLimit(): int
+    {
+        return max(1, min(16, (int) self::get('worker_limit', 1)));
+    }
 }
