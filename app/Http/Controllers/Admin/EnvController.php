@@ -353,8 +353,6 @@ class EnvController extends Controller
             'FACEBOOK_CLIENT_ID' => 'Facebook (Meta) app ID. Set this + the secret to show "Continue with Facebook" on sign-in.',
             'FACEBOOK_CLIENT_SECRET' => 'Facebook (Meta) app secret; also verifies the data-deletion callback.',
             'FACEBOOK_REDIRECT_URI' => 'Facebook OAuth redirect URI, e.g. https://your-host/auth/facebook/callback (must match the Meta app).',
-            'ADMIN_EMAIL' => 'Email of the bootstrap admin account created by admin:sync.',
-            'ADMIN_PASSWORD' => 'Bootstrap/recovery admin password; first login forces a change.',
             'ADMIN_PATH' => 'URL segment for the admin panel ("admin" → /admin). Use a hard-to-guess value to reduce automated probing. Changing it sends you to the new URL.',
             'REGISTRATION_REQUIRES_APPROVAL' => 'When true, new sign-ups are held pending until an admin enables them.',
         ];

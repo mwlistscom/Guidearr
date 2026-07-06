@@ -122,10 +122,10 @@ docker compose up -d --build
 
 # 6. Initialise the application (setup.sh already generated APP_KEY)
 docker compose exec app php artisan migrate --force
-docker compose exec app php artisan admin:sync   # creates the admin from ADMIN_EMAIL/ADMIN_PASSWORD
+docker compose exec app php artisan admin:password   # create the admin (prompts for email + password)
 ```
 
-Then browse to `https://<your-host>:7979` and log in with the admin credentials you set in `.env`. You'll be prompted to change the admin password on first login.
+Then browse to `https://<your-host>:7979` and log in with the admin email and password you entered when running `admin:password`.
 
 > **Note on the default port:** the stack publishes the app on **`7979`** (TLS). Adjust the published port in `docker-compose.yml` and the `listen`/redirect lines in `docker/nginx.conf` if you want a different one, and keep `APP_URL` in sync.
 
@@ -162,8 +162,6 @@ These are the variables Guidearr cares about most. (Standard Laravel variables �
 | `APP_URL` | Canonical base URL; used to build absolute links and redirects. Must include the scheme and port, e.g. `https://host:7979`. |
 | `APP_KEY` | Encryption key for sessions/cookies. Generated with `key:generate`; **never change on a live app**. |
 | `DB_*` | Database connection (driver/host/port/name/user/password). `DB_HOST=db` points at the compose service. |
-| `ADMIN_EMAIL` | Email of the bootstrap admin created by `admin:sync`. |
-| `ADMIN_PASSWORD` | Bootstrap/recovery admin password; first login forces a change. |
 | `ADMIN_PATH` | URL segment for the admin panel (`admin` → `/admin`). Use a hard‑to‑guess value to reduce probing. |
 | `REGISTRATION_REQUIRES_APPROVAL` | When `true`, new sign‑ups are held `pending` until an admin enables them. |
 | `MAIL_*` | Outgoing mail (SMTP) settings. `MAIL_SCHEME=smtps` for port 465, `tls`/null for 587. |
@@ -222,16 +220,17 @@ The admin account is created **email‑verified and active**, so it never hits t
 
 ---
 
-## Resetting the admin password
+## Resetting or creating the admin account
 
-The admin account is bootstrapped from `ADMIN_EMAIL` / `ADMIN_PASSWORD` in `.env`. To recover or reset it (break‑glass):
+Recover a locked‑out or deleted admin (break‑glass) with the interactive command. It prompts for
+the email and a new password — the password is entered hidden and **nothing is stored in `.env`**:
 
 ```bash
-# 1. set/confirm ADMIN_PASSWORD in .env, then:
-docker compose exec app php artisan admin:sync --reset
+docker compose exec app php artisan admin:password
 ```
 
-`--reset` re‑applies the `.env` password to the existing admin, re‑enables the account, marks it verified, and forces a password change on the next login. Running `admin:sync` **without** `--reset` is idempotent — it ensures the admin exists and is verified/active but leaves the password alone.
+It resets the password of the matching account, or creates a new active, verified admin if none
+exists (e.g. the admin user was deleted). Re‑enables and email‑verifies the account as a side effect.
 
 ---
 
@@ -384,9 +383,8 @@ docker compose exec app php artisan optimize:clear
 # Run database migrations
 docker compose exec app php artisan migrate --force
 
-# Ensure / recover the admin account
-docker compose exec app php artisan admin:sync          # idempotent
-docker compose exec app php artisan admin:sync --reset  # re-apply .env password
+# Create or recover the admin account (interactive: prompts for email + password)
+docker compose exec app php artisan admin:password
 
 # Health probe (DB / worker / queue / refresh)
 docker compose exec app php artisan health:check
@@ -461,7 +459,7 @@ docker run --rm -v "$PWD":/app -w /app node:22-alpine sh -c "npm ci && npm run b
 
 ```
 app/
-  Console/Commands/AdminSync.php        # admin:sync command
+  Console/Commands/AdminPassword.php    # admin:password command (interactive admin recovery)
   Console/Commands/FeedDue.php          # scheduler: enqueue providers due for refresh
   Console/Commands/FeedWork.php         # worker: drain the refresh queue
   Console/Commands/HealthCheck.php      # health:check probe

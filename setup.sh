@@ -37,16 +37,6 @@ echo "=== Guidearr setup ==="
 HOST=$(ask "Hostname the app is served from" "localhost")
 PORT=$(ask "HTTPS port" "7979")
 
-ADMIN_EMAIL=""
-read -r -p "Admin email: " ADMIN_EMAIL || true
-while [ -z "$ADMIN_EMAIL" ]; do
-    read -r -p "Admin email (required): " ADMIN_EMAIL || { echo "No email provided; aborting." >&2; exit 1; }
-done
-
-ADMIN_PASSWORD=$(ask "Admin password (blank = generate a strong one)" "")
-GEN_PW=0
-if [ -z "$ADMIN_PASSWORD" ]; then ADMIN_PASSWORD=$(gen_secret 20); GEN_PW=1; fi
-
 ADMIN_PATH=$(ask "Admin URL path segment" "admin")
 
 APP_URL="https://${HOST}:${PORT}"
@@ -105,9 +95,8 @@ MAIL_PASSWORD=null
 MAIL_FROM_ADDRESS=guidearr@${HOST}
 MAIL_FROM_NAME=Guidearr
 
-# Admin bootstrap (consumed by: php artisan admin:sync)
-ADMIN_EMAIL=${ADMIN_EMAIL}
-ADMIN_PASSWORD=${ADMIN_PASSWORD}
+# Admin panel URL segment (pick a hard-to-guess value to reduce probing).
+# The admin account itself is created with `php artisan admin:password` (below) — no password in .env.
 ADMIN_PATH=${ADMIN_PATH}
 REGISTRATION_REQUIRES_APPROVAL=false
 
@@ -122,14 +111,10 @@ echo
 echo "Wrote $ENV_FILE"
 echo "  App URL    : ${APP_URL}"
 echo "  Admin path : ${APP_URL}/${ADMIN_PATH}"
-echo "  Admin email: ${ADMIN_EMAIL}"
-if [ "$GEN_PW" -eq 1 ]; then
-    echo "  Admin pass : ${ADMIN_PASSWORD}   <-- save this; you'll change it on first login"
-fi
 echo
 echo "Next:"
 echo "  1) put TLS certs in ./certs (fullchain.pem + privkey.pem)"
 echo "  2) set server_name in docker/nginx.conf to: ${HOST}"
 echo "  3) docker compose up -d --build"
 echo "  4) docker compose exec app php artisan migrate --force"
-echo "  5) docker compose exec app php artisan admin:sync"
+echo "  5) docker compose exec app php artisan admin:password   # create your admin — prompts for email + password"
