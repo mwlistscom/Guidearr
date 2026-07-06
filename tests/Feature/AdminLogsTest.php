@@ -60,6 +60,34 @@ class AdminLogsTest extends TestCase
         $this->assertStringContainsString('.tar.gz', $res->headers->get('content-disposition'));
     }
 
+    public function test_bundle_includes_recent_rotated_logs(): void
+    {
+        // a rotated plain sibling and a rotated gzipped sibling, both touched "now"
+        @file_put_contents(storage_path('logs/nginx-access.log.1'),
+            '9.9.9.9 - - ['.now()->format('d/M/Y:H:i:s').' +0000] "GET /rotated HTTP/1.1" 200 5'."\n");
+        @file_put_contents(storage_path('logs/nginx-error.log.2.gz'),
+            gzencode('['.now()->format('Y-m-d H:i:s').'] rotated-error-marker'."\n"));
+
+        $res = $this->actingAs($this->admin())->get(route('admin.logs.bundle'))->assertOk();
+        ob_start();
+        $res->baseResponse->sendContent();
+        $bytes = ob_get_clean();
+
+        $tmp = sys_get_temp_dir().'/glogtest-'.uniqid();
+        @mkdir($tmp, 0777, true);
+        file_put_contents("{$tmp}/b.tar.gz", $bytes);
+        (new \PharData("{$tmp}/b.tar.gz"))->extractTo("{$tmp}/out", null, true);
+
+        $this->assertFileExists("{$tmp}/out/logs/nginx-access.log.1");
+        $this->assertStringContainsString('/rotated', file_get_contents("{$tmp}/out/logs/nginx-access.log.1"));
+        // the .gz is decompressed and stored as plain text (suffix dropped)
+        $this->assertFileExists("{$tmp}/out/logs/nginx-error.log.2");
+        $this->assertStringContainsString('rotated-error-marker', file_get_contents("{$tmp}/out/logs/nginx-error.log.2"));
+
+        @unlink(storage_path('logs/nginx-access.log.1'));
+        @unlink(storage_path('logs/nginx-error.log.2.gz'));
+    }
+
     public function test_clear_truncates_the_file(): void
     {
         $path = storage_path('logs/laravel.log');
