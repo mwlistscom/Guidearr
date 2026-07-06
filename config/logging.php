@@ -65,6 +65,17 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Background feed worker / supervisor activity. Written to its own file so it
+        // shows up as "worker.log" on the admin Logs page (which globs storage/logs/*.log).
+        // Lifecycle + one-line per-job summaries only — the full per-provider detail lives
+        // in the feed_logs table (Admin → Feeds).
+        'worker' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/worker.log'),
+            'level' => 'info',
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

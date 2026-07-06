@@ -9,6 +9,7 @@ use App\Services\M3uParser;
 use App\Services\ProviderStore;
 use App\Services\ProviderValidator;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class FeedWork extends Command
@@ -46,6 +47,13 @@ class FeedWork extends Command
                 }
 
                 $this->processJob($job, $downloader, $validator);
+
+                // One-line worker.log summary of a successful job (failures are logged in
+                // failJob; full per-provider detail lives in feed_logs / Admin → Feeds).
+                $done = $job->fresh();
+                if ($done && $done->state === 'done') {
+                    Log::channel('worker')->info("#{$done->provider_id} — done in {$done->elapsed}s.");
+                }
             } catch (Throwable $e) {
                 // Infrastructure failure (e.g. the DB went away): a single failed query
                 // must NOT kill the daemon. Log it, back off briefly, and keep looping --
@@ -96,6 +104,7 @@ class FeedWork extends Command
         }
 
         $job->log('info', "Claimed by {$this->host} (provider #{$provider->id}, {$provider->type}).");
+        Log::channel('worker')->info("#{$provider->id} {$provider->type} '{$provider->name}' — claimed by {$this->host}.");
 
         try {
             switch ($provider->type) {
@@ -254,9 +263,11 @@ class FeedWork extends Command
         $maxErr = (int) config('guidearr.feed.max_errors', 4);
         $job->forceFill(['error' => $job->error + 1])->save();
         $job->log('error', $message . " (error #{$job->error})");
+        Log::channel('worker')->warning("#{$provider->id} '{$provider->name}' — failed (error #{$job->error}): {$message}");
 
         if ($job->error >= $maxErr) {
             $job->log('error', "Reached {$job->error} errors — disabling provider and removing job.");
+            Log::channel('worker')->warning("#{$provider->id} '{$provider->name}' — disabled after {$job->error} errors.");
             $provider->forceFill(['enabled' => false, 'last_status' => 'failed'])->save();
             $job->delete();
         } else {
