@@ -64,4 +64,64 @@ class PlaylistTest extends TestCase { use RefreshDatabase;
     $pl=Playlist::create(['user_id'=>$u1->id,'name'=>'x']);
     $this->actingAs($u2)->deleteJson('/playlists/'.$pl->id)->assertForbidden();
   }
+
+  public function test_serve_self_heals_missing_store_file(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u);
+    $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
+    $pl=Playlist::first(); $path=PlaylistStore::path($pl->id);
+    @unlink($path); // simulate the store file being removed out-of-band (DB row survives)
+    $this->assertFileDoesNotExist($path);
+    $body=$this->get('/m3u?key='.$pl->cipher)->streamedContent();
+    $this->assertFileExists($path);                        // rebuilt on serve
+    $this->assertStringContainsString('#EXTINF', $body);   // and actually served channels
+    $this->assertSame(5,(new PlaylistStore($pl->id))->counts()['channels']);
+  }
+
+  public function test_editor_self_heals_missing_store_file(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u);
+    $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
+    $pl=Playlist::first(); @unlink(PlaylistStore::path($pl->id));
+    $this->actingAs($u)->getJson('/playlists/'.$pl->id.'/channels?page=1&size=50')
+      ->assertOk()->assertJsonPath('total',5);
+    $this->assertFileExists(PlaylistStore::path($pl->id));
+  }
+
+  public function test_missing_store_with_no_provider_data_stays_absent(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    // provider whose feed was never imported -> no ProviderStore on disk
+    $p=Provider::create(['user_id'=>$u->id,'name'=>'NoData','type'=>'xtream','url'=>'http://h','enabled'=>true,'refresh_hour'=>2]);
+    $pl=Playlist::create(['user_id'=>$u->id,'name'=>'PL','enabled'=>true]);
+    $pl->providers()->attach($p->id);
+    $this->assertFalse($pl->ensureStoreSeeded());                   // nothing to rebuild from
+    $this->assertFileDoesNotExist(PlaylistStore::path($pl->id));    // and no empty shell left behind
+  }
+
+  public function test_group_move_relocates_the_whole_group_block(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u);
+    $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
+    $pl=Playlist::first(); $st=new PlaylistStore($pl->id);
+    $servedGroups=fn()=>array_values(array_unique(array_map(fn($r)=>$r['group_title'],$st->allForServe())));
+    // drag CANADA to the top -> ALL its channels lead the output as one block, US-ENT follows
+    $cid=(int) collect($st->groups())->firstWhere('group_title','CANADA')['id'];
+    $st->moveGroupToRow($cid,1);
+    $this->assertSame(['CANADA','US-ENT'],$servedGroups(),'CANADA block moved to the front, contiguous');
+    // and the public m3u reflects it (first #EXTINF is a CANADA channel)
+    $body=$this->get('/m3u?key='.$pl->cipher)->streamedContent();
+    preg_match('/group-title="([^"]*)"/',$body,$m);
+    $this->assertSame('CANADA',$m[1]??null);
+  }
+
+  public function test_existing_empty_store_is_not_reseeded(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u);
+    $pl=Playlist::create(['user_id'=>$u->id,'name'=>'PL','enabled'=>true]);
+    $pl->providers()->attach($p->id);
+    new PlaylistStore($pl->id); // deliberate empty store (simulates a "delete all")
+    $this->assertFileExists(PlaylistStore::path($pl->id));
+    $this->assertFalse($pl->ensureStoreSeeded());                  // must NOT clobber it
+    $this->assertSame(0,(new PlaylistStore($pl->id))->counts()['channels']);
+  }
 }

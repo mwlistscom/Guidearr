@@ -41,13 +41,13 @@ class PlaylistController extends Controller
     public function store(Request $request)
     {
         $v = Validator::make($request->all(), [
-            'name'              => 'required|string|max:64',
-            'iplock'            => 'nullable|string|max:64',
-            'channel_start'     => 'nullable|integer|min:1|max:1000000',
-            'extgrp_tags'       => 'boolean',
+            'name' => 'required|string|max:64',
+            'iplock' => 'nullable|string|max:64',
+            'channel_start' => 'nullable|integer|min:1|max:1000000',
+            'extgrp_tags' => 'boolean',
             'guide_provider_id' => 'nullable|integer',
-            'providers'         => 'array',
-            'providers.*'       => 'integer',
+            'providers' => 'array',
+            'providers.*' => 'integer',
         ]);
         if ($v->fails()) {
             return response()->json(['message' => $v->errors()->first()], 422);
@@ -66,14 +66,14 @@ class PlaylistController extends Controller
         }
 
         $playlist = Playlist::create([
-            'user_id'           => Auth::id(),
-            'name'              => $request->string('name'),
-            'iplock'            => $request->input('iplock') ?: null,
-            'channel_start'     => (int) $request->input('channel_start', 100),
-            'extgrp_tags'       => $request->boolean('extgrp_tags', true),
+            'user_id' => Auth::id(),
+            'name' => $request->string('name'),
+            'iplock' => $request->input('iplock') ?: null,
+            'channel_start' => (int) $request->input('channel_start', 100),
+            'extgrp_tags' => $request->boolean('extgrp_tags', true),
             'guide_provider_id' => $guideId ?: null,
-            'enabled'           => true,
-            'last_touch_at'     => now(),
+            'enabled' => true,
+            'last_touch_at' => now(),
         ]);
 
         if ($providerIds) {
@@ -101,21 +101,33 @@ class PlaylistController extends Controller
     {
         $this->authorizeOwner($playlist);
         $v = Validator::make($request->all(), [
-            'name'              => 'sometimes|required|string|max:64',
-            'iplock'            => 'nullable|string|max:64',
-            'channel_start'     => 'sometimes|integer|min:1|max:1000000',
-            'extgrp_tags'       => 'sometimes|boolean',
-            'enabled'           => 'sometimes|boolean',
+            'name' => 'sometimes|required|string|max:64',
+            'iplock' => 'nullable|string|max:64',
+            'channel_start' => 'sometimes|integer|min:1|max:1000000',
+            'extgrp_tags' => 'sometimes|boolean',
+            'enabled' => 'sometimes|boolean',
             'guide_provider_id' => 'nullable|integer',
         ]);
-        if ($v->fails()) { return response()->json(['message' => $v->errors()->first()], 422); }
+        if ($v->fails()) {
+            return response()->json(['message' => $v->errors()->first()], 422);
+        }
 
         $own = Provider::where('user_id', Auth::id())->pluck('id')->all();
-        if ($request->has('name'))          { $playlist->name = (string) $request->input('name'); }
-        if ($request->has('iplock'))        { $playlist->iplock = $request->input('iplock') ?: null; }
-        if ($request->has('channel_start')) { $playlist->channel_start = (int) $request->input('channel_start'); }
-        if ($request->has('extgrp_tags'))   { $playlist->extgrp_tags = $request->boolean('extgrp_tags'); }
-        if ($request->has('enabled'))       { $playlist->enabled = $request->boolean('enabled'); }
+        if ($request->has('name')) {
+            $playlist->name = (string) $request->input('name');
+        }
+        if ($request->has('iplock')) {
+            $playlist->iplock = $request->input('iplock') ?: null;
+        }
+        if ($request->has('channel_start')) {
+            $playlist->channel_start = (int) $request->input('channel_start');
+        }
+        if ($request->has('extgrp_tags')) {
+            $playlist->extgrp_tags = $request->boolean('extgrp_tags');
+        }
+        if ($request->has('enabled')) {
+            $playlist->enabled = $request->boolean('enabled');
+        }
         if ($request->has('guide_provider_id')) {
             $g = (int) $request->input('guide_provider_id', 0);
             $playlist->guide_provider_id = ($g && in_array($g, $own, true)) ? $g : null;
@@ -145,22 +157,27 @@ class PlaylistController extends Controller
     public function channels(Request $request, Playlist $playlist)
     {
         $this->authorizeOwner($playlist);
-        $size    = min(200, max(10, (int) $request->query('size', 50)));
-        $page    = max(1, (int) $request->query('page', 1));
-        $search  = $request->query('search');
-        $group   = $request->query('group');
-        $mode    = $request->query('deleted') === 'all' ? 'all' : 'hide';
+        $size = min(200, max(10, (int) $request->query('size', 50)));
+        $page = max(1, (int) $request->query('page', 1));
+        $search = $request->query('search');
+        $group = $request->query('group');
+        $mode = $request->query('deleted') === 'all' ? 'all' : 'hide';
 
+        // Self-heal: if the store file has gone missing, rebuild it from the attached providers
+        // before loading (a no-op when the file exists or there is no provider data to seed from).
+        if (! PlaylistStore::existsFor($playlist->id)) {
+            $playlist->ensureStoreSeeded();
+        }
         if (! PlaylistStore::existsFor($playlist->id)) {
             return response()->json(['last_page' => 1, 'total' => 0, 'data' => []]);
         }
         $store = new PlaylistStore($playlist->id);
-        $res   = $store->effectiveChannelPage($search, $group, $mode, $page, $size);
+        $res = $store->effectiveChannelPage($search, $group, $mode, $page, $size);
 
         return response()->json([
             'last_page' => max(1, (int) ceil($res['total'] / $size)),
-            'total'     => $res['total'],
-            'data'      => $res['rows'],
+            'total' => $res['total'],
+            'data' => $res['rows'],
         ]);
     }
 
@@ -177,7 +194,9 @@ class PlaylistController extends Controller
     {
         $this->authorizeOwner($playlist);
         $v = Validator::make($request->all(), ['group_title' => 'required|string|max:128']);
-        if ($v->fails()) { return response()->json(['message' => $v->errors()->first()], 422); }
+        if ($v->fails()) {
+            return response()->json(['message' => $v->errors()->first()], 422);
+        }
         $id = (new PlaylistStore($playlist->id))->addGroup((string) $request->input('group_title'));
 
         return response()->json(['id' => $id]);
@@ -190,7 +209,9 @@ class PlaylistController extends Controller
             'name' => 'required|string|max:255', 'url' => 'required|string|max:2048', 'group' => 'nullable|string|max:128',
             'tvg_logo' => 'nullable|string|max:2048', 'tvg_id' => 'nullable|string|max:128',
         ]);
-        if ($v->fails()) { return response()->json(['message' => $v->errors()->first()], 422); }
+        if ($v->fails()) {
+            return response()->json(['message' => $v->errors()->first()], 422);
+        }
         $id = (new PlaylistStore($playlist->id))->addManualChannel($request->only(['name', 'url', 'group', 'tvg_logo', 'tvg_id']));
 
         return response()->json(['id' => $id]);
@@ -200,7 +221,9 @@ class PlaylistController extends Controller
     {
         $this->authorizeOwner($playlist);
         $store = new PlaylistStore($playlist->id);
-        if ($request->has('enabled')) { $store->setChannelFlag($cid, 'enabled', $request->boolean('enabled')); }
+        if ($request->has('enabled')) {
+            $store->setChannelFlag($cid, 'enabled', $request->boolean('enabled'));
+        }
         $store->updateChannel($cid, $request->only(['group_title', 'name', 'url', 'tvg_id', 'tvg_logo', 'tvg_name']));
 
         return response()->json(['ok' => true]);
@@ -218,16 +241,18 @@ class PlaylistController extends Controller
     {
         $this->authorizeOwner($playlist);
         $v = Validator::make($request->all(), [
-            'ids'   => 'required|array|min:1',
+            'ids' => 'required|array|min:1',
             'ids.*' => 'integer',
-            'row'   => 'required|integer|min:1',
+            'row' => 'required|integer|min:1',
         ]);
-        if ($v->fails()) { return response()->json(['message' => $v->errors()->first()], 422); }
+        if ($v->fails()) {
+            return response()->json(['message' => $v->errors()->first()], 422);
+        }
 
         if (! PlaylistStore::existsFor($playlist->id)) {
             return response()->json(['moved' => 0]);
         }
-        $data  = $v->validated();
+        $data = $v->validated();
         $moved = (new PlaylistStore($playlist->id))->moveChannelsBulk($data['ids'], (int) $data['row']);
 
         return response()->json(['moved' => $moved]);
@@ -245,8 +270,12 @@ class PlaylistController extends Controller
     {
         $this->authorizeOwner($playlist);
         $store = new PlaylistStore($playlist->id);
-        if ($request->has('enabled')) { $store->setGroupFlagCascade($gid, 'enabled', $request->boolean('enabled')); }
-        if ($request->filled('group_title')) { $store->renameGroup($gid, (string) $request->input('group_title')); }
+        if ($request->has('enabled')) {
+            $store->setGroupFlagCascade($gid, 'enabled', $request->boolean('enabled'));
+        }
+        if ($request->filled('group_title')) {
+            $store->renameGroup($gid, (string) $request->input('group_title'));
+        }
 
         return response()->json(['ok' => true]);
     }
@@ -290,12 +319,18 @@ class PlaylistController extends Controller
     public function reindex(Request $request, Playlist $playlist)
     {
         $this->authorizeOwner($playlist);
-        if (! PlaylistStore::existsFor($playlist->id)) { return response()->json(['ok' => true, 'count' => 0]); }
+        if (! PlaylistStore::existsFor($playlist->id)) {
+            return response()->json(['ok' => true, 'count' => 0]);
+        }
         $store = new PlaylistStore($playlist->id);
         $scope = $request->input('scope', 'all');
         $count = 0;
-        if ($scope === 'channels' || $scope === 'all') { $count += $store->reindexChannels(); }
-        if ($scope === 'groups' || $scope === 'all') { $count += $store->reindexGroups(); }
+        if ($scope === 'channels' || $scope === 'all') {
+            $count += $store->reindexChannels();
+        }
+        if ($scope === 'groups' || $scope === 'all') {
+            $count += $store->reindexGroups();
+        }
 
         return response()->json(['ok' => true, 'count' => $count]);
     }
