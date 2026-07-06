@@ -2,8 +2,27 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10 and v1.22.11.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11 and v1.22.12.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.22.12 — Worker activity in the admin Logs page · 2026-07-06
+
+**Added**
+- **`worker.log` on the admin Logs page.** The background feed worker is a separate daemon whose
+  output previously only reached the container's stdout (`docker logs`). It now writes lifecycle and
+  one-line activity to a dedicated `worker` log channel (`storage/logs/worker.log`), which the Logs
+  page lists automatically — so you can watch the worker from the admin without shell access. It
+  records the supervisor start/stop, each spawn/scale decision (backlog, running, limit → workers
+  started), per-job claim + `done in Ns` summaries, and failures (with the disable-after-N-errors
+  event). Full per-provider detail still lives in the `feed_logs` table (**Admin → Feeds**), and
+  worker exceptions still land in `laravel.log`. The file is clearable from the UI and included in
+  the downloadable log bundle.
+
+**Upgrade note**
+- After `git pull`, restart the worker (`docker compose restart worker`) so the supervisor reloads
+  and starts writing its lifecycle lines; per-job lines from worker children appear immediately.
 
 ---
 

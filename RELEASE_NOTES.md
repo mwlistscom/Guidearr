@@ -1,35 +1,33 @@
-# Guidearr v1.22.11 — Parallel feed workers (Worker Limit)
+# Guidearr v1.22.12 — Worker activity in the admin Logs page
 
-Refresh many providers at once instead of one at a time, with a simple limit you control from the
-admin panel.
+See what the background feed worker is doing from the admin panel, without needing shell access.
 
 ## Highlights
 
-### Worker Limit — parallel provider refreshes
-Set **Admin → Config → Worker limit** to run more than one provider refresh concurrently. A new
-`feed:supervise` process keeps up to *N* `feed:work` children busy while providers are queued and
-scales the pool back to zero when the backlog drains. The default of **1** is exactly today's
-single-worker behavior; raise it to speed up a batch of providers all refreshing at once (e.g. the
-daily refresh hour, or a bulk re-queue).
+### worker.log on the Logs page
+The feed worker is a separate daemon, so its output used to reach only the container's stdout
+(`docker logs`). It now writes to a dedicated **`worker.log`**, which appears automatically on
+**Admin → Logs** alongside `laravel.log` and the nginx logs. It captures lifecycle and one-line
+activity:
 
-- **Live** — stored in the settings store, so a change takes effect within a few seconds with **no
-  restart**.
-- **Safe** — queue claims use `SELECT … FOR UPDATE SKIP LOCKED`, so workers never claim the same job,
-  and each provider writes only its own store. On shutdown the supervisor drains gracefully; a child
-  cut off mid-job is requeued and retried, so no work is lost.
-- **Size it to your box** — each worker downloads and parses a feed independently, so pick a limit
-  your spare CPU and memory can handle. Note this parallelises **many** providers at once — a single
-  large feed is still one job on one worker.
+- **Supervisor** — start/stop, and each spawn/scale decision (`Backlog 5 queued, 0 running
+  (limit 3) — started 3 worker(s).`).
+- **Workers** — per-job **claim**, a **`done in Ns`** summary, and **failures** (including the
+  disable-after-N-errors event).
+
+The full per-provider detail still lives in **Admin → Feeds** (the `feed_logs` table), and worker
+exceptions still land in `laravel.log`. `worker.log` is clearable from the UI and is included in the
+downloadable log bundle.
 
 ## Upgrade
 ```bash
 cd /opt/Guidearr
 git pull
-docker compose up -d worker            # picks up the new feed:supervise command
+docker compose restart worker          # supervisor reloads and starts writing its lifecycle lines
 docker compose exec app php artisan optimize:clear
 ```
-No migration. The Worker Limit defaults to 1, so the upgrade changes nothing until you raise it in
-Admin → Config.
+No migration. Per-job lines from the worker children appear immediately; the supervisor's own
+start/spawn lines begin after the restart.
 
 ## License
 Free for personal and non-profit use. Commercial use is prohibited. See `LICENSE`.
