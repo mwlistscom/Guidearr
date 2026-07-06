@@ -2,8 +2,33 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9 and v1.22.10.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10 and v1.22.11.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.22.11 — Parallel feed workers (Worker Limit) · 2026-07-06
+
+**Added**
+- **Configurable Worker Limit** (**Admin → Config → Worker limit**). Run more than one provider
+  refresh at a time: a new `feed:supervise` process keeps up to *N* `feed:work` children busy while
+  providers are queued and scales the pool back to zero when idle. Default **1** matches the classic
+  single-worker behavior; the setting is stored in the settings JSON store and takes effect within a
+  few seconds — no restart. Best for parallelising **many** providers refreshing at once (e.g. the
+  daily refresh hour); a single large feed is still one job on one worker.
+
+**Internal**
+- Feed queue claims already used `SELECT … FOR UPDATE SKIP LOCKED`, so multiple workers never claim
+  the same job and each provider writes only its own store. The supervisor owns the liveness
+  heartbeat and orphan reclaim, and shuts down gracefully on `SIGTERM` — a child cut off mid-job is
+  reset to `queued` and retried, so no work is lost.
+- CI: bumped the pinned commit SHAs for the `actions/checkout` and `shivammathur/setup-php` GitHub
+  Actions (Dependabot).
+
+**Upgrade note**
+- The `worker` container command changed to `php artisan feed:supervise`. After `git pull`, recreate
+  it (`docker compose up -d worker`) so it picks up the new command. Cloners get it from the updated
+  `docker-compose.yml.example`.
 
 ---
 
