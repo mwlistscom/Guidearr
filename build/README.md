@@ -82,7 +82,7 @@ It gives you a clean web UI for importing, editing, reordering and exporting M3U
 | Runtime      | PHP 8.3+ (FPM)                                         |
 | Web server   | nginx (TLS, HTTP/2)                                   |
 | Database     | MySQL 8                                               |
-| Background   | `feed:work` worker daemon + Laravel `scheduler`       |
+| Background   | `feed:supervise` worker pool + Laravel `scheduler`    |
 | Mail (dev)   | Mailpit                                               |
 | Orchestration| Docker Compose                                        |
 
@@ -269,14 +269,25 @@ long‑running containers alongside `app`, `web`, `db` and `mailpit`:
 
 | Service | Command | Role |
 |---|---|---|
-| `worker` | `php artisan feed:work` | Claims queued provider refreshes one at a time, downloads/parses the source into that provider's store, logs progress. |
+| `worker` | `php artisan feed:supervise` | Supervises the queue: keeps up to the **Worker Limit** of `feed:work` children busy, downloading/parsing each provider's source into its store, and owns the liveness heartbeat. |
 | `scheduler` | Laravel scheduler (`feed:due` every minute) | Enqueues each enabled provider when its **daily refresh hour** arrives; also runs `feed:trim` (weekly) and `feed:purge` (hourly). |
 
 **Provider refresh model.** Each provider has a `refresh_hour` (and minute). Every
 minute the scheduler runs `feed:due`, which enqueues a provider once per day after
-its scheduled time, provided no job is already in flight for it. The worker drains
+its scheduled time, provided no job is already in flight for it. The workers drain
 the queue; a job that runs longer than `FEED_ORPHAN_MINUTES` is reclaimed and
 retried, and after `FEED_MAX_ERRORS` failures the provider is disabled.
+
+**Parallel workers (Worker Limit).** Set **Admin → Config → Worker limit** to run
+more than one provider refresh at a time. The `feed:supervise` process starts extra
+`feed:work` children only while providers are queued and scales the pool back to
+zero as the backlog drains, never exceeding the limit (default **1** = a single
+worker, the classic behavior). Claims use `SELECT … FOR UPDATE SKIP LOCKED`, so
+workers never collide, and each provider writes only its own store. This
+parallelises *many* providers refreshing at once (e.g. the daily hour) — a single
+large feed is still one job on one worker. Size the limit to the box's spare CPU and
+RAM: each worker downloads and parses a feed independently. The setting is live —
+no restart needed.
 
 > **Refresh hours are interpreted in `config('app.timezone')`.** If that's `UTC`,
 > a `refresh_hour` of `5` fires at 05:00 **UTC**. Set `APP_TIMEZONE` (e.g.
