@@ -2,8 +2,35 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7 and v1.22.8. Intermediate
-> entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8 and v1.22.9.
+> Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.22.9 — Social sign-in (Google & Facebook) · 2026-07-06
+
+**Added**
+- **Sign in with Google and Facebook.** Optional OAuth social login (Laravel Socialite) —
+  "Continue with Google / Facebook" on the login and registration pages. Accounts are found,
+  created, or linked by the provider's verified email; new social users are created already
+  email-verified. Requires `php artisan migrate` (adds `social_accounts`, makes `password` nullable).
+- **Admin → Social** — configure it without touching `.env`: a per-provider **Enable** toggle,
+  Client ID / Secret / Redirect inputs, and on-page setup instructions with the exact callback,
+  data-deletion, and privacy URLs to register. Secrets are **encrypted at rest** in the settings
+  store and injected into `config('services.*')` at boot.
+- **Settings → Connected accounts** — link or disconnect Google/Facebook, and **set a password**
+  for social-only accounts so they can also sign in by email (and safely disconnect a provider).
+- **Data deletion** — a Facebook data-deletion callback (`/data-deletion/facebook`, required by
+  Meta) plus a human-readable, editable **`/data-deletion`** instructions page (Admin → Legal); the
+  privacy policy links to it.
+
+**Security**
+- Social login re-applies the login guards `Auth::login()` would otherwise bypass: a non-active
+  account can't sign in, and a 2FA-enabled account must use password + 2FA.
+
+**Internal**
+- The test harness now relocates storage and clears the settings store **before** the app boots, so
+  tests can never read or write real production data.
 
 ---
 
