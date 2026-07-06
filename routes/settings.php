@@ -6,6 +6,8 @@ Route::middleware(['auth'])->group(function () {
     Route::redirect('settings', 'settings/profile');
 
     Route::livewire('settings/profile', 'pages::settings.profile')->name('profile.edit');
+
+    Route::livewire('settings/connected-accounts', 'pages::settings.connected-accounts')->name('connected-accounts.edit');
 });
 
 Route::middleware(['auth', 'verified'])->group(function () {

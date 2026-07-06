@@ -31,7 +31,14 @@ class OAuthController extends Controller
         try {
             $oauthUser = $this->driver($provider)->user();
         } catch (\Throwable $e) {
-            return redirect()->route('login')->withErrors(['email' => "Could not sign you in with {$label}. Please try again."]);
+            $to = $request->user() ? 'connected-accounts.edit' : 'login';
+
+            return redirect()->route($to)->withErrors(['email' => "Could not connect {$label}. Please try again."]);
+        }
+
+        // A signed-in user is connecting an additional provider from Settings.
+        if ($request->user()) {
+            return $this->linkToCurrentUser($request->user(), $provider, $oauthUser, $label);
         }
 
         if (! $oauthUser->getEmail()) {
@@ -87,6 +94,27 @@ class OAuthController extends Controller
         ]);
 
         return $user;
+    }
+
+    /** Connect a provider to the already-signed-in user (from the Connected accounts page). */
+    private function linkToCurrentUser(User $user, string $provider, SocialiteUser $oauthUser, string $label)
+    {
+        $providerId = (string) $oauthUser->getId();
+        $existing = SocialAccount::where('provider', $provider)->where('provider_id', $providerId)->first();
+
+        if ($existing && $existing->user_id !== $user->id) {
+            return redirect()->route('connected-accounts.edit')
+                ->withErrors(['provider' => "That {$label} account is already connected to a different user."]);
+        }
+        if (! $existing) {
+            $user->socialAccounts()->create([
+                'provider' => $provider,
+                'provider_id' => $providerId,
+                'avatar' => $oauthUser->getAvatar(),
+            ]);
+        }
+
+        return redirect()->route('connected-accounts.edit')->with('status', "{$label} connected.");
     }
 
     private function syncAvatar(SocialAccount $account, SocialiteUser $oauthUser): void
