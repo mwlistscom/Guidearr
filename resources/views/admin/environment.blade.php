@@ -52,6 +52,7 @@
     @csrf
     @method('PUT')
     <div class="card">
+        @php $mailBtnShown = false; @endphp
         @forelse ($entries as $e)
             @if ($e['type'] === 'pair')
                 <div class="env-row" title="{{ $e['key'] }} — {{ $e['desc'] }}@if ($e['locked']) (locked, read-only)@elseif ($e['secret']) (secret)@endif">
@@ -75,6 +76,7 @@
                     @endif
                 </div>
                 @if ($e['key'] === 'MAIL_PASSWORD')
+                    @php $mailBtnShown = true; @endphp
                     <div class="env-row">
                         <div class="env-key"></div>
                         <div class="env-val">
@@ -87,6 +89,16 @@
         @empty
             <p class="empty">Could not read any variables from .env.</p>
         @endforelse
+        @unless ($mailBtnShown)
+            {{-- No MAIL_PASSWORD row in .env yet — still offer the test button so mail can be set up and verified here. --}}
+            <div class="env-row">
+                <div class="env-key">Mail</div>
+                <div class="env-val">
+                    <button type="button" id="mailTestOpen" class="mail-test-btn">✉&nbsp; Send test email…</button>
+                    <span class="note">Sends a test message using the mail values you enter (no need to save first).</span>
+                </div>
+            </div>
+        @endunless
     </div>
 
     <div class="env-save">
