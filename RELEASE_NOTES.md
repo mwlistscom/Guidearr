@@ -1,42 +1,40 @@
-# Guidearr v1.22.9 — Social sign-in (Google & Facebook)
+# Guidearr v1.22.10 — Interactive admin recovery & social-account badges
 
-Adds optional **Sign in with Google and Facebook**, a place to configure it, account-connection
-management, and the data-deletion pieces the providers require.
+A security and quality-of-life release: the admin password is out of `.env`, admin recovery is now
+a safe interactive command, and social sign-ins are easier to spot in the admin.
 
 ## Highlights
 
-### Sign in with Google & Facebook
-Optional social login (Laravel Socialite). When a provider is configured, a **Continue with
-Google / Facebook** button appears on the login and registration pages. Signing in finds an
-existing account, links to one with the same (provider-verified) email, or creates a new,
-already-verified account. Social login also respects your security settings — a non-active account
-can't sign in, and an account with two-factor enabled must use its password + 2FA.
+### Interactive admin recovery — no password in `.env`
+Recover a locked-out or deleted admin with a single command:
 
-### Admin → Social — configure it in the panel
-A new **Social** page under Admin: per-provider **Enable** toggle, fields for the Client ID /
-Secret / Redirect URI, and a **"How to set it up"** guide showing the exact callback, data-deletion
-and privacy URLs to paste into the Google/Meta consoles (with copy buttons). **No `.env` editing** —
-credentials are stored with the secrets **encrypted at rest**.
+```bash
+docker compose exec app php artisan admin:password
+```
 
-### Settings → Connected accounts
-Users can **link or disconnect** Google/Facebook from their account, and **set a password** on a
-social-only account so they can also sign in by email — and safely disconnect a provider.
+It prompts for the email and a new password **entered hidden** (nothing on the command line or in
+shell history), then **creates** the admin if none matches (e.g. it was deleted) or **resets** the
+matching account — re-activating and email-verifying it as a side effect. This replaces the old
+`admin:sync` command and the `ADMIN_EMAIL` / `ADMIN_PASSWORD` `.env` variables, which are **removed**
+so the admin password is no longer stored in plain text.
 
-### Data deletion
-A Facebook **data-deletion callback** (required by Meta) and a human-readable, **editable**
-**`/data-deletion`** instructions page (edit it in Admin → Legal). The default privacy policy links
-to it.
+### Social-account badges in Admin → Users
+A small **G** (Google) or **F** (Facebook) badge next to a user's role marks a linked social
+identity, so you can tell social sign-ins apart from email/password accounts at a glance.
+
+### Readable social buttons
+The **Continue with Google / Facebook** button text is now white, so it's legible on the dark
+sign-in and registration pages.
 
 ## Upgrade
 ```bash
 cd /opt/Guidearr
 git pull
-docker compose exec app php artisan migrate            # adds social_accounts; makes password nullable
 docker compose exec app php artisan optimize:clear
 ```
-Social login stays **inert until you configure a provider** in Admin → Social, so the upgrade is
-safe with nothing switched on. To enable it, register an OAuth app with Google and/or Meta, paste
-the credentials on the Social page, and register the callback URL it shows you.
+No migration. After upgrading you can delete the now-unused `ADMIN_EMAIL` / `ADMIN_PASSWORD` lines
+from your `.env` (they're dead — the Environment page no longer shows them). If you ever need to
+reset or recreate the admin, run `php artisan admin:password`.
 
 ## License
 Free for personal and non-profit use. Commercial use is prohibited. See `LICENSE`.

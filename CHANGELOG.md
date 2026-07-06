@@ -2,8 +2,32 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8 and v1.22.9.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9 and v1.22.10.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.22.10 — Interactive admin recovery & social-account badges · 2026-07-06
+
+**Changed**
+- **Admin recovery is now interactive.** `php artisan admin:password` prompts for the email and a
+  hidden password (nothing lands on the command line or in shell history), then **creates the admin
+  if none exists** (e.g. it was deleted) or **resets** the matching account — re-activating and
+  email-verifying it. This replaces the old `admin:sync` command together with the `ADMIN_EMAIL` /
+  `ADMIN_PASSWORD` `.env` variables, which are **removed**.
+
+**Security**
+- The admin password is no longer kept in plain text in `.env`. Existing installs can delete the
+  now-unused `ADMIN_EMAIL` / `ADMIN_PASSWORD` lines — the Environment page no longer lists them, and
+  nothing reads them.
+
+**Added**
+- **Social-account badges in Admin → Users.** A small **G** (Google) or **F** (Facebook) badge next
+  to a user's role marks a linked social identity, so social sign-ins are distinguishable at a glance.
+
+**Fixed**
+- The **Continue with Google / Facebook** button text is now white, so it stays readable on the dark
+  sign-in and registration pages.
 
 ---
 
