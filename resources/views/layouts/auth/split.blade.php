@@ -35,6 +35,11 @@
                         <span class="sr-only">{{ config('app.name', 'Laravel') }}</span>
                     </a>
                     {{ $slot }}
+                    <p class="text-center text-xs text-neutral-500 dark:text-neutral-500">
+                        <a href="{{ route('legal.privacy') }}" class="hover:underline">Privacy</a> ·
+                        <a href="{{ route('legal.terms') }}" class="hover:underline">Terms</a> ·
+                        <a href="{{ route('legal.cookies') }}" class="hover:underline">Cookies</a>
+                    </p>
                 </div>
             </div>
         </div>

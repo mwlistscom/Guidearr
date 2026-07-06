@@ -2,26 +2,29 @@
 
 namespace App\Models;
 
-use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Notifications\VerifyEmailCode;
+use App\Services\ProviderStore;
+use Carbon\CarbonInterface;
 use Database\Factories\UserFactory;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
-use App\Notifications\VerifyEmailCode;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 
 #[Fillable(['name', 'email', 'password'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
-class User extends Authenticatable implements PasskeyUser, MustVerifyEmail
+class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
-    public function providers(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function providers(): HasMany
     {
-        return $this->hasMany(\App\Models\Provider::class);
+        return $this->hasMany(Provider::class);
     }
 
     protected static function booted(): void
@@ -34,19 +37,19 @@ class User extends Authenticatable implements PasskeyUser, MustVerifyEmail
         static::deleting(function (User $u) {
             $payload = $u->providers()->get(['id', 'name'])
                 ->map(fn ($p) => [
-                    'id'   => $p->id,
+                    'id' => $p->id,
                     'name' => $p->name,
-                    'path' => \App\Services\ProviderStore::path($p->id),
+                    'path' => ProviderStore::path($p->id),
                 ])->all();
 
-            \App\Models\PurgeJob::create([
+            PurgeJob::create([
                 'user_id' => $u->id,
-                'email'   => $u->email,
+                'email' => $u->email,
                 'payload' => $payload,
-                'state'   => 'queued',
+                'state' => 'queued',
             ]);
 
-            \App\Models\FeedLog::where('user_id', $u->id)->delete();
+            FeedLog::where('user_id', $u->id)->delete();
         });
     }
 
@@ -81,6 +84,12 @@ class User extends Authenticatable implements PasskeyUser, MustVerifyEmail
             ->implode('');
     }
 
+    /** Minutes a freshly issued verification code stays valid. */
+    public const VERIFICATION_TTL_MINUTES = 15;
+
+    /** Minutes a user must wait between requesting new verification codes. */
+    public const VERIFICATION_RESEND_MINUTES = 5;
+
     /**
      * Send a 6-digit verification code instead of the default verification link.
      */
@@ -89,11 +98,43 @@ class User extends Authenticatable implements PasskeyUser, MustVerifyEmail
         $code = (string) random_int(100000, 999999);
 
         $this->forceFill([
-            "verification_code" => $code,
-            "verification_code_expires_at" => now()->addMinutes(15),
+            'verification_code' => $code,
+            'verification_code_expires_at' => now()->addMinutes(self::VERIFICATION_TTL_MINUTES),
         ])->save();
 
         $this->notify(new VerifyEmailCode($code));
+    }
+
+    /**
+     * When the current code was issued (derived from its expiry), or null if none.
+     */
+    public function verificationCodeSentAt(): ?CarbonInterface
+    {
+        return $this->verification_code_expires_at?->subMinutes(self::VERIFICATION_TTL_MINUTES);
+    }
+
+    /**
+     * The earliest moment a new code may be requested, or null if one may be sent now.
+     */
+    public function verificationResendAvailableAt(): ?CarbonInterface
+    {
+        $sentAt = $this->verificationCodeSentAt();
+
+        if ($sentAt === null) {
+            return null;
+        }
+
+        $availableAt = $sentAt->addMinutes(self::VERIFICATION_RESEND_MINUTES);
+
+        return $availableAt->isFuture() ? $availableAt : null;
+    }
+
+    /**
+     * Whether the resend cooldown has elapsed (or no code has been sent yet).
+     */
+    public function canResendVerification(): bool
+    {
+        return $this->verificationResendAvailableAt() === null;
     }
 
     /**

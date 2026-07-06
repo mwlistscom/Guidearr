@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Validator;
 
 class EnvController extends Controller
 {
@@ -20,7 +22,7 @@ class EnvController extends Controller
     public function edit()
     {
         return view('admin.environment', [
-            'entries'    => $this->parse($this->read()),
+            'entries' => $this->parse($this->read()),
             'lastBackup' => $this->lastBackup(),
         ]);
     }
@@ -56,8 +58,8 @@ class EnvController extends Controller
         }
 
         $original = $this->read();
-        $entries  = $this->parse($original);
-        $current  = [];
+        $entries = $this->parse($original);
+        $current = [];
         foreach ($entries as $e) {
             if ($e['type'] === 'pair') {
                 $current[$e['key']] = $e['value'];
@@ -66,7 +68,7 @@ class EnvController extends Controller
 
         // Build the new value map, honouring locked keys and the "blank means keep" rule for secrets.
         $newValues = $current;
-        $changed   = [];
+        $changed = [];
         foreach ($submitted as $key => $value) {
             if (! array_key_exists($key, $current)) {
                 continue; // ignore keys that aren't already in the file
@@ -77,7 +79,7 @@ class EnvController extends Controller
             $value = (string) $value;
             if ($value !== $current[$key]) {
                 $newValues[$key] = $value;
-                $changed[]       = $key;
+                $changed[] = $key;
             }
         }
 
@@ -93,14 +95,14 @@ class EnvController extends Controller
         if (! is_dir($backupDir)) {
             @mkdir($backupDir, 0750, true);
         }
-        $backupName = '.env.' . now()->format('Y-m-d_His');
-        @copy($path, $backupDir . '/' . $backupName);
+        $backupName = '.env.'.now()->format('Y-m-d_His');
+        @copy($path, $backupDir.'/'.$backupName);
 
         // Atomic write where possible: temp file in the same dir, then rename over the original.
         // The project dir is often root-owned in containers (rename needs *dir* write), so if that
         // fails we fall back to a locked in-place write — safe because we just backed up.
         $written = false;
-        $tmp = $path . '.tmp.' . getmypid();
+        $tmp = $path.'.tmp.'.getmypid();
         if (@file_put_contents($tmp, $rebuilt, LOCK_EX) !== false && @rename($tmp, $path)) {
             $written = true;
         } else {
@@ -122,13 +124,101 @@ class EnvController extends Controller
         if (in_array('ADMIN_PATH', $changed, true)) {
             $newPath = trim($newValues['ADMIN_PATH'], '/');
 
-            return redirect('/' . $newPath . '/environment')->with('status',
+            return redirect('/'.$newPath.'/environment')->with('status',
                 "Saved. The admin panel is now at /{$newPath} — update your bookmark. Backup: {$backupName}.");
         }
 
         return back()->with('status',
-            count($changed) . ' value(s) saved: ' . implode(', ', $changed)
-            . '. Backup: ' . $backupName . '. Some changes (DB, mail, app) may need a worker reload — use Reload services on the Status page to apply them.');
+            count($changed).' value(s) saved: '.implode(', ', $changed)
+            .'. Backup: '.$backupName.'. Some changes (DB, mail, app) may need a worker reload — use Reload services on the Status page to apply them.');
+    }
+
+    /**
+     * Send a one-off test email so an admin can confirm the mail settings work.
+     *
+     * The mail values currently on the Environment form are posted alongside the
+     * recipient, so this tests the settings as typed — before they're even saved.
+     * A throwaway "env_test" mailer is built from those values and a plain-text
+     * message is sent; any transport/auth error is returned verbatim for display.
+     */
+    public function testMail(Request $request)
+    {
+        // Validate by hand and return JSON directly: this endpoint always speaks
+        // JSON to the dialog, but the app only auto-renders JSON errors for api/*
+        // routes (see bootstrap/app.php), so we can't lean on $request->validate().
+        $validator = Validator::make($request->all(), [
+            'to' => ['required', 'email'],
+        ]);
+        if ($validator->fails()) {
+            return response()->json([
+                'ok' => false,
+                'error' => $validator->errors()->first('to'),
+            ], 422);
+        }
+        $to = (string) $request->input('to');
+
+        $mail = (array) $request->input('mail', []);
+        $get = function (string $key, $default = null) use ($mail) {
+            $v = $mail[$key] ?? null;
+
+            return ($v === null || $v === '') ? $default : $v;
+        };
+
+        $transport = strtolower((string) $get('MAIL_MAILER', config('mail.default', 'smtp')));
+
+        // Only smtp needs connection details; other transports (log, sendmail,
+        // array…) are exercised as-is so the button still reflects reality.
+        $config = ['transport' => $transport];
+        if ($transport === 'smtp') {
+            $port = (int) $get('MAIL_PORT', config('mail.mailers.smtp.port', 587));
+            $scheme = $get('MAIL_SCHEME', config('mail.mailers.smtp.scheme'));
+            if (! $scheme && $port === 465) {
+                $scheme = 'smtps'; // implicit TLS on 465 when no scheme is set
+            }
+            $config += [
+                'scheme' => $scheme ?: null,
+                'host' => $get('MAIL_HOST', config('mail.mailers.smtp.host')),
+                'port' => $port,
+                'username' => $get('MAIL_USERNAME', config('mail.mailers.smtp.username')),
+                'password' => $get('MAIL_PASSWORD', config('mail.mailers.smtp.password')),
+                'timeout' => 10,
+            ];
+        }
+        config(['mail.mailers.env_test' => $config]);
+
+        $fromAddr = $get('MAIL_FROM_ADDRESS', config('mail.from.address'));
+        $fromName = $get('MAIL_FROM_NAME', config('mail.from.name'));
+        $appName = config('app.name', 'Guidearr');
+
+        $started = microtime(true);
+        try {
+            Mail::mailer('env_test')->raw(
+                "This is a test email from {$appName}.\n\n"
+                ."If you received this, your outgoing mail settings are working.\n\n"
+                .'Sent: '.now()->toDateTimeString().' ('.config('app.timezone').')',
+                function ($message) use ($to, $fromAddr, $fromName, $appName) {
+                    $message->to($to)->subject("{$appName} — test email");
+                    if ($fromAddr) {
+                        $message->from($fromAddr, $fromName ?: null);
+                    }
+                }
+            );
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'error' => $e->getMessage(),
+            ], 422);
+        }
+
+        $note = $transport === 'smtp'
+            ? "Handed to {$config['host']}:{$config['port']} and accepted for delivery."
+            : "Sent via the \"{$transport}\" mailer.";
+
+        return response()->json([
+            'ok' => true,
+            'message' => "Test email sent to {$to}. {$note}",
+            'ms' => (int) round((microtime(true) - $started) * 1000),
+        ]);
     }
 
     // ---- helpers -------------------------------------------------------------
@@ -149,15 +239,15 @@ class EnvController extends Controller
         $out = [];
         foreach (preg_split("/\r\n|\n|\r/", $contents) as $line) {
             if (preg_match('/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)$/', $line, $m)) {
-                $key   = $m[1];
+                $key = $m[1];
                 $value = $this->unquote(trim($m[2]));
                 $out[] = [
-                    'type'   => 'pair',
-                    'key'    => $key,
-                    'value'  => $value,
+                    'type' => 'pair',
+                    'key' => $key,
+                    'value' => $value,
                     'secret' => $this->isSecret($key),
                     'locked' => in_array($key, self::LOCKED, true),
-                    'desc'   => $this->describe($key),
+                    'desc' => $this->describe($key),
                 ];
             } else {
                 $out[] = ['type' => 'raw', 'text' => $line];
@@ -170,12 +260,12 @@ class EnvController extends Controller
     private function rebuild(string $original, array $newValues, array $changed): string
     {
         $changed = array_flip($changed);
-        $lines   = preg_split("/\r\n|\n|\r/", $original);
-        $result  = [];
+        $lines = preg_split("/\r\n|\n|\r/", $original);
+        $result = [];
 
         foreach ($lines as $line) {
             if (preg_match('/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=/', $line, $m) && isset($changed[$m[1]])) {
-                $result[] = $m[1] . '=' . $this->format($newValues[$m[1]]);
+                $result[] = $m[1].'='.$this->format($newValues[$m[1]]);
             } else {
                 $result[] = $line;
             }
@@ -202,7 +292,7 @@ class EnvController extends Controller
             return '';
         }
         if (preg_match('/[\s#"\'$]/', $v)) {
-            return '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $v) . '"';
+            return '"'.str_replace(['\\', '"'], ['\\\\', '\\"'], $v).'"';
         }
 
         return $v;
@@ -224,42 +314,42 @@ class EnvController extends Controller
     private function describe(string $key): string
     {
         static $map = [
-            'APP_NAME'    => 'Display name of the app, used in page titles and emails.',
-            'APP_ENV'     => 'Runtime environment (local, staging, production) — affects error verbosity and caching.',
-            'APP_KEY'     => 'Encryption key for sessions, cookies and encrypted data. Never change on a live app.',
-            'APP_DEBUG'   => 'Shows detailed error pages and stack traces. Keep false in production.',
-            'APP_URL'     => 'Canonical base URL of the app; used to build absolute links in emails and redirects.',
-            'APP_LOCALE'  => 'Default language locale.',
+            'APP_NAME' => 'Display name of the app, used in page titles and emails.',
+            'APP_ENV' => 'Runtime environment (local, staging, production) — affects error verbosity and caching.',
+            'APP_KEY' => 'Encryption key for sessions, cookies and encrypted data. Never change on a live app.',
+            'APP_DEBUG' => 'Shows detailed error pages and stack traces. Keep false in production.',
+            'APP_URL' => 'Canonical base URL of the app; used to build absolute links in emails and redirects.',
+            'APP_LOCALE' => 'Default language locale.',
             'APP_TIMEZONE' => 'Default timezone for dates and scheduled tasks.',
             'LOG_CHANNEL' => 'Where logs are written (stack, single, daily, syslog…).',
-            'LOG_STACK'   => 'Channels combined when LOG_CHANNEL is "stack".',
-            'LOG_LEVEL'   => 'Minimum severity that gets logged (debug, info, warning, error…).',
+            'LOG_STACK' => 'Channels combined when LOG_CHANNEL is "stack".',
+            'LOG_LEVEL' => 'Minimum severity that gets logged (debug, info, warning, error…).',
             'DB_CONNECTION' => 'Database driver (mysql, pgsql, sqlite…).',
-            'DB_HOST'     => 'Hostname or compose service name of the database server.',
-            'DB_PORT'     => 'TCP port the database listens on.',
+            'DB_HOST' => 'Hostname or compose service name of the database server.',
+            'DB_PORT' => 'TCP port the database listens on.',
             'DB_DATABASE' => 'Name of the database/schema to use.',
             'DB_USERNAME' => 'Username used to connect to the database.',
             'DB_PASSWORD' => 'Password for the database user.',
-            'SESSION_DRIVER'   => 'Where user sessions are stored (file, database, redis…).',
+            'SESSION_DRIVER' => 'Where user sessions are stored (file, database, redis…).',
             'SESSION_LIFETIME' => 'Minutes of inactivity before a session expires.',
-            'CACHE_STORE'  => 'Backend for the application cache (file, database, redis…).',
+            'CACHE_STORE' => 'Backend for the application cache (file, database, redis…).',
             'CACHE_DRIVER' => 'Backend for the application cache (file, database, redis…).',
             'QUEUE_CONNECTION' => 'Driver for background job queues (sync, database, redis…).',
-            'FILESYSTEM_DISK'  => 'Default disk for file storage (local, public, s3…).',
+            'FILESYSTEM_DISK' => 'Default disk for file storage (local, public, s3…).',
             'MAIL_MAILER' => 'Transport used to send mail (smtp, sendmail, log…).',
-            'MAIL_HOST'   => 'SMTP server hostname for outgoing mail.',
-            'MAIL_PORT'   => 'SMTP port (465 for SMTPS, 587 for STARTTLS).',
+            'MAIL_HOST' => 'SMTP server hostname for outgoing mail.',
+            'MAIL_PORT' => 'SMTP port (465 for SMTPS, 587 for STARTTLS).',
             'MAIL_USERNAME' => 'Mailbox used to authenticate to the SMTP server.',
             'MAIL_PASSWORD' => 'Password for the SMTP mailbox.',
             'MAIL_SCHEME' => 'SMTP encryption scheme (smtps for 465, null/tls for 587).',
-            'MAIL_ENCRYPTION'   => 'SMTP encryption (ssl/tls). Newer Laravel uses MAIL_SCHEME instead.',
+            'MAIL_ENCRYPTION' => 'SMTP encryption (ssl/tls). Newer Laravel uses MAIL_SCHEME instead.',
             'MAIL_FROM_ADDRESS' => 'Default sender address; most servers require it to match the authenticated mailbox.',
-            'MAIL_FROM_NAME'    => 'Default sender display name on outgoing mail.',
-            'TURNSTILE_SITE_KEY'   => 'Public Cloudflare Turnstile key for the CAPTCHA widget.',
+            'MAIL_FROM_NAME' => 'Default sender display name on outgoing mail.',
+            'TURNSTILE_SITE_KEY' => 'Public Cloudflare Turnstile key for the CAPTCHA widget.',
             'TURNSTILE_SECRET_KEY' => 'Private Cloudflare Turnstile key used to verify the CAPTCHA server-side.',
-            'ADMIN_EMAIL'    => 'Email of the bootstrap admin account created by admin:sync.',
+            'ADMIN_EMAIL' => 'Email of the bootstrap admin account created by admin:sync.',
             'ADMIN_PASSWORD' => 'Bootstrap/recovery admin password; first login forces a change.',
-            'ADMIN_PATH'     => 'URL segment for the admin panel ("admin" → /admin). Use a hard-to-guess value to reduce automated probing. Changing it sends you to the new URL.',
+            'ADMIN_PATH' => 'URL segment for the admin panel ("admin" → /admin). Use a hard-to-guess value to reduce automated probing. Changing it sends you to the new URL.',
             'REGISTRATION_REQUIRES_APPROVAL' => 'When true, new sign-ups are held pending until an admin enables them.',
         ];
 
@@ -268,22 +358,22 @@ class EnvController extends Controller
         }
 
         $prefixes = [
-            'DB_'        => 'Database connection setting.',
-            'MAIL_'      => 'Outgoing mail (SMTP) setting.',
-            'REDIS_'     => 'Redis connection setting.',
+            'DB_' => 'Database connection setting.',
+            'MAIL_' => 'Outgoing mail (SMTP) setting.',
+            'REDIS_' => 'Redis connection setting.',
             'MEMCACHED_' => 'Memcached connection setting.',
-            'CACHE_'     => 'Cache subsystem setting.',
-            'SESSION_'   => 'Session subsystem setting.',
-            'QUEUE_'     => 'Background job queue setting.',
+            'CACHE_' => 'Cache subsystem setting.',
+            'SESSION_' => 'Session subsystem setting.',
+            'QUEUE_' => 'Background job queue setting.',
             'BROADCAST_' => 'Event broadcasting setting.',
-            'PUSHER_'    => 'Pusher broadcasting setting.',
-            'AWS_'       => 'AWS / S3 credential or setting.',
-            'VITE_'      => 'Build-time variable exposed to the frontend bundle.',
+            'PUSHER_' => 'Pusher broadcasting setting.',
+            'AWS_' => 'AWS / S3 credential or setting.',
+            'VITE_' => 'Build-time variable exposed to the frontend bundle.',
             'TURNSTILE_' => 'Cloudflare Turnstile CAPTCHA setting.',
-            'ADMIN_'     => 'Admin panel setting.',
-            'MAIL'       => 'Mail setting.',
-            'LOG_'       => 'Logging setting.',
-            'APP_'       => 'Core application setting.',
+            'ADMIN_' => 'Admin panel setting.',
+            'MAIL' => 'Mail setting.',
+            'LOG_' => 'Logging setting.',
+            'APP_' => 'Core application setting.',
         ];
         foreach ($prefixes as $p => $d) {
             if (str_starts_with($key, $p)) {
@@ -300,7 +390,7 @@ class EnvController extends Controller
         if (! is_dir($dir)) {
             return null;
         }
-        $files = glob($dir . '/.env.*') ?: [];
+        $files = glob($dir.'/.env.*') ?: [];
         if (empty($files)) {
             return null;
         }
