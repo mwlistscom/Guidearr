@@ -27,6 +27,11 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
         return $this->hasMany(Provider::class);
     }
 
+    public function socialAccounts(): HasMany
+    {
+        return $this->hasMany(SocialAccount::class);
+    }
+
     protected static function booted(): void
     {
         // When an account is deleted (self-service Settings or admin), the DB cascade

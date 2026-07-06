@@ -40,4 +40,19 @@ return [
         ],
     ],
 
+    // Social sign-in (Laravel Socialite). A provider's buttons only appear when both its
+    // client id and secret are set. 'redirect' defaults to /auth/{provider}/callback and must
+    // match the redirect URI registered in the provider's console.
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect' => env('GOOGLE_REDIRECT_URI'),
+    ],
+
+    'facebook' => [
+        'client_id' => env('FACEBOOK_CLIENT_ID'),
+        'client_secret' => env('FACEBOOK_CLIENT_SECRET'),
+        'redirect' => env('FACEBOOK_REDIRECT_URI'),
+    ],
+
 ];
