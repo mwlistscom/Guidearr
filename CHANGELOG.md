@@ -2,12 +2,28 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5 and v1.22.6. Intermediate entries
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6 and v1.22.7. Intermediate entries
 > (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
 
 ---
 
-## v1.22.7 — Hostname placeholder cleanup · 2026-06-17 *(unreleased)*
+## v1.22.7 — Playlist reordering fixes & self-healing stores · 2026-07-06
+
+**Fixed**
+- **Group reordering now moves the whole group.** `moveGroupToRow` relocates all of a group's
+  channels together to the target spot (front of the list for row 1), so a group sent to the top
+  actually leads the exported playlist. Replaces the old "largest contiguous run + anchor" logic
+  that could leave a group's channels mid-list when the flat order had drifted from the group pane.
+- **Manual channel moves are authoritative.** Moving a channel (single or bulk) places it exactly
+  where dropped — anywhere in the list, across group boundaries — while keeping its own group
+  label. The serve/editor order stays flat on `position_order`; group order never overrides it.
+
+**Added**
+- **Self-healing playlist stores.** `Playlist::ensureStoreSeeded()` rebuilds a playlist's channel
+  store from its attached providers when the store file is missing (only when missing — an empty
+  store may be a deliberate delete-all), wired into the public serve path and the editor. A warning
+  is logged when a provider-backed playlist serves zero channels, so a lost/emptied store surfaces
+  in **Admin → Logs**.
 
 **Changed**
 - Removed the internal hostname from docs, examples and the admin config placeholder,
@@ -15,6 +31,10 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   (`README.md`, `build/README.md`, `health/README.md`, `health/heartbeat.sh`,
   `resources/views/admin/config.blade.php`). The live `docker/nginx.conf` already used
   `server_name _;`, so it needed no change.
+
+**Internal**
+- The test suite now isolates its storage to a temp dir (`tests/TestCase::setUp()` →
+  `useStoragePath`), so running it can never touch real playlist/provider SQLite stores.
 
 ---
 
