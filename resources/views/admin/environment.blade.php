@@ -23,6 +23,26 @@
     .env-save { margin-top:1.5rem; display:flex; align-items:center; gap:1rem; }
     .env-save .note { color:var(--muted); font-size:.82rem; }
     input:disabled { opacity:.6; cursor:not-allowed; }
+    .env-val .note { color:var(--muted); font-size:.78rem; }
+    .mail-test-btn { flex-shrink:0; background:rgba(96,165,250,.14); color:#93c5fd;
+        border:1px solid rgba(96,165,250,.3); padding:.5rem .8rem; border-radius:.5rem; cursor:pointer; font-size:.85rem; }
+    .mail-test-btn:hover { background:rgba(96,165,250,.22); color:#bfdbfe; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none;
+        align-items:flex-start; justify-content:center; z-index:60; padding:8vh 1rem 1rem; }
+    .modal-backdrop.open { display:flex; }
+    .modal { background:var(--panel,#1b1b22); border:1px solid var(--border); border-radius:.7rem;
+        width:100%; max-width:30rem; padding:1.3rem 1.4rem; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+    .modal h2 { margin:0 0 .3rem; font-size:1.1rem; }
+    .modal p.sub { color:var(--muted); font-size:.83rem; margin:0 0 1rem; }
+    .modal label { display:block; font-size:.8rem; color:#c4c4cc; margin:0 0 .3rem; }
+    .modal input[type=email] { width:100%; margin:0 0 1rem; }
+    .modal-actions { display:flex; gap:.6rem; justify-content:flex-end; align-items:center; }
+    .modal .ghost { background:transparent; border:1px solid rgba(255,255,255,.16); color:var(--muted); }
+    .modal-result { font-size:.83rem; margin:0 0 1rem; padding:.6rem .7rem; border-radius:.5rem; display:none; word-break:break-word; }
+    .modal-result.show { display:block; }
+    .modal-result.ok  { background:rgba(52,211,153,.13); color:#6ee7b7; border:1px solid rgba(52,211,153,.3); }
+    .modal-result.err { background:rgba(248,113,113,.13); color:#fca5a5; border:1px solid rgba(248,113,113,.3); }
+    .modal-result.info{ background:rgba(255,255,255,.06); color:var(--muted); border:1px solid var(--border); }
 </style>
 
 <h1>Environment</h1>
@@ -54,6 +74,15 @@
                         <div class="env-val"><input type="text" name="env[{{ $e['key'] }}]" value="{{ $e['value'] }}"></div>
                     @endif
                 </div>
+                @if ($e['key'] === 'MAIL_PASSWORD')
+                    <div class="env-row">
+                        <div class="env-key"></div>
+                        <div class="env-val">
+                            <button type="button" id="mailTestOpen" class="mail-test-btn">✉&nbsp; Send test email…</button>
+                            <span class="note">Sends a test message using the mail values above (no need to save first).</span>
+                        </div>
+                    </div>
+                @endif
             @endif
         @empty
             <p class="empty">Could not read any variables from .env.</p>
@@ -66,6 +95,20 @@
     </div>
 </form>
 
+<div class="modal-backdrop" id="mailTestModal" role="dialog" aria-modal="true" aria-labelledby="mailTestTitle">
+    <div class="modal">
+        <h2 id="mailTestTitle">Send a test email</h2>
+        <p class="sub">Delivers a test message using the mail settings currently entered above — handy for confirming SMTP host, port, credentials and the “from” address before saving.</p>
+        <div class="modal-result" id="mailTestResult"></div>
+        <label for="mailTestTo">Send to</label>
+        <input type="email" id="mailTestTo" placeholder="you@example.com" autocomplete="off">
+        <div class="modal-actions">
+            <button type="button" class="ghost" id="mailTestCancel">Close</button>
+            <button type="button" id="mailTestSend">Send test</button>
+        </div>
+    </div>
+</div>
+
 <script>
     document.querySelectorAll('[data-eye]').forEach(function (btn) {
         btn.addEventListener('click', function () {
@@ -77,5 +120,81 @@
             btn.setAttribute('aria-label', reveal ? 'Hide value' : 'Show value');
         });
     });
+
+    (function () {
+        var modal  = document.getElementById('mailTestModal');
+        var openBtn = document.getElementById('mailTestOpen');
+        if (!modal || !openBtn) { return; }
+
+        var toInput = document.getElementById('mailTestTo');
+        var sendBtn = document.getElementById('mailTestSend');
+        var cancel  = document.getElementById('mailTestCancel');
+        var result  = document.getElementById('mailTestResult');
+
+        function envVal(key) {
+            var el = document.querySelector('[name="env[' + key + ']"]');
+            return el ? el.value : '';
+        }
+        function showResult(cls, text) {
+            result.className = 'modal-result show ' + cls;
+            result.textContent = text;
+        }
+        function open() {
+            result.className = 'modal-result';
+            result.textContent = '';
+            if (!toInput.value) {
+                toInput.value = envVal('MAIL_FROM_ADDRESS') || envVal('ADMIN_EMAIL') || '';
+            }
+            modal.classList.add('open');
+            toInput.focus();
+        }
+        function close() { modal.classList.remove('open'); }
+
+        openBtn.addEventListener('click', open);
+        cancel.addEventListener('click', close);
+        modal.addEventListener('click', function (e) { if (e.target === modal) { close(); } });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && modal.classList.contains('open')) { close(); }
+        });
+
+        sendBtn.addEventListener('click', function () {
+            var to = (toInput.value || '').trim();
+            if (!to) { showResult('err', 'Enter a recipient address first.'); toInput.focus(); return; }
+
+            var mailKeys = ['MAIL_MAILER','MAIL_HOST','MAIL_PORT','MAIL_USERNAME','MAIL_PASSWORD',
+                            'MAIL_SCHEME','MAIL_ENCRYPTION','MAIL_FROM_ADDRESS','MAIL_FROM_NAME'];
+            var mail = {};
+            mailKeys.forEach(function (k) {
+                var el = document.querySelector('[name="env[' + k + ']"]');
+                if (el) { mail[k] = el.value; }
+            });
+
+            sendBtn.disabled = true;
+            showResult('info', 'Sending…');
+
+            fetch('{{ route('admin.environment.test-mail') }}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('input[name="_token"]').value
+                },
+                body: JSON.stringify({ to: to, mail: mail })
+            })
+            .then(function (r) { return r.json().then(function (d) { return { status: r.status, body: d }; }); })
+            .then(function (res) {
+                if (res.body && res.body.ok) {
+                    showResult('ok', (res.body.message || 'Test email sent.') +
+                        (res.body.ms != null ? ' (' + res.body.ms + ' ms)' : ''));
+                } else {
+                    var msg = (res.body && (res.body.error || (res.body.errors &&
+                        res.body.errors.to && res.body.errors.to[0]))) || 'Send failed.';
+                    showResult('err', 'Failed: ' + msg);
+                }
+            })
+            .catch(function (e) { showResult('err', 'Request error: ' + e.message); })
+            .finally(function () { sendBtn.disabled = false; });
+        });
+    })();
 </script>
 @endsection

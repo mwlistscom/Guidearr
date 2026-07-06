@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminPasswordController;
 use App\Http\Controllers\Admin\EnvController;
 use App\Http\Controllers\Admin\FeedBrowseController;
+use App\Http\Controllers\Admin\LegalController;
 use App\Http\Controllers\Admin\LogController;
 use App\Http\Controllers\Admin\MaintenanceController;
 use App\Http\Controllers\Admin\UserController;
@@ -56,11 +57,17 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::patch('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'updateChannel'])->name('feeds.channel.update');
             Route::delete('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'deleteChannel'])->name('feeds.channel.delete');
 
-            Route::get('environment', [EnvController::class, 'edit'])->name('environment');            Route::put('environment', [EnvController::class, 'update'])->name('environment.update');
+            Route::get('environment', [EnvController::class, 'edit'])->name('environment');
+            Route::put('environment', [EnvController::class, 'update'])->name('environment.update');
+            Route::post('environment/test-mail', [EnvController::class, 'testMail'])->name('environment.test-mail');
 
             Route::get('branding', [BrandingController::class, 'edit'])->name('branding');
             Route::post('branding/{kind}', [BrandingController::class, 'update'])->whereIn('kind', ['icon', 'logo'])->name('branding.update');
             Route::delete('branding/{kind}', [BrandingController::class, 'reset'])->whereIn('kind', ['icon', 'logo'])->name('branding.reset');
+
+            Route::get('legal', [LegalController::class, 'edit'])->name('legal');
+            Route::put('legal', [LegalController::class, 'update'])->name('legal.update');
+            Route::delete('legal/{doc}', [LegalController::class, 'reset'])->whereIn('doc', ['privacy', 'terms', 'cookies'])->name('legal.reset');
         });
     });
 });

@@ -65,6 +65,10 @@
             @endauth
         </div>
     </div>
-    <footer>&copy; {{ date('Y') }} {{ $appCopyright }} &middot; Free for non-commercial use</footer>
+    <footer>&copy; {{ date('Y') }} {{ $appCopyright }} &middot; Free for non-commercial use
+        &middot; <a href="{{ route('legal.privacy') }}" style="color:inherit">Privacy</a>
+        &middot; <a href="{{ route('legal.terms') }}" style="color:inherit">Terms</a>
+        &middot; <a href="{{ route('legal.cookies') }}" style="color:inherit">Cookies</a>
+    </footer>
 </body>
 </html>
