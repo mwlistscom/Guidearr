@@ -50,34 +50,25 @@ class PlaylistGroupMoveTest extends TestCase
         return array_map(fn ($r) => $r['name'], $page['rows']);
     }
 
-    public function test_group_move_relocates_only_main_run_leaving_scattered_channels(): void
+    public function test_group_move_relocates_the_whole_group_block(): void
     {
         $u = User::factory()->create(['email_verified_at' => now()]);
         $pl = $this->playlist($u);
         $st = new PlaylistStore($pl->id);
 
-        // Pull one CANADA channel (C3) down to the very bottom — deliberately scattered.
-        $page = $st->effectiveChannelPage(null, null, 'hide', 1, 100);
-        $byName = [];
-        foreach ($page['rows'] as $r) { $byName[$r['name']] = (int) $r['id']; }
-        $st->moveChannelToRow($byName['C3'], 9);
-        $this->assertSame(['C1', 'C2', 'A1', 'A2', 'B1', 'B2', 'D1', 'D2', 'C3'], $this->names($pl));
+        // Seeded in group-pane order.
+        $this->assertSame(['C1', 'C2', 'C3', 'A1', 'A2', 'B1', 'B2', 'D1', 'D2'], $this->names($pl));
 
-        // Move the CANADA group to position 3 (front of US-C). Only the main run [C1,C2] should move.
+        // Move the CANADA group to position 3 (before US-C). The ENTIRE CANADA block moves as one,
+        // since channel output order follows the group pane order.
         $canada = collect($st->groups())->firstWhere('group_title', 'CANADA');
         $st->moveGroupToRow((int) $canada['id'], 3);
 
         $this->assertSame(
-            ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'D1', 'D2', 'C3'],
+            ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'C3', 'D1', 'D2'],
             $this->names($pl),
-            'main CANADA block moves before US-C; the scattered C3 stays at the bottom'
+            'all of CANADA (C1,C2,C3) relocates together, contiguously, before US-C'
         );
-
-        // C3 is untouched and still tagged CANADA.
-        $page = $st->effectiveChannelPage(null, null, 'hide', 1, 100);
-        $last = end($page['rows']);
-        $this->assertSame('C3', $last['name']);
-        $this->assertSame('CANADA', $last['group_title']);
 
         // Pane order reflects the move: CANADA now sits 3rd.
         $pane = array_map(fn ($g) => $g['group_title'], $st->groups());

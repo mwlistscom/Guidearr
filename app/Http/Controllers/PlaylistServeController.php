@@ -6,9 +6,11 @@ use App\Models\Playlist;
 use App\Models\Provider;
 use App\Services\PlaylistStore;
 use App\Services\ProviderStore;
+use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -24,10 +26,13 @@ class PlaylistServeController extends Controller
     public function m3u(Request $request)
     {
         [$playlist, $deny] = $this->gate($request, 'm3u');
-        if ($deny) { return $deny; }
+        if ($deny) {
+            return $deny;
+        }
 
         $this->touch($playlist);
         $rows = $this->effectiveChannels($playlist);
+        $this->warnIfProviderBackedButEmpty($playlist, count($rows));
         $start = max(1, (int) ($playlist->channel_start ?: 100));
         $extgrp = (bool) $playlist->extgrp_tags;
 
@@ -36,11 +41,13 @@ class PlaylistServeController extends Controller
             $n = $start;
             foreach ($rows as $r) {
                 $url = (string) $r['url'];
-                if ($url === '') { continue; }
-                $name  = (string) ($r['name'] !== '' ? $r['name'] : ($r['tvg_name'] ?: 'Channel'));
+                if ($url === '') {
+                    continue;
+                }
+                $name = (string) ($r['name'] !== '' ? $r['name'] : ($r['tvg_name'] ?: 'Channel'));
                 $group = (string) $r['group_title'];
                 printf(
-                    '#EXTINF:-1 tvg-chno="%s" tvg-id="%s" tvg-name="%s" tvg-logo="%s" group-title="%s",%s' . "\n",
+                    '#EXTINF:-1 tvg-chno="%s" tvg-id="%s" tvg-name="%s" tvg-logo="%s" group-title="%s",%s'."\n",
                     $n,
                     $this->attr($r['tvg_id']),
                     $this->attr($r['tvg_name']),
@@ -48,8 +55,10 @@ class PlaylistServeController extends Controller
                     $this->attr($group),
                     $name
                 );
-                if ($extgrp && $group !== '') { echo '#EXTGRP:' . $group . "\n"; }
-                echo $url . "\n";
+                if ($extgrp && $group !== '') {
+                    echo '#EXTGRP:'.$group."\n";
+                }
+                echo $url."\n";
                 $n++;
             }
         });
@@ -58,7 +67,9 @@ class PlaylistServeController extends Controller
     public function strm(Request $request)
     {
         [$playlist, $deny] = $this->gate($request, 'json');
-        if ($deny) { return $deny; }
+        if ($deny) {
+            return $deny;
+        }
 
         $this->touch($playlist);
         $rows = $this->effectiveChannels($playlist);
@@ -67,10 +78,12 @@ class PlaylistServeController extends Controller
             echo '[';
             $comma = '';
             foreach ($rows as $r) {
-                if ((string) $r['url'] === '') { continue; }
-                echo $comma . json_encode([
-                    'url'         => $r['url'],
-                    'tvg_name'    => $r['tvg_name'] !== '' ? $r['tvg_name'] : $r['name'],
+                if ((string) $r['url'] === '') {
+                    continue;
+                }
+                echo $comma.json_encode([
+                    'url' => $r['url'],
+                    'tvg_name' => $r['tvg_name'] !== '' ? $r['tvg_name'] : $r['name'],
                     'group_title' => $r['group_title'],
                 ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 $comma = ",\n";
@@ -82,7 +95,9 @@ class PlaylistServeController extends Controller
     public function epg(Request $request)
     {
         [$playlist, $deny] = $this->gate($request, 'xml');
-        if ($deny) { return $deny; }
+        if ($deny) {
+            return $deny;
+        }
 
         $gid = (int) $playlist->guide_provider_id;
         if ($gid <= 0 || ! ProviderStore::exists($gid)) {
@@ -95,7 +110,9 @@ class PlaylistServeController extends Controller
         $tvgIds = [];
         foreach ($this->effectiveChannels($playlist) as $r) {
             $t = (string) $r['tvg_id'];
-            if ($t !== '') { $tvgIds[$t] = true; }
+            if ($t !== '') {
+                $tvgIds[$t] = true;
+            }
         }
         $tvgIds = array_keys($tvgIds);
 
@@ -104,7 +121,7 @@ class PlaylistServeController extends Controller
         $minStop = now()->timestamp - 6 * 3600;
 
         return $this->stream('application/xml; charset=utf-8', function () use ($store, $channels, $tvgIds, $minStop) {
-            $w = new \XMLWriter();
+            $w = new \XMLWriter;
             $w->openURI('php://output');
             $w->startDocument('1.0', 'utf-8');
             $w->setIndent(false);
@@ -127,11 +144,13 @@ class PlaylistServeController extends Controller
                 $title = (strlen((string) $p['title']) < 2) ? (string) $p['tvg_id'] : (string) $p['title'];
                 $w->startElement('programme');
                 // start/stop are stored as UTC unix timestamps -> emit UTC.
-                $w->writeAttribute('start', gmdate('YmdHis', (int) $p['start']) . ' +0000');
-                $w->writeAttribute('stop', gmdate('YmdHis', (int) $p['stop']) . ' +0000');
+                $w->writeAttribute('start', gmdate('YmdHis', (int) $p['start']).' +0000');
+                $w->writeAttribute('stop', gmdate('YmdHis', (int) $p['stop']).' +0000');
                 $w->writeAttribute('channel', (string) $p['tvg_id']);
                 $w->writeElement('title', $title);
-                if (strlen((string) $p['descr']) > 1) { $w->writeElement('desc', (string) $p['descr']); }
+                if (strlen((string) $p['descr']) > 1) {
+                    $w->writeElement('desc', (string) $p['descr']);
+                }
                 $w->endElement();
                 $w->flush();
             });
@@ -153,8 +172,17 @@ class PlaylistServeController extends Controller
         }
 
         $playlist = Playlist::where('cipher', $key)->where('enabled', true)->first();
-        if (! $playlist || ! PlaylistStore::existsFor($playlist->id)) {
+        if (! $playlist) {
             return [null, $this->empty($format)];
+        }
+
+        // Self-heal: if the per-playlist store FILE has gone missing (e.g. removed out-of-band),
+        // rebuild it from the attached providers before serving rather than emitting an empty list.
+        if (! PlaylistStore::existsFor($playlist->id)) {
+            $playlist->ensureStoreSeeded();
+            if (! PlaylistStore::existsFor($playlist->id)) {
+                return [null, $this->empty($format)]; // no provider data to rebuild from (yet)
+            }
         }
 
         $ip = (string) $request->ip();
@@ -164,6 +192,7 @@ class PlaylistServeController extends Controller
             if ($playlist->iplock !== $ip) {
                 return [null, $this->denied($format)];
             }
+
             return [$playlist, null]; // locked IP skips the rate limit
         }
 
@@ -177,8 +206,8 @@ class PlaylistServeController extends Controller
     /** Rolling unique-IP limit. Returns true if this request pushes the playlist over the cap. */
     private function rateLimited(int $playlistId, string $ip): bool
     {
-        $maxIps = \App\Support\Settings::serveMaxIps();
-        $window = \App\Support\Settings::serveWindowHours();
+        $maxIps = Settings::serveMaxIps();
+        $window = Settings::serveWindowHours();
 
         $now = now();
         DB::table('playlist_ip_log')->upsert(
@@ -219,15 +248,33 @@ class PlaylistServeController extends Controller
         }
     }
 
+    /**
+     * Visibility guard: a playlist that has providers attached but serves zero channels almost
+     * always means its store was lost or emptied. Emit a warning so it surfaces in Admin > Logs
+     * within minutes instead of going unnoticed for days.
+     */
+    private function warnIfProviderBackedButEmpty(Playlist $playlist, int $served): void
+    {
+        if ($served > 0 || ! $playlist->providers()->exists()) {
+            return;
+        }
+        Log::warning('playlist served 0 channels but has providers attached', [
+            'playlist_id' => $playlist->id,
+            'cipher' => $playlist->cipher,
+        ]);
+    }
+
     /** Effective channel rows (playlist override wins over the provider's value), in display order. */
     private function effectiveChannels(Playlist $playlist): array
     {
         $store = new PlaylistStore($playlist->id);
-        $rows  = $store->allForServe();
+        $rows = $store->allForServe();
 
         $byProvider = [];
         foreach ($rows as $r) {
-            if ((int) $r['provider_id'] > 0) { $byProvider[(int) $r['provider_id']][] = (int) $r['channel_id']; }
+            if ((int) $r['provider_id'] > 0) {
+                $byProvider[(int) $r['provider_id']][] = (int) $r['channel_id'];
+            }
         }
         $data = [];
         foreach ($byProvider as $pid => $ids) {
@@ -238,17 +285,20 @@ class PlaylistServeController extends Controller
         foreach ($rows as $r) {
             $pid = (int) $r['provider_id'];
             $src = $pid > 0 ? ($data[$pid][(int) $r['channel_id']] ?? null) : null;
-            if ($pid > 0 && $src === null) { continue; } // pointer to a channel the provider no longer has
+            if ($pid > 0 && $src === null) {
+                continue;
+            } // pointer to a channel the provider no longer has
             $pick = function (string $k) use ($r, $src) {
                 $v = $r[$k] ?? '';
+
                 return ($v !== '' && $v !== null) ? $v : ($src[$k] ?? '');
             };
             $out[] = [
-                'name'        => (string) $pick('name'),
-                'url'         => (string) $pick('url'),
-                'tvg_id'      => (string) $pick('tvg_id'),
-                'tvg_name'    => (string) $pick('tvg_name'),
-                'tvg_logo'    => (string) $pick('tvg_logo'),
+                'name' => (string) $pick('name'),
+                'url' => (string) $pick('url'),
+                'tvg_id' => (string) $pick('tvg_id'),
+                'tvg_name' => (string) $pick('tvg_name'),
+                'tvg_logo' => (string) $pick('tvg_logo'),
                 'group_title' => (string) ($r['group_title'] ?? ''),
             ];
         }
@@ -264,7 +314,7 @@ class PlaylistServeController extends Controller
     private function stream(string $contentType, callable $body): StreamedResponse
     {
         return response()->stream($body, 200, [
-            'Content-Type'  => $contentType,
+            'Content-Type' => $contentType,
             'Cache-Control' => 'no-cache, must-revalidate',
         ]);
     }
@@ -277,16 +327,16 @@ class PlaylistServeController extends Controller
     private function empty(string $format)
     {
         return match ($format) {
-            'xml'  => $this->xml('<?xml version="1.0"?><tv>No Guide Data</tv>'),
+            'xml' => $this->xml('<?xml version="1.0"?><tv>No Guide Data</tv>'),
             'json' => response('[]', 200, ['Content-Type' => 'application/json; charset=utf-8']),
-            default => response("#EXTM3U", 200, ['Content-Type' => 'application/x-mpegurl']),
+            default => response('#EXTM3U', 200, ['Content-Type' => 'application/x-mpegurl']),
         };
     }
 
     private function denied(string $format)
     {
         return match ($format) {
-            'xml'  => $this->xml('<?xml version="1.0"?><tv>Access Denied</tv>'),
+            'xml' => $this->xml('<?xml version="1.0"?><tv>Access Denied</tv>'),
             'json' => response(json_encode(['error' => 'Access Denied']), 200, ['Content-Type' => 'application/json']),
             default => response("#EXTM3U\n#EXTINF:-1,Access Denied\nhttp://0.0.0.0\n", 200, ['Content-Type' => 'application/x-mpegurl']),
         };
@@ -295,7 +345,7 @@ class PlaylistServeController extends Controller
     private function tooMany(string $format)
     {
         return match ($format) {
-            'xml'  => $this->xml('<?xml version="1.0"?><tv>Too Many Devices - Contact Support</tv>'),
+            'xml' => $this->xml('<?xml version="1.0"?><tv>Too Many Devices - Contact Support</tv>'),
             'json' => response(json_encode(['error' => 'Too Many Devices - Contact Support']), 200, ['Content-Type' => 'application/json']),
             default => response("#EXTM3U\n#EXTINF:-1,Too Many Devices - Contact Support\nhttp://0.0.0.0\n", 200, ['Content-Type' => 'application/x-mpegurl']),
         };

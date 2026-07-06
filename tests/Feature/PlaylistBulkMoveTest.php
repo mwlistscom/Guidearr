@@ -132,10 +132,11 @@ class PlaylistBulkMoveTest extends TestCase
 
     public function test_bulk_move_across_groups_lands_at_row_and_keeps_each_group(): void
     {
+        // Flat model: a channel's own position is authoritative, so a bulk selection spanning
+        // groups can be placed anywhere as a contiguous block — each channel keeps its group label.
         $u = User::factory()->create(['email_verified_at' => now()]);
         $pl = $this->playlist($u);
 
-        // Select one CANADA channel + one US channel, move the pair to the very top.
         $page = (new PlaylistStore($pl->id))->effectiveChannelPage(null, null, 'hide', 1, 100);
         $byName = [];
         foreach ($page['rows'] as $r) { $byName[$r['name']] = (int) $r['id']; }

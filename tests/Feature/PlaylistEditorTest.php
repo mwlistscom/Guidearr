@@ -41,11 +41,12 @@ class PlaylistEditorTest extends TestCase { use RefreshDatabase;
   public function test_channel_move_to_row(): void {
     $u=User::factory()->create(['email_verified_at'=>now()]); $pl=$this->seeded($u);
     $rows=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->json('data');
-    // move the last channel to row 1
+    // move the last channel to row 1 — flat model lets it lead the list, keeping its group label
     $last=end($rows);
     $this->actingAs($u)->postJson("/playlists/{$pl->id}/channels/{$last['id']}/move",['row'=>1])->assertOk();
     $rows2=$this->actingAs($u)->getJson("/playlists/{$pl->id}/channels?size=50")->json('data');
-    $this->assertSame($last['id'],$rows2[0]['id']); // moved channel now first
+    $this->assertSame($last['id'],$rows2[0]['id']); // moved channel now first overall
+    $this->assertSame($last['group_title'],$rows2[0]['group_title']); // ...and kept its own group label
   }
 
   public function test_enable_disable_and_delete_restore(): void {

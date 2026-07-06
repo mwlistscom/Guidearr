@@ -22,6 +22,9 @@ yarn-error.log
 /.vscode
 /.zed
 
+# Local Claude Code working notes — never commit
+/CLAUDE.md
+
 # Guidearr runtime secrets — never commit
 /storage/app/env-backups/
 /storage/app/branding/
