@@ -16,6 +16,36 @@ class LogController extends Controller
         return storage_path('logs');
     }
 
+    /**
+     * Every log stream worth putting in a support bundle: the live *.log files plus any
+     * rotated siblings (nginx-access.log.1, nginx-error.log.2.gz, …) touched within the
+     * retention window — so the bundle keeps the full recent history even right after a
+     * rotation splits a stream across two files.
+     */
+    private function bundleSources(int $cutoff): array
+    {
+        $paths = glob($this->dir() . '/*.log') ?: [];
+        foreach (glob($this->dir() . '/*.log.*') ?: [] as $p) {
+            if (is_file($p) && (int) @filemtime($p) >= $cutoff) {
+                $paths[] = $p;
+            }
+        }
+        sort($paths);
+
+        return $paths;
+    }
+
+    /** Decompress a rotated .gz log and return its tail (byte-bounded). */
+    private static function gunzipTail(string $path, int $maxBytes = 64_000_000): string
+    {
+        $raw = @gzdecode((string) @file_get_contents($path));
+        if (! is_string($raw) || $raw === '') {
+            return '';
+        }
+
+        return strlen($raw) > $maxBytes ? substr($raw, -$maxBytes) : $raw;
+    }
+
     /** All *.log files in storage/logs, newest first. */
     private function files(): array
     {
@@ -131,12 +161,15 @@ class LogController extends Controller
         $tarPath = $base . '.tar';
 
         $tar = new \PharData($tarPath);
-        foreach ($this->files() as $f) {
-            $text = self::tailSince($this->dir() . '/' . $f['name'], $cutoff);
+        foreach ($this->bundleSources($cutoff) as $path) {
+            $isGz = str_ends_with($path, '.gz');
+            $text = $isGz ? self::gunzipTail($path) : self::tailSince($path, $cutoff);
             if ($text === '') {
-                continue; // file is entirely older than the window — skip it
+                continue; // nothing within the retention window
             }
-            $tar->addFromString('logs/' . $f['name'], $text);
+            // Decompressed rotated logs are stored as plain text (drop the .gz suffix).
+            $name = 'logs/' . ($isGz ? substr(basename($path), 0, -3) : basename($path));
+            $tar->addFromString($name, $text);
         }
         $tar->addFromString('diagnostics.txt', $this->diagnostics());
         $tar->compress(\Phar::GZ); // writes $base.tar.gz
