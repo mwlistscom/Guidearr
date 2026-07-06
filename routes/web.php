@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\OAuthController;
 use App\Http\Controllers\Auth\VerifyEmailCodeController;
 use App\Http\Controllers\BrandingController;
 use App\Http\Controllers\LegalController;
@@ -26,6 +27,13 @@ Route::get('license', function (Request $request) {
 Route::get('privacy', [LegalController::class, 'show'])->defaults('doc', 'privacy')->name('legal.privacy');
 Route::get('terms', [LegalController::class, 'show'])->defaults('doc', 'terms')->name('legal.terms');
 Route::get('cookies', [LegalController::class, 'show'])->defaults('doc', 'cookies')->name('legal.cookies');
+
+// Social sign-in (Google / Facebook via Socialite). Buttons appear only when a provider is configured.
+Route::get('auth/{provider}/redirect', [OAuthController::class, 'redirect'])->whereIn('provider', ['google', 'facebook'])->name('oauth.redirect');
+Route::get('auth/{provider}/callback', [OAuthController::class, 'callback'])->whereIn('provider', ['google', 'facebook'])->name('oauth.callback');
+// Meta data-deletion callback (CSRF-exempt — Facebook POSTs a signed_request) + its status page.
+Route::post('data-deletion/facebook', [OAuthController::class, 'facebookDataDeletion'])->name('oauth.facebook.data-deletion');
+Route::get('data-deletion/facebook/status', [OAuthController::class, 'facebookDataDeletionStatus'])->name('oauth.facebook.data-deletion.status');
 
 // Public playlist serving endpoints (keyed by ?key=<cipher>). No .php extension so
 // the Laravel router handles them instead of nginx trying to exec a file on disk.

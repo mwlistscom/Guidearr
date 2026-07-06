@@ -17,6 +17,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin.password' => \App\Http\Middleware\EnsureAdminPasswordChanged::class,
         ]);
 
+        // Facebook posts its data-deletion signed_request server-to-server (no session/CSRF token);
+        // the request is authenticated by the signed_request HMAC instead.
+        $middleware->validateCsrfTokens(except: ['data-deletion/facebook']);
+
         // Honor X-Forwarded-* from a TLS-terminating reverse proxy (HAProxy/Traefik/Caddy/nginx).
         // When the headers are absent (direct access) the real connection is used, so the app
         // works the same way whether it's reached directly on :7979 or via a proxy — no switch.
