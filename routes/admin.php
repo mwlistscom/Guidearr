@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\FeedBrowseController;
 use App\Http\Controllers\Admin\LegalController;
 use App\Http\Controllers\Admin\LogController;
 use App\Http\Controllers\Admin\MaintenanceController;
+use App\Http\Controllers\Admin\SocialController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\BrandingController;
 use Illuminate\Support\Facades\Route;
@@ -68,6 +69,9 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::get('legal', [LegalController::class, 'edit'])->name('legal');
             Route::put('legal', [LegalController::class, 'update'])->name('legal.update');
             Route::delete('legal/{doc}', [LegalController::class, 'reset'])->whereIn('doc', ['privacy', 'terms', 'cookies'])->name('legal.reset');
+
+            Route::get('social', [SocialController::class, 'edit'])->name('social');
+            Route::put('social', [SocialController::class, 'update'])->name('social.update');
         });
     });
 });
