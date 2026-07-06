@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\FeedQueue;
 use App\Support\Settings;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -39,6 +40,7 @@ class FeedSupervise extends Command
 
         $this->installSignalHandlers();
         $this->info("feed:supervise started on {$host}");
+        Log::channel('worker')->info("Supervisor started on {$host} (worker limit ".Settings::workerLimit().').');
 
         while (! $this->stopping) {
             // Beat BEFORE the DB work, so a DB outage reads as "alive, DB down" not "dead".
@@ -53,12 +55,16 @@ class FeedSupervise extends Command
                 $queued = FeedQueue::where('state', 'queued')->count();
 
                 $spawn = self::slotsToSpawn($limit, $active, $queued);
+                if ($spawn > 0) {
+                    Log::channel('worker')->info("Backlog {$queued} queued, {$active} running (limit {$limit}) — started {$spawn} worker(s).");
+                }
                 for ($i = 0; $i < $spawn; $i++) {
                     $this->spawn();
                 }
             } catch (Throwable $e) {
                 // A DB blip must never kill the supervisor; log, back off, keep looping.
                 $this->error('feed:supervise loop error: '.$e->getMessage());
+                Log::channel('worker')->error('Supervisor loop error: '.$e->getMessage());
                 report($e);
             }
 
@@ -67,6 +73,7 @@ class FeedSupervise extends Command
         }
 
         $this->info('feed:supervise stopping — draining workers…');
+        Log::channel('worker')->info('Supervisor stopping — draining '.count($this->pool).' worker(s).');
         $this->drain();
 
         return self::SUCCESS;
@@ -101,7 +108,9 @@ class FeedSupervise extends Command
             }
             if (! $process->isSuccessful()) {
                 $err = trim($process->getErrorOutput()) ?: trim($process->getOutput());
-                $this->warn('worker exited non-zero'.($err !== '' ? ': '.strtok($err, "\n") : '.'));
+                $msg = 'worker exited non-zero'.($err !== '' ? ': '.strtok($err, "\n") : '.');
+                $this->warn($msg);
+                Log::channel('worker')->warning($msg);
             }
             unset($this->pool[$k]);
         }
