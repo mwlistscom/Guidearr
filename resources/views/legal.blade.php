@@ -48,6 +48,7 @@
             <a href="{{ route('legal.privacy') }}">Privacy</a>
             <a href="{{ route('legal.terms') }}">Terms</a>
             <a href="{{ route('legal.cookies') }}">Cookies</a>
+            <a href="{{ route('legal.data-deletion') }}">Data deletion</a>
             <a class="back" href="{{ $back }}">&larr; Back</a>
         </div>
     </div>

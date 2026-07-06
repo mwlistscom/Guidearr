@@ -24,11 +24,9 @@ class LegalController extends Controller
 
     public function update(Request $request)
     {
-        $request->validate([
-            'privacy' => ['nullable', 'string', 'max:100000'],
-            'terms' => ['nullable', 'string', 'max:100000'],
-            'cookies' => ['nullable', 'string', 'max:100000'],
-        ]);
+        $request->validate(
+            array_fill_keys(LegalDocs::slugs(), ['nullable', 'string', 'max:100000'])
+        );
 
         // Save only the doc(s) actually submitted, so a single-doc form never wipes the others.
         $saved = null;

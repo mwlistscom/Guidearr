@@ -102,6 +102,7 @@ class SocialConfig
             'google' => "{$base}/auth/google/callback",
             'facebook' => "{$base}/auth/facebook/callback",
             'facebook_data_deletion' => "{$base}/data-deletion/facebook",
+            'data_deletion_instructions' => "{$base}/data-deletion",
             'privacy' => "{$base}/privacy",
         ];
     }

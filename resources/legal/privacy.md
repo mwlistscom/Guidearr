@@ -41,6 +41,8 @@ We keep your account data for as long as your account exists. Security logs and 
 
 If you are in the EU/EEA or UK you have the right to **access**, **correct**, **erase**, **restrict**, **object to**, and **port** your personal data, and to **withdraw consent** where processing is based on consent. You can delete your account and its data yourself from your account settings, or contact us to exercise any of these rights. You also have the right to lodge a complaint with your local data-protection supervisory authority.
 
+**Deleting your data.** See our [Data Deletion](/data-deletion) page for step-by-step instructions on deleting your account, disconnecting a linked Google/Facebook login, and requesting deletion of data we obtained from those providers.
+
 ## Changes
 
 We may update this policy from time to time; the "last updated" note above reflects the current version.

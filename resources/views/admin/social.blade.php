@@ -95,8 +95,13 @@
                         <li>Facebook Login → Settings → add this <strong>Valid OAuth Redirect URI</strong>:
                             <div class="url-row"><code>{{ $urls['facebook'] }}</code><button type="button" class="copy-btn" data-copy="{{ $urls['facebook'] }}">Copy</button></div>
                         </li>
-                        <li>App Settings → set the <strong>Data Deletion Request URL</strong> and <strong>Privacy Policy URL</strong>:
+                        <li>App Settings → Basic → <strong>User Data Deletion</strong>. Choose one option:
+                            <div style="margin:.3rem 0 .1rem">• <em>Data Deletion Callback URL</em> (automatic — recommended):</div>
                             <div class="url-row"><code>{{ $urls['facebook_data_deletion'] }}</code><button type="button" class="copy-btn" data-copy="{{ $urls['facebook_data_deletion'] }}">Copy</button></div>
+                            <div style="margin:.3rem 0 .1rem">• <em>or Data Deletion Instructions URL</em> (a help page):</div>
+                            <div class="url-row"><code>{{ $urls['data_deletion_instructions'] }}</code><button type="button" class="copy-btn" data-copy="{{ $urls['data_deletion_instructions'] }}">Copy</button></div>
+                        </li>
+                        <li>Set the <strong>Privacy Policy URL</strong>:
                             <div class="url-row"><code>{{ $urls['privacy'] }}</code><button type="button" class="copy-btn" data-copy="{{ $urls['privacy'] }}">Copy</button></div>
                         </li>
                         <li>Paste the <strong>App ID</strong> and <strong>App secret</strong> above, tick <em>Enable</em>, and Save.</li>
