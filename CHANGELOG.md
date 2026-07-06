@@ -2,8 +2,32 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6 and v1.22.7. Intermediate entries
-> (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7 and v1.22.8. Intermediate
+> entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.22.8 — Legal pages, email verification & log tooling · 2026-07-06
+
+**Added**
+- **Editable legal pages.** Public `/privacy`, `/terms` and `/cookies`, rendered from Markdown and
+  editable in **Admin → Legal** (stored in the settings JSON store, with shipped defaults and a
+  per-doc "reset to default"). Footer links on the landing and sign-in/registration pages. The
+  default privacy policy includes a Google/Facebook sign-in section for the planned social-login
+  release. Raw HTML in the source is stripped on render.
+- **Email verification by code.** Sign-up email verification now uses a six-digit code (with a
+  resend cooldown) instead of a link, plus an admin **Send test email** action on the Environment
+  page to check SMTP settings before saving.
+
+**Fixed**
+- The Environment page's **Send test email** button no longer disappears when `.env` has no
+  `MAIL_PASSWORD` row yet — you configure mail there, so the button is always available.
+
+**Changed**
+- The downloadable **log bundle** now also includes rotated siblings (`nginx-access.log.1`,
+  `nginx-error.log.2.gz`, …) within the retention window, so a support bundle keeps the full
+  recent history even right after a rotation. The viewer already lists every live `*.log`
+  (`laravel`, `nginx-access`, `nginx-error`).
 
 ---
 
