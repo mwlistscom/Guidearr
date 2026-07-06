@@ -159,4 +159,12 @@ class SocialLoginTest extends TestCase
         $this->postJson('/data-deletion/facebook', ['signed_request' => "wrongsig.{$payload}"])
             ->assertStatus(400);
     }
+
+    public function test_facebook_data_deletion_get_returns_a_friendly_explainer(): void
+    {
+        $this->get('/data-deletion/facebook')
+            ->assertOk()
+            ->assertSee('callback', false)
+            ->assertSee('/data-deletion', false);
+    }
 }

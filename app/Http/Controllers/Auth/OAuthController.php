@@ -157,6 +157,17 @@ class OAuthController extends Controller
         ]);
     }
 
+    /** Friendly GET response so opening the callback URL in a browser doesn't look broken. */
+    public function facebookDataDeletionInfo()
+    {
+        return response(
+            "This is the Facebook data-deletion callback endpoint. Facebook's servers send a POST here "
+            ."when a user removes the app — there's nothing to view in a browser.\n\n"
+            .'For human-readable instructions on deleting your data, see '.url('/data-deletion')."\n",
+            200
+        )->header('Content-Type', 'text/plain');
+    }
+
     /** Public status page Facebook links the user to after a deletion request. */
     public function facebookDataDeletionStatus(Request $request)
     {

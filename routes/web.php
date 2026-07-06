@@ -32,8 +32,10 @@ Route::get('data-deletion', [LegalController::class, 'show'])->defaults('doc', '
 // Social sign-in (Google / Facebook via Socialite). Buttons appear only when a provider is configured.
 Route::get('auth/{provider}/redirect', [OAuthController::class, 'redirect'])->whereIn('provider', ['google', 'facebook'])->name('oauth.redirect');
 Route::get('auth/{provider}/callback', [OAuthController::class, 'callback'])->whereIn('provider', ['google', 'facebook'])->name('oauth.callback');
-// Meta data-deletion callback (CSRF-exempt — Facebook POSTs a signed_request) + its status page.
+// Meta data-deletion callback (CSRF-exempt — Facebook POSTs a signed_request) + a browser-friendly
+// GET explainer + its status page.
 Route::post('data-deletion/facebook', [OAuthController::class, 'facebookDataDeletion'])->name('oauth.facebook.data-deletion');
+Route::get('data-deletion/facebook', [OAuthController::class, 'facebookDataDeletionInfo'])->name('oauth.facebook.data-deletion.info');
 Route::get('data-deletion/facebook/status', [OAuthController::class, 'facebookDataDeletionStatus'])->name('oauth.facebook.data-deletion.status');
 
 // Public playlist serving endpoints (keyed by ?key=<cipher>). No .php extension so
