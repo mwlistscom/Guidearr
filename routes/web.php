@@ -27,6 +27,7 @@ Route::get('license', function (Request $request) {
 Route::get('privacy', [LegalController::class, 'show'])->defaults('doc', 'privacy')->name('legal.privacy');
 Route::get('terms', [LegalController::class, 'show'])->defaults('doc', 'terms')->name('legal.terms');
 Route::get('cookies', [LegalController::class, 'show'])->defaults('doc', 'cookies')->name('legal.cookies');
+Route::get('data-deletion', [LegalController::class, 'show'])->defaults('doc', 'data-deletion')->name('legal.data-deletion');
 
 // Social sign-in (Google / Facebook via Socialite). Buttons appear only when a provider is configured.
 Route::get('auth/{provider}/redirect', [OAuthController::class, 'redirect'])->whereIn('provider', ['google', 'facebook'])->name('oauth.redirect');

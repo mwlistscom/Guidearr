@@ -17,6 +17,7 @@ class LegalDocs
         'privacy' => ['title' => 'Privacy Policy', 'key' => 'legal_privacy'],
         'terms' => ['title' => 'Terms of Service', 'key' => 'legal_terms'],
         'cookies' => ['title' => 'Cookie Policy', 'key' => 'legal_cookies'],
+        'data-deletion' => ['title' => 'Data Deletion', 'key' => 'legal_data_deletion'],
     ];
 
     public static function exists(string $slug): bool

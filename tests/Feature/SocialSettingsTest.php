@@ -75,7 +75,8 @@ class SocialSettingsTest extends TestCase
             ->assertOk()
             ->assertSee('Enable Google sign-in')
             ->assertSee('/auth/google/callback')
-            ->assertSee('/data-deletion/facebook');
+            ->assertSee('/data-deletion/facebook')
+            ->assertSee('Data Deletion Instructions URL'); // both Meta options shown
     }
 
     public function test_page_requires_admin(): void

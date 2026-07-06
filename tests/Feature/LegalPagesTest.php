@@ -32,6 +32,9 @@ class LegalPagesTest extends TestCase
             ->assertSee('Signing in with Google or Facebook');
         $this->get('/terms')->assertOk()->assertSee('Terms of Service');
         $this->get('/cookies')->assertOk()->assertSee('Cookie Policy');
+        $this->get('/data-deletion')->assertOk()
+            ->assertSee('Data Deletion')
+            ->assertSee('Delete your entire account');
     }
 
     public function test_known_slugs_only(): void
