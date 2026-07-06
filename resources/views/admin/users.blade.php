@@ -20,6 +20,13 @@
     .addbtn { background:var(--accent); color:#1a1205; font-weight:700; border:none; border-radius:.5rem;
         padding:.5rem .9rem; text-decoration:none; white-space:nowrap; }
     .addbtn:hover { filter:brightness(1.1); }
+    /* Small provider badge in the Role column marking a linked social account. */
+    .prov-badge { display:inline-flex; align-items:center; justify-content:center; width:1.05rem; height:1.05rem;
+        border-radius:50%; font-size:.6rem; font-weight:700; color:#fff; margin-left:.3rem; line-height:1;
+        vertical-align:middle; }
+    .prov-badge.google { background:#4285f4; }
+    .prov-badge.facebook { background:#1877f2; }
+    td.role-cell { white-space:nowrap; }
 </style>
 
 <table id="users-table">
@@ -34,7 +41,7 @@
                 <td>{{ $u->name }}</td>
                 <td>{{ $u->email }}</td>
                 <td><span class="badge {{ $enabled ? 'active' : 'banned' }}">{{ $enabled ? 'Enabled' : 'Banned' }}</span></td>
-                <td>{{ $u->is_admin ? 'admin' : 'user' }}</td>
+                <td class="role-cell">{{ $u->is_admin ? 'admin' : 'user' }}@foreach ($u->socialAccounts->pluck('provider')->unique() as $prov)@if ($prov === 'google')<span class="prov-badge google" title="Linked Google account">G</span>@elseif ($prov === 'facebook')<span class="prov-badge facebook" title="Linked Facebook account">F</span>@endif@endforeach</td>
                 <td>{{ $u->email_verified_at ? '✓' : '—' }}</td>
                 <td class="actions">
                     <a class="icon" href="{{ route('admin.users.edit', $u) }}" title="Edit">

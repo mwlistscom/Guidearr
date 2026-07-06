@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
@@ -11,7 +12,7 @@ class UserController extends Controller
 {
     public function index()
     {
-        return view('admin.users', ['users' => User::orderByDesc('id')->get()]);
+        return view('admin.users', ['users' => User::with('socialAccounts')->orderByDesc('id')->get()]);
     }
 
     public function create()
@@ -23,21 +24,21 @@ class UserController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name'     => ['required', 'string', 'max:255'],
-            'email'    => ['required', 'email', 'max:255', Rule::unique('users')],
-            'role'     => ['required', Rule::in(['user', 'admin'])],
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', Rule::unique('users')],
+            'role' => ['required', Rule::in(['user', 'admin'])],
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
 
-        $user = new User();
+        $user = new User;
         $user->forceFill([
-            'name'                 => $validated['name'],
-            'email'                => $validated['email'],
-            'password'             => bcrypt($validated['password']),
-            'is_admin'             => $validated['role'] === 'admin',
-            'status'               => 'active',
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => bcrypt($validated['password']),
+            'is_admin' => $validated['role'] === 'admin',
+            'status' => 'active',
             'must_change_password' => false,
-            'email_verified_at'    => now(), // manual account: skip the email-verification step entirely
+            'email_verified_at' => now(), // manual account: skip the email-verification step entirely
         ])->save();
 
         return redirect()->route('admin.users')->with('status', "{$user->email} created.");
@@ -51,10 +52,10 @@ class UserController extends Controller
     public function update(User $user, Request $request)
     {
         $validated = $request->validate([
-            'name'     => ['required', 'string', 'max:255'],
-            'email'    => ['required', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
-            'role'     => ['required', Rule::in(['user', 'admin'])],
-            'status'   => ['required', Rule::in(['active', 'banned'])],
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
+            'role' => ['required', Rule::in(['user', 'admin'])],
+            'status' => ['required', Rule::in(['active', 'banned'])],
             'verified' => ['required', Rule::in(['verified', 'unverified'])],
             'password' => ['nullable', 'confirmed', Password::defaults()],
         ]);
@@ -73,10 +74,10 @@ class UserController extends Controller
         }
 
         $attrs = [
-            'name'     => $validated['name'],
-            'email'    => $validated['email'],
+            'name' => $validated['name'],
+            'email' => $validated['email'],
             'is_admin' => $validated['role'] === 'admin',
-            'status'   => $validated['status'],
+            'status' => $validated['status'],
             // keep the original timestamp if already verified; stamp now() when newly verified
             'email_verified_at' => $validated['verified'] === 'verified'
                 ? ($user->email_verified_at ?? now())
@@ -129,6 +130,7 @@ class UserController extends Controller
             return back()->withErrors(['user' => 'Cannot delete the last admin.']);
         }
         $user->delete();
+
         return back()->with('status', 'User deleted.');
     }
 }

@@ -75,4 +75,25 @@ class AdminUserCreateTest extends TestCase
 
         $this->actingAs($user)->get(route('admin.users.create'))->assertRedirect(route('admin.login'));
     }
+
+    public function test_users_list_shows_provider_badges_for_linked_social_accounts(): void
+    {
+        $admin = $this->admin();
+
+        $google = User::factory()->create(['email' => 'g@example.com']);
+        $google->socialAccounts()->create(['provider' => 'google', 'provider_id' => 'gid-1']);
+
+        $facebook = User::factory()->create(['email' => 'f@example.com']);
+        $facebook->socialAccounts()->create(['provider' => 'facebook', 'provider_id' => 'fid-1']);
+
+        $plain = User::factory()->create(['email' => 'p@example.com']);
+
+        $html = $this->actingAs($admin)->get(route('admin.users'))->assertOk()->getContent();
+
+        // Each linked provider gets its lettered badge; the plain user gets neither.
+        $this->assertStringContainsString('prov-badge google', $html);
+        $this->assertStringContainsString('prov-badge facebook', $html);
+        $this->assertSame(1, substr_count($html, 'prov-badge google'));   // only the google user
+        $this->assertSame(1, substr_count($html, 'prov-badge facebook')); // only the facebook user
+    }
 }
