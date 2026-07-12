@@ -18,6 +18,7 @@ use PDO;
 class PlaylistStore
 {
     private const SCHEMA_VERSION = 1;
+
     private const STEP = 10.0;
 
     private PDO $db;
@@ -30,7 +31,7 @@ class PlaylistStore
         }
         @chmod($dir, 0777);
         $path = self::path($playlistId);
-        $this->db = new PDO('sqlite:' . $path);
+        $this->db = new PDO('sqlite:'.$path);
         $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
         @chmod($path, 0666);
         $this->migrate();
@@ -38,7 +39,7 @@ class PlaylistStore
 
     public static function path(int $id): string
     {
-        return storage_path('app/playlists/playlist_' . $id . '.sqlite');
+        return storage_path('app/playlists/playlist_'.$id.'.sqlite');
     }
 
     public static function existsFor(int $id): bool
@@ -70,16 +71,25 @@ class PlaylistStore
         $this->db->exec('CREATE UNIQUE INDEX IF NOT EXISTS pc_provchan ON playlist_channels(provider_id, channel_id) WHERE provider_id > 0');
         $this->db->exec('CREATE INDEX IF NOT EXISTS pc_group ON playlist_channels(group_title)');
         $this->db->exec('CREATE INDEX IF NOT EXISTS pc_provider ON playlist_channels(provider_id)');
-        $this->db->exec('PRAGMA user_version = ' . self::SCHEMA_VERSION);
+        $this->db->exec('PRAGMA user_version = '.self::SCHEMA_VERSION);
     }
 
-    public function begin(): void { $this->db->beginTransaction(); }
-    public function commit(): void { if ($this->db->inTransaction()) { $this->db->commit(); } }
+    public function begin(): void
+    {
+        $this->db->beginTransaction();
+    }
+
+    public function commit(): void
+    {
+        if ($this->db->inTransaction()) {
+            $this->db->commit();
+        }
+    }
 
     public function counts(): array
     {
         return [
-            'groups'   => (int) $this->db->query('SELECT COUNT(*) FROM playlist_groups WHERE deleted=0')->fetchColumn(),
+            'groups' => (int) $this->db->query('SELECT COUNT(*) FROM playlist_groups WHERE deleted=0')->fetchColumn(),
             'channels' => (int) $this->db->query('SELECT COUNT(*) FROM playlist_channels WHERE deleted=0')->fetchColumn(),
         ];
     }
@@ -133,7 +143,11 @@ class PlaylistStore
             $globalMax += self::STEP;
             $cIns->execute([':p' => $providerId, ':c' => (int) $row['id'], ':g' => $g, ':o' => $globalMax]);
             $channelsAdded += $cIns->rowCount() > 0 ? 1 : 0;
-            if (++$n % 2000 === 0) { $this->commit(); usleep(20000); $this->begin(); }
+            if (++$n % 2000 === 0) {
+                $this->commit();
+                usleep(20000);
+                $this->begin();
+            }
         });
         $this->commit();
 
@@ -147,8 +161,137 @@ class PlaylistStore
         if ($missing) {
             $this->begin();
             $o = $this->nextGroupOrder();
-            foreach ($missing as $t) { $gIns->execute([':t' => $t, ':o' => $o]); $o += self::STEP; $groupsAdded++; }
+            foreach ($missing as $t) {
+                $gIns->execute([':t' => $t, ':o' => $o]);
+                $o += self::STEP;
+                $groupsAdded++;
+            }
             $this->commit();
+        }
+
+        return ['groups_added' => $groupsAdded, 'channels_added' => $channelsAdded];
+    }
+
+    /**
+     * Bring an existing playlist up to date with a freshly-refreshed provider: insert the channels
+     * that appeared in the provider but are not yet pointered here. Unlike seedFromProvider (which
+     * appends every new channel at the global end), each new channel is placed at the END of its own
+     * group's block — right after that group's current last channel — so it lands "in the group".
+     * A brand-new group (one with no channels in the playlist yet) is appended, with its channels, to
+     * the very end of the flat order.
+     *
+     * Existing channels keep their relative order, renames, group flags and enabled/disabled state;
+     * deliberately soft-deleted channels are NOT resurrected (their pointer row still exists, so the
+     * unique index skips them). Nothing is removed here — vanished pointers are handled elsewhere.
+     *
+     * @return array{groups_added:int, channels_added:int}
+     */
+    public function insertNewFromProvider(int $providerId, ProviderStore $ps): array
+    {
+        // Channels of this provider already pointered here (incl. soft-deleted — do not re-add).
+        $stmt = $this->db->prepare('SELECT channel_id FROM playlist_channels WHERE provider_id = ?');
+        $stmt->execute([$providerId]);
+        $have = array_flip(array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN)));
+
+        // Genuinely-new provider channels, in provider order (group_title, id).
+        $newRows = [];
+        $ps->streamForSeed(function (array $r) use (&$newRows, $have) {
+            if (! isset($have[(int) $r['id']])) {
+                $newRows[] = ['id' => (int) $r['id'], 'group' => ($r['group_title'] ?: '[Dummy]')];
+            }
+        });
+        if (! $newRows) {
+            return ['groups_added' => 0, 'channels_added' => 0];
+        }
+
+        // Ensure every group a new channel references exists as a pane, appended at the end.
+        $existingGroups = array_flip($this->db->query('SELECT group_title FROM playlist_groups')->fetchAll(PDO::FETCH_COLUMN));
+        $groupsAdded = 0;
+        $this->begin();
+        $gIns = $this->db->prepare('INSERT OR IGNORE INTO playlist_groups (group_title, position_order) VALUES (:t,:o)');
+        $gOrder = $this->nextGroupOrder();
+        foreach ($newRows as $r) {
+            if (! isset($existingGroups[$r['group']])) {
+                $gIns->execute([':t' => $r['group'], ':o' => $gOrder]);
+                $existingGroups[$r['group']] = true;
+                $gOrder += self::STEP;
+                $groupsAdded++;
+            }
+        }
+        $this->commit();
+
+        // Current flat order of existing (non-deleted) channels — the sequence new rows splice into.
+        $base = $this->db->query('SELECT id, group_title gt FROM playlist_channels WHERE deleted = 0 ORDER BY position_order, id')->fetchAll(PDO::FETCH_ASSOC);
+        $presentGroups = [];
+        foreach ($base as $b) {
+            $presentGroups[(string) $b['gt']] = true;
+        }
+
+        // Insert the new pointer rows and, in the SAME transaction, renumber the whole flat order so
+        // each new channel lands inside its group's block (or, for a new group, at the very end).
+        $this->begin();
+        try {
+            $cIns = $this->db->prepare(
+                'INSERT OR IGNORE INTO playlist_channels (provider_id, channel_id, group_title, position_order)
+                 VALUES (:p,:c,:g,0)'
+            );
+            $byGroup = [];    // existing group => [new pk, …] placed after that group's last channel
+            $endBucket = [];  // channels of a brand-new group => appended at the very end
+            $channelsAdded = 0;
+            foreach ($newRows as $r) {
+                $cIns->execute([':p' => $providerId, ':c' => $r['id'], ':g' => $r['group']]);
+                if ($cIns->rowCount() < 1) {
+                    continue; // already present (raced) — leave it be
+                }
+                $pk = (int) $this->db->lastInsertId();
+                if (isset($presentGroups[$r['group']])) {
+                    $byGroup[$r['group']][] = $pk;
+                } else {
+                    $endBucket[] = $pk;
+                }
+                $channelsAdded++;
+            }
+
+            if ($channelsAdded < 1) {
+                $this->commit();
+
+                return ['groups_added' => $groupsAdded, 'channels_added' => 0];
+            }
+
+            // Index of each present group's LAST channel in the base sequence.
+            $lastIndexOfGroup = [];
+            foreach ($base as $i => $b) {
+                $lastIndexOfGroup[(string) $b['gt']] = $i;
+            }
+
+            // Rebuild the flat order: base order preserved, new channels spliced in after their
+            // group's last channel; brand-new-group channels tacked on at the end (provider order).
+            $newOrder = [];
+            foreach ($base as $i => $b) {
+                $newOrder[] = (int) $b['id'];
+                $g = (string) $b['gt'];
+                if (isset($byGroup[$g]) && $lastIndexOfGroup[$g] === $i) {
+                    foreach ($byGroup[$g] as $pk) {
+                        $newOrder[] = $pk;
+                    }
+                }
+            }
+            foreach ($endBucket as $pk) {
+                $newOrder[] = $pk;
+            }
+
+            $upd = $this->db->prepare('UPDATE playlist_channels SET position_order = :p WHERE id = :id');
+            $pos = self::STEP;
+            foreach ($newOrder as $cid) {
+                $upd->execute([':p' => $pos, ':id' => $cid]);
+                $pos += self::STEP;
+            }
+            $this->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
         }
 
         return ['groups_added' => $groupsAdded, 'channels_added' => $channelsAdded];
@@ -178,13 +321,15 @@ class PlaylistStore
             return 0;
         }
         $alive = $ps->existingIds($have);          // subset still present in the provider store
-        $dead  = array_values(array_diff($have, $alive));
+        $dead = array_values(array_diff($have, $alive));
         if (! $dead) {
             return 0;
         }
         $this->begin();
         $del = $this->db->prepare('DELETE FROM playlist_channels WHERE provider_id = ? AND channel_id = ?');
-        foreach ($dead as $cid) { $del->execute([$providerId, $cid]); }
+        foreach ($dead as $cid) {
+            $del->execute([$providerId, $cid]);
+        }
         $this->commit();
 
         return count($dead);
@@ -205,11 +350,15 @@ class PlaylistStore
     /** Set a group flag (enabled|deleted) AND cascade the same flag to every channel in the group. */
     public function setGroupFlagCascade(int $id, string $field, bool $on): bool
     {
-        if (! in_array($field, ['enabled', 'deleted'], true)) { return false; }
+        if (! in_array($field, ['enabled', 'deleted'], true)) {
+            return false;
+        }
         $cur = $this->db->prepare('SELECT group_title FROM playlist_groups WHERE id = ?');
         $cur->execute([$id]);
         $title = $cur->fetchColumn();
-        if ($title === false) { return false; }
+        if ($title === false) {
+            return false;
+        }
 
         $this->begin();
         $this->db->prepare("UPDATE playlist_groups SET {$field} = ? WHERE id = ?")->execute([$on ? 1 : 0, $id]);
@@ -223,11 +372,14 @@ class PlaylistStore
     public function addGroup(string $title): int
     {
         $title = trim($title);
-        if ($title === '') { return 0; }
+        if ($title === '') {
+            return 0;
+        }
         $ex = $this->db->prepare('SELECT id FROM playlist_groups WHERE group_title = ?');
         $ex->execute([$title]);
         if ($id = $ex->fetchColumn()) {
             $this->db->prepare('UPDATE playlist_groups SET deleted = 0 WHERE id = ?')->execute([$id]); // un-delete if it was hidden
+
             return (int) $id;
         }
         $o = $this->nextGroupOrder();
@@ -241,15 +393,20 @@ class PlaylistStore
     private function channelWhere(?string $search, ?string $group, string $mode): array
     {
         $w = [];
-        if ($mode === 'hide') { $w[] = 'c.deleted = 0'; }   // 'all' = no deleted filter
+        if ($mode === 'hide') {
+            $w[] = 'c.deleted = 0';
+        }   // 'all' = no deleted filter
         $b = [];
-        if ($group !== null && $group !== '') { $w[] = 'c.group_title = :g'; $b[':g'] = $group; }
+        if ($group !== null && $group !== '') {
+            $w[] = 'c.group_title = :g';
+            $b[':g'] = $group;
+        }
         if ($search !== null && $search !== '') {
             $w[] = '(c.name LIKE :s OR c.group_title LIKE :s OR c.tvg_id LIKE :s OR c.tvg_name LIKE :s)';
-            $b[':s'] = '%' . $search . '%';
+            $b[':s'] = '%'.$search.'%';
         }
 
-        return [$w ? ('WHERE ' . implode(' AND ', $w)) : '', $b];
+        return [$w ? ('WHERE '.implode(' AND ', $w)) : '', $b];
     }
 
     public function channelCount(?string $search = null, ?string $group = null, string $mode = 'hide'): int
@@ -271,7 +428,9 @@ class PlaylistStore
              FROM playlist_channels c LEFT JOIN playlist_groups g ON g.group_title = c.group_title
              $where ORDER BY c.position_order, c.id LIMIT :lim OFFSET :off"
         );
-        foreach ($bind as $k => $v) { $stmt->bindValue($k, $v); }
+        foreach ($bind as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
         $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
         $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
         $stmt->execute();
@@ -289,12 +448,12 @@ class PlaylistStore
     public function effectiveChannelPage(?string $search, ?string $group, string $mode, int $page, int $size): array
     {
         $search = ($search !== null && trim($search) !== '') ? trim($search) : null;
-        $page   = max(1, $page);
+        $page = max(1, $page);
 
         // No search: keep the efficient DB-level pagination and hydrate just this page.
         if ($search === null) {
             $total = $this->channelCount(null, $group, $mode);
-            $rows  = $this->channels($size, ($page - 1) * $size, null, $group, $mode);
+            $rows = $this->channels($size, ($page - 1) * $size, null, $group, $mode);
 
             return ['total' => $total, 'rows' => $this->hydrateChannelRows($rows, ($page - 1) * $size)];
         }
@@ -302,7 +461,7 @@ class PlaylistStore
         // Search: the matchable text is hydrated, so pull the whole group/mode set,
         // hydrate it, then filter on the effective values and paginate in PHP.
         $rows = $this->channels(1000000, 0, null, $group, $mode);
-        $all  = $this->hydrateChannelRows($rows, 0);
+        $all = $this->hydrateChannelRows($rows, 0);
 
         $hits = array_values(array_filter($all, function (array $r) use ($search): bool {
             foreach (['name', 'tvg_name', 'tvg_id', 'group_title'] as $k) {
@@ -349,20 +508,20 @@ class PlaylistStore
             };
             $name = (string) $pick('name');
             $out[] = [
-                'id'          => (int) $r['id'],
-                'row'         => $base + $i + 1,
+                'id' => (int) $r['id'],
+                'row' => $base + $i + 1,
                 'provider_id' => $pid,
-                'channel_id'  => (int) $r['channel_id'],
-                'manual'      => $pid === 0,
-                'missing'     => $pid > 0 && $src === null,
-                'name'        => $name !== '' ? $name : ($pid > 0 && $src === null ? '(missing channel)' : ''),
-                'tvg_name'    => (string) $pick('tvg_name'),
-                'tvg_id'      => (string) $pick('tvg_id'),
-                'tvg_logo'    => (string) $pick('tvg_logo'),
-                'url'         => (string) $pick('url'),
+                'channel_id' => (int) $r['channel_id'],
+                'manual' => $pid === 0,
+                'missing' => $pid > 0 && $src === null,
+                'name' => $name !== '' ? $name : ($pid > 0 && $src === null ? '(missing channel)' : ''),
+                'tvg_name' => (string) $pick('tvg_name'),
+                'tvg_id' => (string) $pick('tvg_id'),
+                'tvg_logo' => (string) $pick('tvg_logo'),
+                'url' => (string) $pick('url'),
                 'group_title' => (string) ($r['group_title'] ?? ''),
-                'enabled'     => (bool) $r['enabled'],
-                'deleted'     => (bool) $r['deleted'],
+                'enabled' => (bool) $r['enabled'],
+                'deleted' => (bool) $r['deleted'],
             ];
         }
 
@@ -373,11 +532,11 @@ class PlaylistStore
     public function allForServe(): array
     {
         $stmt = $this->db->query(
-            "SELECT c.id, c.provider_id, c.channel_id, c.group_title,
+            'SELECT c.id, c.provider_id, c.channel_id, c.group_title,
                     c.name, c.url, c.tvg_id, c.tvg_logo, c.tvg_name
              FROM playlist_channels c LEFT JOIN playlist_groups g ON g.group_title = c.group_title
              WHERE c.enabled = 1 AND c.deleted = 0
-             ORDER BY c.position_order, c.id"
+             ORDER BY c.position_order, c.id'
         );
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -390,7 +549,9 @@ class PlaylistStore
     {
         $exists = $this->db->prepare('SELECT 1 FROM playlist_channels WHERE id = ?');
         $exists->execute([$id]);
-        if ($exists->fetchColumn() === false) { return; }
+        if ($exists->fetchColumn() === false) {
+            return;
+        }
 
         // Other non-deleted channels in flat order (the moving row excluded). Group is left untouched,
         // so a channel can be placed anywhere in the list while keeping its own group label.
@@ -438,10 +599,14 @@ class PlaylistStore
 
         // Split into the moving block (in its current relative order) and the rest.
         $block = [];
-        $rest  = [];
+        $rest = [];
         foreach ($all as $cid) {
             $cid = (int) $cid;
-            if (isset($selected[$cid])) { $block[] = $cid; } else { $rest[] = $cid; }
+            if (isset($selected[$cid])) {
+                $block[] = $cid;
+            } else {
+                $rest[] = $cid;
+            }
         }
         if (! $block) {
             return 0;
@@ -487,14 +652,18 @@ class PlaylistStore
         $g = $this->db->prepare('SELECT group_title FROM playlist_groups WHERE id = ?');
         $g->execute([$id]);
         $title = $g->fetchColumn();
-        if ($title === false) { return; }
+        if ($title === false) {
+            return;
+        }
         $row = max(1, $row);
 
         // 1) Reorder the group pane so this group becomes the N-th group; capture its new pane rank.
         $others = $this->db->prepare('SELECT position_order po FROM playlist_groups WHERE id != ? AND deleted = 0 ORDER BY position_order, id');
         $others->execute([$id]);
         $paneRows = $others->fetchAll(PDO::FETCH_ASSOC);
-        if (! $paneRows) { return; }   // the only group — the block is already the whole list
+        if (! $paneRows) {
+            return;
+        }   // the only group — the block is already the whole list
 
         if ($row <= 1) {
             $newPos = (float) $paneRows[0]['po'] / 2.0;
@@ -514,27 +683,38 @@ class PlaylistStore
         $all = $this->db->query('SELECT id, group_title gt FROM playlist_channels WHERE deleted = 0 ORDER BY position_order, id')->fetchAll(PDO::FETCH_ASSOC);
 
         $block = [];
-        $rest  = [];
+        $rest = [];
         foreach ($all as $r) {
-            if ((string) $r['gt'] === (string) $title) { $block[] = (int) $r['id']; }
-            else { $rest[] = ['id' => (int) $r['id'], 'gt' => (string) $r['gt']]; }
+            if ((string) $r['gt'] === (string) $title) {
+                $block[] = (int) $r['id'];
+            } else {
+                $rest[] = ['id' => (int) $r['id'], 'gt' => (string) $r['gt']];
+            }
         }
-        if (! $block) { return; }
+        if (! $block) {
+            return;
+        }
 
         // Insert before the first remaining channel whose group ranks after this one in the pane.
         $insertPos = count($rest);
         foreach ($rest as $i => $r) {
             $rank = $paneMap[$r['gt']] ?? 1e12;   // orphan-group channels rank last
-            if ($rank > $newPos) { $insertPos = $i; break; }
+            if ($rank > $newPos) {
+                $insertPos = $i;
+                break;
+            }
         }
 
-        $restIds  = array_map(static fn ($r) => $r['id'], $rest);
+        $restIds = array_map(static fn ($r) => $r['id'], $rest);
         $newOrder = array_merge(array_slice($restIds, 0, $insertPos), $block, array_slice($restIds, $insertPos));
 
         $this->begin();
         $upd = $this->db->prepare('UPDATE playlist_channels SET position_order = ? WHERE id = ?');
         $pos = self::STEP;
-        foreach ($newOrder as $cid) { $upd->execute([$pos, $cid]); $pos += self::STEP; }
+        foreach ($newOrder as $cid) {
+            $upd->execute([$pos, $cid]);
+            $pos += self::STEP;
+        }
         $this->commit();
     }
 
@@ -542,13 +722,17 @@ class PlaylistStore
 
     public function setChannelFlag(int $id, string $field, bool $on): void
     {
-        if (! in_array($field, ['enabled', 'deleted'], true)) { return; }
+        if (! in_array($field, ['enabled', 'deleted'], true)) {
+            return;
+        }
         $this->db->prepare("UPDATE playlist_channels SET {$field} = ? WHERE id = ?")->execute([$on ? 1 : 0, $id]);
     }
 
     public function setGroupFlag(int $id, string $field, bool $on): void
     {
-        if (! in_array($field, ['enabled', 'deleted'], true)) { return; }
+        if (! in_array($field, ['enabled', 'deleted'], true)) {
+            return;
+        }
         $this->db->prepare("UPDATE playlist_groups SET {$field} = ? WHERE id = ?")->execute([$on ? 1 : 0, $id]);
     }
 
@@ -556,14 +740,20 @@ class PlaylistStore
     public function renameGroup(int $id, string $newTitle): bool
     {
         $newTitle = trim($newTitle);
-        if ($newTitle === '') { return false; }
+        if ($newTitle === '') {
+            return false;
+        }
         $cur = $this->db->prepare('SELECT group_title FROM playlist_groups WHERE id = ?');
         $cur->execute([$id]);
         $old = $cur->fetchColumn();
-        if ($old === false || $old === $newTitle) { return false; }
+        if ($old === false || $old === $newTitle) {
+            return false;
+        }
         $ex = $this->db->prepare('SELECT COUNT(*) FROM playlist_groups WHERE group_title = ? AND id != ?');
         $ex->execute([$newTitle, $id]);
-        if ((int) $ex->fetchColumn() > 0) { return false; }   // target title already used
+        if ((int) $ex->fetchColumn() > 0) {
+            return false;
+        }   // target title already used
 
         $this->begin();
         $this->db->prepare('UPDATE playlist_groups SET group_title = ? WHERE id = ?')->execute([$newTitle, $id]);
@@ -579,10 +769,15 @@ class PlaylistStore
         $set = [];
         $bind = [':id' => $id];
         foreach ($fields as $k => $v) {
-            if (in_array($k, $allowed, true)) { $set[] = "$k = :$k"; $bind[":$k"] = $v; }
+            if (in_array($k, $allowed, true)) {
+                $set[] = "$k = :$k";
+                $bind[":$k"] = $v;
+            }
         }
-        if (! $set) { return; }
-        $this->db->prepare('UPDATE playlist_channels SET ' . implode(',', $set) . ' WHERE id = :id')->execute($bind);
+        if (! $set) {
+            return;
+        }
+        $this->db->prepare('UPDATE playlist_channels SET '.implode(',', $set).' WHERE id = :id')->execute($bind);
     }
 
     public function addManualChannel(array $c): int
@@ -616,7 +811,10 @@ class PlaylistStore
         $this->begin();
         $upd = $this->db->prepare('UPDATE playlist_groups SET position_order = ? WHERE id = ?');
         $pos = self::STEP;
-        foreach ($ids as $id) { $upd->execute([$pos, $id]); $pos += self::STEP; }
+        foreach ($ids as $id) {
+            $upd->execute([$pos, $id]);
+            $pos += self::STEP;
+        }
         $this->commit();
 
         return count($ids);
@@ -641,7 +839,11 @@ class PlaylistStore
         $upd = $this->db->prepare('UPDATE playlist_channels SET position_order = ? WHERE id = ?');
         $pos = self::STEP;
         $n = 0;
-        foreach ($ids as $id) { $upd->execute([$pos, $id]); $pos += self::STEP; $n++; }
+        foreach ($ids as $id) {
+            $upd->execute([$pos, $id]);
+            $pos += self::STEP;
+            $n++;
+        }
         $this->commit();
 
         return $n;

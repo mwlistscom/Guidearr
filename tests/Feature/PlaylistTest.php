@@ -124,4 +124,68 @@ class PlaylistTest extends TestCase { use RefreshDatabase;
     $this->assertFalse($pl->ensureStoreSeeded());                  // must NOT clobber it
     $this->assertSame(0,(new PlaylistStore($pl->id))->counts()['channels']);
   }
+
+  public function test_create_blocked_when_provider_still_updating(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u); // has channels, but…
+    \App\Models\FeedQueue::create(['msgid'=>'m1','user_id'=>$u->id,'provider_id'=>$p->id,'type'=>'xtream','state'=>'running']);
+    $res=$this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]]);
+    $res->assertStatus(422);
+    $this->assertStringContainsString('still updating',$res->json('message'));
+    $this->assertSame(0,Playlist::count());
+  }
+
+  public function test_create_blocked_when_provider_has_no_channels(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=Provider::create(['user_id'=>$u->id,'name'=>'Empty','type'=>'xtream','url'=>'http://h','enabled'=>true,'refresh_hour'=>2]);
+    $res=$this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]]);
+    $res->assertStatus(422);
+    $this->assertStringContainsString('no channels yet',$res->json('message'));
+    $this->assertSame(0,Playlist::count());
+  }
+
+  public function test_manual_playlist_allowed_with_no_providers(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $this->actingAs($u)->postJson('/playlists',['name'=>'Manual'])->assertOk();
+    $this->assertSame(1,Playlist::count());
+  }
+
+  public function test_refresh_inserts_new_channels_into_group_and_new_group_at_end(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u); // provider ids: US A=1,US B=2 (US-ENT); CA A=3,CA B=4,CA C=5 (CANADA)
+    $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
+    $pl=Playlist::first(); $st=new PlaylistStore($pl->id);
+    $ids=fn()=>array_map(fn($x)=>(int)$x['channel_id'],(new PlaylistStore($pl->id))->allForServe());
+    $this->assertSame([3,4,5,1,2],$ids()); // seed order = group_title, id
+    // provider refresh: a NEW channel in an existing group (US C=6) + a NEW group with a channel (Sport 1=7)
+    $ps=new ProviderStore($p->id); $ps->begin();
+    $ps->upsertChannel(['name'=>'US C','url'=>'http://h/6.ts','group'=>'US-ENT'],'v2');
+    $ps->upsertChannel(['name'=>'Sport 1','url'=>'http://h/7.ts','group'=>'SPORTS'],'v2');
+    $ps->commit();
+    $r=$st->insertNewFromProvider($p->id,$ps);
+    $this->assertSame(2,$r['channels_added']); $this->assertSame(1,$r['groups_added']);
+    // US C (6) joins the END of the US-ENT block (right after US B=2); the new group's Sport 1 (7) goes last
+    $this->assertSame([3,4,5,1,2,6,7],$ids());
+    // idempotent: a second refresh with no new provider channels changes nothing
+    $this->assertSame(0,(new PlaylistStore($pl->id))->insertNewFromProvider($p->id,$ps)['channels_added']);
+    // a soft-deleted channel is NOT re-added by a later refresh
+    (new PlaylistStore($pl->id))->setChannelFlag(1,'deleted',true);
+    $this->assertSame(0,(new PlaylistStore($pl->id))->insertNewFromProvider($p->id,$ps)['channels_added']);
+  }
+
+  public function test_backfill_adds_missing_channels_but_not_deleted_ones(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u); // 5 channels
+    $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
+    $pl=Playlist::first(); $st=new PlaylistStore($pl->id);
+    $this->assertSame(5,$st->counts()['channels']);
+    $st->setChannelFlag(1,'deleted',true);                          // user deliberately removes one -> 4 active
+    $this->assertSame(4,$st->counts()['channels']);
+    // provider later gains a 6th channel (or, equivalently, one that raced in late)
+    $ps=new ProviderStore($p->id); $ps->begin();
+    $ps->upsertChannel(['name'=>'US C','url'=>'http://h/9.ts','group'=>'US-ENT'],'v1'); $ps->commit();
+    \Illuminate\Support\Facades\Artisan::call('playlists:backfill',['ids'=>[$pl->id]]);
+    $c=(new PlaylistStore($pl->id))->counts()['channels'];
+    $this->assertSame(5,$c);                                        // 4 kept + 1 new added; the deleted one is NOT resurrected
+  }
 }

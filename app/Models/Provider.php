@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use App\Services\ProviderStore;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Provider extends Model
 {
@@ -19,14 +22,14 @@ class Provider extends Model
     protected function casts(): array
     {
         return [
-            'enabled'         => 'boolean',
-            'enhance_guide'   => 'boolean',
-            'myshift'         => 'integer',
-            'refresh_hour'    => 'integer',
-            'refresh_minute'  => 'integer',
+            'enabled' => 'boolean',
+            'enhance_guide' => 'boolean',
+            'myshift' => 'integer',
+            'refresh_hour' => 'integer',
+            'refresh_minute' => 'integer',
             'last_refresh_at' => 'datetime',
-            'last_touch_at'   => 'datetime',
-            'password'        => 'encrypted',
+            'last_touch_at' => 'datetime',
+            'password' => 'encrypted',
         ];
     }
 
@@ -48,13 +51,13 @@ class Provider extends Model
         // NOTE: a DB-level cascade (when a User is deleted) does NOT fire this event —
         // that path is handled by the purge queue snapshot in the User model.
         static::deleting(function (Provider $p) {
-            $path = \App\Services\ProviderStore::path($p->id);
+            $path = ProviderStore::path($p->id);
             foreach (['', '-wal', '-shm'] as $suffix) {
-                if (is_file($path . $suffix)) {
-                    @unlink($path . $suffix);
+                if (is_file($path.$suffix)) {
+                    @unlink($path.$suffix);
                 }
             }
-            \App\Models\FeedLog::where('provider_id', $p->id)->delete();
+            FeedLog::where('provider_id', $p->id)->delete();
         });
     }
 
@@ -63,9 +66,14 @@ class Provider extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function feedQueue(): \Illuminate\Database\Eloquent\Relations\HasOne
+    public function feedQueue(): HasOne
     {
         return $this->hasOne(FeedQueue::class);
+    }
+
+    public function playlists(): BelongsToMany
+    {
+        return $this->belongsToMany(Playlist::class, 'playlist_providers');
     }
 
     public function feedLogs(): HasMany
@@ -88,17 +96,17 @@ class Provider extends Model
     public function toGridArray(): array
     {
         return [
-            'id'              => $this->id,
-            'name'            => $this->name,
-            'url'             => $this->url,
-            'type'            => $this->type,
-            'enabled'         => (bool) $this->enabled,
-            'timeshift'       => $this->timeshift,
-            'myshift'         => $this->myshift,
-            'refresh_hour'    => $this->refresh_hour,
-            'last_status'     => $this->last_status,
+            'id' => $this->id,
+            'name' => $this->name,
+            'url' => $this->url,
+            'type' => $this->type,
+            'enabled' => (bool) $this->enabled,
+            'timeshift' => $this->timeshift,
+            'myshift' => $this->myshift,
+            'refresh_hour' => $this->refresh_hour,
+            'last_status' => $this->last_status,
             'last_refresh_at' => optional($this->last_refresh_at)->format('Y-m-d H:i:s'),
-            'last_touch_at'   => optional($this->last_touch_at)->format('Y-m-d H:i:s'),
+            'last_touch_at' => optional($this->last_touch_at)->format('Y-m-d H:i:s'),
         ];
     }
 }
