@@ -69,6 +69,7 @@
         &middot; <a href="{{ route('legal.privacy') }}" style="color:inherit">Privacy</a>
         &middot; <a href="{{ route('legal.terms') }}" style="color:inherit">Terms</a>
         &middot; <a href="{{ route('legal.cookies') }}" style="color:inherit">Cookies</a>
+        &middot; <a href="https://github.com/{{ config('guidearr.github_repo') }}" target="_blank" rel="noopener" style="color:inherit">Repository</a>
     </footer>
 </body>
 </html>
