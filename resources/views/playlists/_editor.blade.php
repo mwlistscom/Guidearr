@@ -13,6 +13,12 @@
        (and the table) ever wider in a fitColumns feedback loop — pin to 0 so the table
        stays inside its track and manages its own column widths. */
     .ple-split > div { min-width:0; }
+    /* full-screen editing: one pane fills the viewport, the other is hidden until you pop back down */
+    #pl-editor-pane.ple-fs { position:fixed; inset:0; z-index:800; margin:0 !important;
+        background:#0e0f13; padding:.9rem 1.1rem; overflow:auto; }
+    #pl-editor-pane.ple-fs .ple-split { grid-template-columns:1fr; }
+    #pl-editor-pane.ple-fs.fs-channels .ple-split > div:last-child { display:none; }
+    #pl-editor-pane.ple-fs.fs-groups .ple-split > div:first-child { display:none; }
     .ple-pane-filter { width:100%; box-sizing:border-box; background:#0e0f13; border:1px solid rgba(255,255,255,.10);
         border-bottom:none; border-radius:.6rem .6rem 0 0; color:#e6e7ea; padding:.42rem .6rem; font-size:.85rem; }
     .ple-split .tabulator { border-radius:0; }
@@ -69,7 +75,7 @@
     .ple-split .tabulator-footer .tabulator-page[disabled] { opacity:.4; }
     .ple-split .tabulator-row .tabulator-row-handle { color:#6b7280; }
     .ple-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none; align-items:flex-start;
-        justify-content:center; padding-top:8vh; z-index:70; }
+        justify-content:center; padding-top:8vh; z-index:1000; }
     .ple-overlay.show { display:flex; }
     .ple-modal { background:#1b1c20; border:1px solid rgba(255,255,255,.14); border-radius:.8rem; width:100%;
         max-width:26rem; padding:1.2rem; color:#e6e7ea; }
@@ -115,6 +121,7 @@
                 <button title="Show deleted (undelete)" id="ple-trash-toggle" onclick="GXPLE.toggleDeleted()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                 <span class="ple-spacer"></span>
                 <button title="Reindex channel order (10, 20, 30…)" onclick="GXPLE.reindex('channels')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M4 6h1v4M4 10h2M6 14H4l2 3v1H4"/></svg></button>
+                <button id="ple-fs-ch" title="Full screen channels" onclick="GXPLE.toggleFullscreen('channels')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
             </div>
         </div>
         <div>
@@ -126,6 +133,7 @@
                 <button title="Show deleted groups" id="ple-gtrash-toggle" onclick="GXPLE.toggleDeletedGroups()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
                 <span class="ple-spacer"></span>
                 <button title="Reindex group order (10, 20, 30…)" onclick="GXPLE.reindex('groups')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 6h11M10 12h11M10 18h11"/><path d="M4 6h1v4M4 10h2M6 14H4l2 3v1H4"/></svg></button>
+                <button id="ple-fs-gr" title="Full screen groups" onclick="GXPLE.toggleFullscreen('groups')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
             </div>
         </div>
     </div>
@@ -212,6 +220,7 @@ window.GXPLE = (function () {
     };
     const SIZE = 50;
     let plId = null, chTable = null, grTable = null, groupFilter = null, showDeleted = false, showDeletedGroups = false, gsearchTimer = null, searchTimer = null;
+    let fsMode = null;          // null | 'channels' | 'groups' — which pane is full-screen
     let moveKind = 'channel', moveId = null, editCid = null, editManual = false, plGroups = [];
     const selCh = new Set();    // selected channel ids for bulk move
     let selAnchorRow = null;    // last-clicked global row, for shift-range selection
@@ -237,9 +246,51 @@ window.GXPLE = (function () {
     }
 
     function close() {
+        if (fsMode) exitFullscreen();
         $('pl-editor-pane').hidden = true;
         if (chTable) { try { chTable.destroy(); } catch (e) {} chTable = null; }
         if (grTable) { try { grTable.destroy(); } catch (e) {} grTable = null; }
+    }
+
+    // ---- full-screen editing: expand one pane to fill the viewport; toggle again (or Esc) to pop back ----
+    function fsTableHeight() { return Math.max(240, window.innerHeight - 150) + 'px'; }
+    function updateFsButtons() {
+        const cb = $('ple-fs-ch'), gb = $('ple-fs-gr');
+        if (cb) { cb.classList.toggle('on', fsMode === 'channels'); cb.title = fsMode === 'channels' ? 'Exit full screen' : 'Full screen channels'; }
+        if (gb) { gb.classList.toggle('on', fsMode === 'groups'); gb.title = fsMode === 'groups' ? 'Exit full screen' : 'Full screen groups'; }
+    }
+    function toggleFullscreen(which) {
+        if (fsMode === which) { exitFullscreen(); return; }
+        fsMode = which;
+        const pane = $('pl-editor-pane');
+        pane.classList.add('ple-fs');
+        pane.classList.toggle('fs-channels', which === 'channels');
+        pane.classList.toggle('fs-groups', which === 'groups');
+        document.body.style.overflow = 'hidden';
+        const active = which === 'channels' ? chTable : grTable;
+        const other = which === 'channels' ? grTable : chTable;
+        if (active) { try { active.setHeight(fsTableHeight()); } catch (e) {} }
+        if (other) { try { other.setHeight('56vh'); } catch (e) {} }
+        pane.scrollTop = 0;
+        updateFsButtons();
+    }
+    function exitFullscreen() {
+        const pane = $('pl-editor-pane');
+        pane.classList.remove('ple-fs', 'fs-channels', 'fs-groups');
+        document.body.style.overflow = '';
+        if (chTable) { try { chTable.setHeight('56vh'); } catch (e) {} }
+        if (grTable) { try { grTable.setHeight('56vh'); } catch (e) {} }
+        fsMode = null;
+        updateFsButtons();
+    }
+    function onFsResize() {
+        if (!fsMode) return;
+        const active = fsMode === 'channels' ? chTable : grTable;
+        if (active) { try { active.setHeight(fsTableHeight()); } catch (e) {} }
+    }
+    function onFsKey(e) {
+        // Esc pops back down, but only when no editor modal is open (let those own Esc first).
+        if (e.key === 'Escape' && fsMode && !document.querySelector('.ple-overlay.show')) exitFullscreen();
     }
 
     async function open(id, name) {
@@ -282,7 +333,7 @@ window.GXPLE = (function () {
         if (grTable) { try { grTable.destroy(); } catch (e) {} grTable = null; }
         grBuiltMode = showDeletedGroups;
         grTable = new Tabulator('#pl-groups', {
-            layout: 'fitColumns', height: '56vh', data: rows, movableRows: true, placeholder: 'No groups.',
+            layout: 'fitColumns', height: fsMode === 'groups' ? fsTableHeight() : '56vh', data: rows, movableRows: true, placeholder: 'No groups.',
             editTriggerEvent: 'dblclick',
             pagination: true, paginationSize: 25, paginationSizeSelector: [10, 25, 50, 100, 250], dataLoaderLoading: '',
             rowFormatter: (row) => { const el = row.getElement(); const on = row.getData().deleted; el.style.opacity = on ? '.42' : ''; el.style.textDecoration = on ? 'line-through' : ''; },
@@ -350,7 +401,7 @@ window.GXPLE = (function () {
                 .then(() => { if (f === 'group_title') { loadGroups(); softReload(); } });
         };
         chTable = new Tabulator('#pl-channels', {
-            layout: 'fitColumns', height: '56vh', movableRows: true,
+            layout: 'fitColumns', height: fsMode === 'channels' ? fsTableHeight() : '56vh', movableRows: true,
             editTriggerEvent: 'dblclick',   // single press = drag/move, double-click = edit
             pagination: true, paginationMode: 'remote', paginationSize: SIZE,
             paginationSizeSelector: [5, 10, 25, 50, 100, 250],
@@ -526,12 +577,14 @@ window.GXPLE = (function () {
         else if (e.target.id === 'ple-gsearch' && grTable) { clearTimeout(gsearchTimer); gsearchTimer = setTimeout(() => { const v = e.target.value.trim(); v ? grTable.setFilter('group_title', 'like', v) : grTable.clearFilter(); }, 200); }
     }
 
-    return { open, close, loadGroups, reloadChannels, toggleDeleted, toggleDeletedGroups, reindex, openMoveChannel, openMoveGroup, closeMove, applyMove, openChannelGuide, closeChannelGuide, openEdit, openAdd, closeEdit, saveEdit, openAddGroup, closeAddGroup, saveAddGroup, onInput, openMoveSelected, clearSelection };
+    return { open, close, loadGroups, reloadChannels, toggleDeleted, toggleDeletedGroups, reindex, openMoveChannel, openMoveGroup, closeMove, applyMove, openChannelGuide, closeChannelGuide, openEdit, openAdd, closeEdit, saveEdit, openAddGroup, closeAddGroup, saveAddGroup, onInput, openMoveSelected, clearSelection, toggleFullscreen, onFsResize, onFsKey };
 })();
 
 if (!window.__GXPLE_BOUND) {
     window.__GXPLE_BOUND = true;
     document.addEventListener('input', e => window.GXPLE && window.GXPLE.onInput(e));
+    window.addEventListener('resize', () => window.GXPLE && window.GXPLE.onFsResize());
+    document.addEventListener('keydown', e => window.GXPLE && window.GXPLE.onFsKey(e));
 }
 console.log('GXPLE playlist-editor {{ config('guidearr.version') }} loaded');
 </script>

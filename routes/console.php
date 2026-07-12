@@ -14,5 +14,8 @@ Schedule::command('feed:due')->everyMinute()->withoutOverlapping();
 // Keep the per-run feed log table from growing unbounded.
 Schedule::command('feed:trim')->weekly();
 
+// Reclaim SQLite free-page bloat in the feed stores (mark-sweep + guide-reload churn). Infrequent.
+Schedule::command('feed:vacuum')->weekly()->withoutOverlapping();
+
 // Clean up data left by deleted accounts (per-provider SQLite stores). Infrequent.
 Schedule::command('feed:purge')->hourly();
