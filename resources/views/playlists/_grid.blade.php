@@ -82,7 +82,8 @@
         <div class="pl-field">
             <label>Providers to include</label>
             <select id="pl-providers" multiple></select>
-            <div class="pl-hint">All channels &amp; groups from the selected providers are added (you curate afterwards).</div>
+            <div class="pl-hint">All channels &amp; groups from the selected providers are added (you curate afterwards).
+                Providers still importing or with no channels yet can't be added — leave all unselected for a manual playlist.</div>
         </div>
         <div class="pl-field">
             <label>TV guide source</label>
@@ -176,6 +177,7 @@ window.GXPL = (function () {
         key:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"/><path d="M11.4 11.4 21 1.8"/><path d="m16 6 3 3"/><path d="m18.5 3.5 3 3"/></svg>',
     };
     let table = null;
+    let createProvs = [];   // provider readiness snapshot for the open create modal
 
     function init() {
         const el = $('playlist-grid');
@@ -227,7 +229,14 @@ window.GXPL = (function () {
         $('pl-extgrp').checked = true; $('pl-create-err').textContent = '';
         const { data } = await J('{{ route('playlists.options') }}');
         const provs = (data && data.providers) || [];
-        $('pl-providers').innerHTML = provs.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+        createProvs = provs;
+        // A provider can only seed a playlist once it has finished importing AND has channels.
+        // Not-ready providers are disabled (can't be selected) with the reason shown inline.
+        const provReady = p => !p.busy && Number(p.channels) > 0;
+        const provLabel = p => p.busy ? `${p.name} — updating…`
+            : (Number(p.channels) > 0 ? `${p.name} (${p.channels})` : `${p.name} — no channels yet`);
+        $('pl-providers').innerHTML = provs.map(p =>
+            `<option value="${p.id}"${provReady(p) ? '' : ' disabled'}>${esc(provLabel(p))}</option>`).join('');
         $('pl-guide').innerHTML = '<option value="">No guide</option>' + provs.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
         $('pl-create-overlay').classList.add('show');
     }
@@ -237,6 +246,31 @@ window.GXPL = (function () {
         const name = $('pl-name').value.trim();
         if (!name) { $('pl-create-err').textContent = 'Name is required.'; return; }
         const providers = Array.from($('pl-providers').selectedOptions).map(o => Number(o.value));
+        // Block seeding from a provider that is still importing or empty (belt-and-suspenders:
+        // those options are disabled, but a stale modal could still hold one). Manual = no providers.
+        const notReady = providers
+            .map(id => createProvs.find(p => Number(p.id) === id))
+            .filter(p => p && (p.busy || Number(p.channels) < 1));
+        if (notReady.length) {
+            const p = notReady[0];
+            $('pl-create-err').textContent = p.busy
+                ? `Provider “${p.name}” is still updating. Wait for it to finish, then create the playlist.`
+                : `Provider “${p.name}” has no channels yet. Let it finish importing before adding it to a playlist.`;
+            return;
+        }
+        // No provider selected → this is a manual (empty) playlist. Confirm in case they forgot to pick one.
+        if (providers.length === 0) {
+            confirmAction('Create a manual playlist?',
+                'No provider is selected, so this will be an empty manual playlist you add channels to by hand. ' +
+                'If you meant to include a provider, press Cancel and pick one first.',
+                'Create manual playlist', false,
+                () => doCreate(name, providers));
+            return;
+        }
+        doCreate(name, providers);
+    }
+
+    async function doCreate(name, providers) {
         const btn = $('pl-create-btn'); btn.disabled = true; btn.textContent = 'Creating…';
         const { ok, data } = await J('{{ route('playlists.store') }}', 'POST', {
             name,

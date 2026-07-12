@@ -5,9 +5,12 @@ namespace App\Console\Commands;
 use App\Models\FeedQueue;
 use App\Models\Provider;
 use App\Services\M3uDownloader;
+use App\Services\M3uGuideImporter;
 use App\Services\M3uParser;
+use App\Services\PlaylistStore;
 use App\Services\ProviderStore;
 use App\Services\ProviderValidator;
+use App\Services\XtreamImporter;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -41,8 +44,13 @@ class FeedWork extends Command
                 if (! $job) {
                     // --once and --drain both exit once nothing is left to claim; --drain
                     // keeps looping while jobs remain. Only the daemon mode sleeps and re-polls.
-                    if ($this->option('once') || $this->option('drain')) { $this->line('No queued jobs.'); return self::SUCCESS; }
+                    if ($this->option('once') || $this->option('drain')) {
+                        $this->line('No queued jobs.');
+
+                        return self::SUCCESS;
+                    }
                     sleep($sleep);
+
                     continue;
                 }
 
@@ -59,10 +67,13 @@ class FeedWork extends Command
                 // must NOT kill the daemon. Log it, back off briefly, and keep looping --
                 // the loop self-heals the moment the DB is reachable again. This is the
                 // difference between a momentary blip and a silent multi-hour outage.
-                $this->error('feed:work loop error: ' . $e->getMessage());
+                $this->error('feed:work loop error: '.$e->getMessage());
                 report($e);
-                if ($this->option('once')) { return self::FAILURE; }
+                if ($this->option('once')) {
+                    return self::FAILURE;
+                }
                 sleep(min(60, $sleep * 2));
+
                 continue;
             }
 
@@ -77,8 +88,10 @@ class FeedWork extends Command
     {
         try {
             $dir = storage_path('app/health');
-            if (! is_dir($dir)) { @mkdir($dir, 0775, true); }
-            @file_put_contents($dir . '/worker.beat', (string) time());
+            if (! is_dir($dir)) {
+                @mkdir($dir, 0775, true);
+            }
+            @file_put_contents($dir.'/worker.beat', (string) time());
         } catch (Throwable $e) {
             // a failing heartbeat must never break the work loop
         }
@@ -86,12 +99,13 @@ class FeedWork extends Command
 
     private function processJob(FeedQueue $job, M3uDownloader $downloader, ProviderValidator $validator): void
     {
-        $maxErr   = (int) config('guidearr.feed.max_errors', 4);
+        $maxErr = (int) config('guidearr.feed.max_errors', 4);
         $provider = $job->provider;
 
         if (! $provider) {
             $job->log('error', 'Provider no longer exists — removing job.');
             $job->delete();
+
             return;
         }
 
@@ -100,6 +114,7 @@ class FeedWork extends Command
             $job->log('error', "Reached {$job->error} errors — disabling provider and removing job.");
             $provider->forceFill(['enabled' => false, 'last_status' => 'failed'])->save();
             $job->delete();
+
             return;
         }
 
@@ -113,60 +128,89 @@ class FeedWork extends Command
                     $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
                     $job->markDone();
                     $job->log('info', 'Done.');
+
                     return;
 
                 case 'm3u':
                     $this->ingestM3u($job, $provider, $downloader);
+
                     return;
 
                 case 'xtream':
                     $this->ingestXtream($job, $provider);
+
                     return;
 
                 case 'xmltv':
                     $this->ingestXmltv($job, $provider);
+
                     return;
 
                 default: // anything unexpected — validate only
-                    $job->log('info', strtoupper($provider->type) . ' validation only.');
+                    $job->log('info', strtoupper($provider->type).' validation only.');
                     $check = $validator->validate($provider->type, $provider->url, $provider->username, $provider->password);
-                    if (! $check['ok']) { $this->failJob($job, $provider, $check['message']); return; }
+                    if (! $check['ok']) {
+                        $this->failJob($job, $provider, $check['message']);
+
+                        return;
+                    }
                     $updates = ['last_status' => 'ok', 'last_refresh_at' => now()];
-                    if (! empty($check['timeshift'])) { $updates['timeshift'] = $check['timeshift']; }
+                    if (! empty($check['timeshift'])) {
+                        $updates['timeshift'] = $check['timeshift'];
+                    }
                     $provider->forceFill($updates)->save();
                     $job->log('info', $check['message']);
                     $job->markDone();
                     $job->log('info', 'Done.');
+
                     return;
             }
         } catch (Throwable $e) {
-            $this->failJob($job, $provider, 'Worker error: ' . $e->getMessage());
+            $this->failJob($job, $provider, 'Worker error: '.$e->getMessage());
         }
     }
 
     private function ingestM3u(FeedQueue $job, Provider $provider, M3uDownloader $downloader): void
     {
-        if (! $provider->url) { $this->failJob($job, $provider, 'No URL set.'); return; }
+        if (! $provider->url) {
+            $this->failJob($job, $provider, 'No URL set.');
+
+            return;
+        }
 
         $job->log('info', "Downloading M3U: {$provider->url}");
-        $tmp = storage_path('app/feeds/dl_' . $provider->id . '_' . $job->msgid . '.m3u');
+        $tmp = storage_path('app/feeds/dl_'.$provider->id.'_'.$job->msgid.'.m3u');
         @mkdir(dirname($tmp), 0775, true);
 
         $res = $downloader->download($provider->url, $tmp);
-        if (! $res->ok) { @unlink($tmp); $this->failJob($job, $provider, 'Download failed: ' . $res->error); return; }
-        $job->log('info', number_format($res->bytes) . ' bytes downloaded; parsing.');
+        if (! $res->ok) {
+            @unlink($tmp);
+            $this->failJob($job, $provider, 'Download failed: '.$res->error);
+
+            return;
+        }
+        $job->log('info', number_format($res->bytes).' bytes downloaded; parsing.');
 
         $handle = @fopen($tmp, 'r');
-        if (! $handle) { @unlink($tmp); $this->failJob($job, $provider, 'Could not open downloaded file.'); return; }
+        if (! $handle) {
+            @unlink($tmp);
+            $this->failJob($job, $provider, 'Could not open downloaded file.');
 
-        $store   = new ProviderStore($provider->id);
+            return;
+        }
+
+        $store = new ProviderStore($provider->id);
         $version = substr($job->msgid, 0, 12);
 
         $n = 0;
         $store->begin();
         $result = M3uParser::stream($handle, function (array $c) use ($store, $version, &$n) {
             $store->upsertChannel($c, $version);
-            if (++$n % 2000 === 0) { $store->commit(); usleep(50000); $store->begin(); }
+            if (++$n % 2000 === 0) {
+                $store->commit();
+                usleep(50000);
+                $store->begin();
+            }
         });
         $store->commit();
         fclose($handle);
@@ -174,52 +218,63 @@ class FeedWork extends Command
 
         if ($result['count'] === 0) {
             $this->failJob($job, $provider, 'No channels found — source did not look like a valid M3U.');
+
             return;
         }
 
         $store->begin();
         $order = $store->nextGroupOrder();
-        foreach ($result['groups'] as $g) { $store->upsertGroup($g, $order, $version); $order += 10; }
+        foreach ($result['groups'] as $g) {
+            $store->upsertGroup($g, $order, $version);
+            $order += 10;
+        }
         $store->upsertGroup('[Dummy]', $order, $version);
         $store->commit();
 
         $removed = $store->sweep($version);
-        $added   = $store->addedCount();
-        $counts  = $store->counts();
+        $added = $store->addedCount();
+        $counts = $store->counts();
 
         $job->log('info', "Parsed {$result['count']} channels (added {$added}, removed {$removed}); store now holds {$counts['channels']} channels in {$counts['groups']} groups.");
 
         // Optional XMLTV/EPG guide for this m3u provider — never fails the channel ingest.
         if (trim((string) $provider->epg_url) !== '') {
             try {
-                (new \App\Services\M3uGuideImporter())->importGuide($provider, $version, fn (string $m) => $job->log('info', $m));
+                (new M3uGuideImporter)->importGuide($provider, $version, fn (string $m) => $job->log('info', $m));
             } catch (Throwable $e) {
-                $job->log('warning', 'Guide import error (channels kept): ' . $e->getMessage());
+                $job->log('warning', 'Guide import error (channels kept): '.$e->getMessage());
             }
         }
 
         $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
         $job->markDone();
+        $this->syncPlaylists($job, $provider);
         $job->log('info', 'Done.');
     }
 
     /** XMLTV provider: the URL *is* an XMLTV guide (no channel list) — load it into the guide tables. */
     private function ingestXmltv(FeedQueue $job, Provider $provider): void
     {
-        if (! $provider->url) { $this->failJob($job, $provider, 'No URL set.'); return; }
+        if (! $provider->url) {
+            $this->failJob($job, $provider, 'No URL set.');
+
+            return;
+        }
         $version = substr($job->msgid, 0, 12);
 
         try {
-            $g = (new \App\Services\M3uGuideImporter())->importUrl(
+            $g = (new M3uGuideImporter)->importUrl(
                 $provider, (string) $provider->url, $version, fn (string $m) => $job->log('info', $m)
             );
         } catch (Throwable $e) {
-            $this->failJob($job, $provider, 'Guide import failed: ' . $e->getMessage());
+            $this->failJob($job, $provider, 'Guide import failed: '.$e->getMessage());
+
             return;
         }
 
         if (isset($g['skipped'])) {
-            $this->failJob($job, $provider, 'Guide not ingested: ' . $g['skipped']);
+            $this->failJob($job, $provider, 'Guide not ingested: '.$g['skipped']);
+
             return;
         }
 
@@ -230,31 +285,67 @@ class FeedWork extends Command
 
     private function ingestXtream(FeedQueue $job, Provider $provider): void
     {
-        if (! $provider->url) { $this->failJob($job, $provider, 'No URL set.'); return; }
+        if (! $provider->url) {
+            $this->failJob($job, $provider, 'No URL set.');
+
+            return;
+        }
         if (! $provider->username || ! $provider->password) {
             $this->failJob($job, $provider, 'Xtream provider needs a username and password.');
+
             return;
         }
 
         $version = substr($job->msgid, 0, 12);
 
         try {
-            $r = (new \App\Services\XtreamImporter())->import(
+            $r = (new XtreamImporter)->import(
                 $provider, $version, fn (string $m) => $job->log('info', $m)
             );
-        } catch (\Throwable $e) {
-            $this->failJob($job, $provider, 'Xtream import failed: ' . $e->getMessage());
+        } catch (Throwable $e) {
+            $this->failJob($job, $provider, 'Xtream import failed: '.$e->getMessage());
+
             return;
         }
 
         if ($r['channels'] === 0) {
             $this->failJob($job, $provider, 'No channels returned — not a valid Xtream API?');
+
             return;
         }
 
         $provider->forceFill(['last_status' => 'ok', 'last_refresh_at' => now()])->save();
         $job->markDone();
+        $this->syncPlaylists($job, $provider);
         $job->log('info', "Done. {$r['channels']} channels, {$r['groups']} groups, {$r['guide_channels']} guide channels, {$r['programmes']} programmes.");
+    }
+
+    /**
+     * After a successful refresh, push any NEW provider channels into every attached playlist:
+     * each new channel joins the end of its group's block; a brand-new group (with its channels) is
+     * appended at the end. Purely additive — existing order, renames and (soft-)deletes are preserved.
+     * A per-playlist failure is logged and skipped so one bad store never fails the whole feed.
+     */
+    private function syncPlaylists(FeedQueue $job, Provider $provider): void
+    {
+        if (! ProviderStore::exists($provider->id)) {
+            return;
+        }
+        $ps = new ProviderStore($provider->id);
+
+        foreach ($provider->playlists as $pl) {
+            if (! PlaylistStore::existsFor($pl->id)) {
+                continue; // no store on disk yet — a later serve self-heals it from scratch
+            }
+            try {
+                $r = (new PlaylistStore($pl->id))->insertNewFromProvider($provider->id, $ps);
+                if ($r['channels_added'] > 0 || $r['groups_added'] > 0) {
+                    $job->log('info', "Playlist #{$pl->id} '{$pl->name}': added {$r['channels_added']} channel(s), {$r['groups_added']} group(s).");
+                }
+            } catch (Throwable $e) {
+                $job->log('warning', "Playlist #{$pl->id} sync error (channels kept): ".$e->getMessage());
+            }
+        }
     }
 
     /** A recoverable failure: count it, disable+drop at the threshold, otherwise requeue for another attempt. */
@@ -262,7 +353,7 @@ class FeedWork extends Command
     {
         $maxErr = (int) config('guidearr.feed.max_errors', 4);
         $job->forceFill(['error' => $job->error + 1])->save();
-        $job->log('error', $message . " (error #{$job->error})");
+        $job->log('error', $message." (error #{$job->error})");
         Log::channel('worker')->warning("#{$provider->id} '{$provider->name}' — failed (error #{$job->error}): {$message}");
 
         if ($job->error >= $maxErr) {

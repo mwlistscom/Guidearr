@@ -27,13 +27,25 @@ class PlaylistController extends Controller
         return response()->json($rows);
     }
 
+    /** Provider queue states that mean "still importing — not safe to seed from yet". */
+    private const BUSY_STATES = ['queued', 'running'];
+
     /** Providers (and guide options) for the create/setup modal. */
     public function options()
     {
         $providers = Provider::where('user_id', Auth::id())
+            ->with('feedQueue')
             ->orderBy('name')
-            ->get(['id', 'name'])
-            ->map(fn ($p) => ['id' => $p->id, 'name' => $p->name]);
+            ->get()
+            ->map(fn ($p) => [
+                'id' => $p->id,
+                'name' => $p->name,
+                // A provider is only safe to seed a playlist from once its import has
+                // finished AND it actually holds channels. Creating a playlist while a
+                // provider is still loading seeds it empty forever (it is not auto-rebuilt).
+                'channels' => ProviderStore::channelCountFor($p->id),
+                'busy' => in_array(optional($p->feedQueue)->state, self::BUSY_STATES, true),
+            ]);
 
         return response()->json(['providers' => $providers]);
     }
@@ -59,6 +71,29 @@ class PlaylistController extends Controller
             array_map('intval', $request->input('providers', [])),
             $ownProviderIds
         ));
+
+        // Guard against the "blank playlist" race: a playlist seeded from a provider that is
+        // still importing (or has no channels yet) captures 0 channels and is never rebuilt.
+        // Manual playlists (no providers selected) are exempt. This mirrors the client-side
+        // block so it holds even if the modal is bypassed.
+        if ($providerIds) {
+            $selected = Provider::where('user_id', Auth::id())
+                ->whereIn('id', $providerIds)
+                ->with('feedQueue')
+                ->get();
+            foreach ($selected as $p) {
+                if (in_array(optional($p->feedQueue)->state, self::BUSY_STATES, true)) {
+                    return response()->json([
+                        'message' => "Provider “{$p->name}” is still updating. Wait for it to finish, then create the playlist.",
+                    ], 422);
+                }
+                if (ProviderStore::channelCountFor($p->id) < 1) {
+                    return response()->json([
+                        'message' => "Provider “{$p->name}” has no channels yet. Let it finish importing before adding it to a playlist.",
+                    ], 422);
+                }
+            }
+        }
 
         $guideId = (int) $request->input('guide_provider_id', 0);
         if ($guideId && ! in_array($guideId, $ownProviderIds, true)) {
