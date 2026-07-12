@@ -7,6 +7,46 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## v1.22.13 — Playlists stay in sync with their providers · 2026-07-12
+
+**Added**
+- **Provider refreshes now flow into your playlists.** After a provider finishes refreshing, any
+  **new** channels it gained are inserted into every playlist built from it — each new channel joins
+  the **end of its group's block**, and a brand-new group (with its channels) is appended at the
+  **end** of the list. The update is purely additive: your existing order, renames, group flags and
+  deletions are all preserved, and nothing is duplicated. Previously, new provider channels never
+  reached existing playlists at all.
+- **`playlists:backfill` maintenance command.** `php artisan playlists:backfill [ids…] [--dry-run]`
+  additively re-seeds playlists from their attached providers, adding any channels that were never
+  seeded. `--dry-run` reports the gap per playlist without writing. Safe and idempotent (it relies on
+  the `(provider_id, channel_id)` unique index) — it never duplicates, never resurrects a channel you
+  deleted, and preserves ordering.
+
+**Fixed**
+- **Blank playlists from the "created too soon" race.** Creating a playlist from a provider that was
+  still importing (or that had no channels yet) captured **0** channels and, because a playlist is
+  never auto-rebuilt from an existing store, served empty forever. Creating a playlist from a provider
+  that is still updating or empty is now blocked — both server-side and in the create dialog, where
+  not-ready providers are shown as *updating…* / *no channels yet* and can't be selected. Manual
+  playlists (no provider) are unaffected.
+
+**Changed**
+- **Confirmation when creating a manual playlist.** Pressing **Create** with no provider selected now
+  asks you to confirm, in case you meant to pick a provider first.
+
+**Internal**
+- New `Provider::playlists()` relation and `PlaylistStore::insertNewFromProvider()`; five new tests
+  covering the create-time guard, the refresh insert (into-group + new-group-at-end), and the
+  additive backfill.
+
+**Upgrade note**
+- After `git pull`, rebuild and recreate the worker so the daemon picks up the refresh-sync:
+  `docker compose build worker && docker compose up -d worker`. The new sync applies on each
+  provider's next refresh; to reconcile existing playlists immediately, run
+  `docker compose exec app php artisan playlists:backfill` (add `--dry-run` first to preview).
+
+---
+
 ## v1.22.12 — Worker activity in the admin Logs page · 2026-07-06
 
 **Added**
