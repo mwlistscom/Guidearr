@@ -188,4 +188,57 @@ class PlaylistTest extends TestCase { use RefreshDatabase;
     $c=(new PlaylistStore($pl->id))->counts()['channels'];
     $this->assertSame(5,$c);                                        // 4 kept + 1 new added; the deleted one is NOT resurrected
   }
+
+  /** A playlist whose provider dropped 2 channels: --dry-run reports but keeps them; a real run prunes. */
+  public function test_prune_missing_dry_run_reports_without_deleting_then_prunes(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u);
+    $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
+    $pl=Playlist::first(); $st=new PlaylistStore($pl->id);
+    $this->assertSame(5,$st->counts()['channels']);
+    $ps=new ProviderStore($p->id); $ids=$ps->existingIds(range(1,9999));
+    $ps->deleteChannel($ids[0]); $ps->deleteChannel($ids[1]);        // provider dropped 2 -> 2 orphaned pointers
+    $this->assertSame(2,$st->missingPointerCount($p->id,$ps));
+    \Illuminate\Support\Facades\Artisan::call('playlists:prune-missing',['ids'=>[$pl->id],'--dry-run'=>true]);
+    $this->assertSame(5,(new PlaylistStore($pl->id))->counts()['channels']); // dry run wrote nothing
+    \Illuminate\Support\Facades\Artisan::call('playlists:prune-missing',['ids'=>[$pl->id]]);
+    $this->assertSame(3,(new PlaylistStore($pl->id))->counts()['channels']); // the 2 orphans are gone
+    $this->assertSame(0,(new PlaylistStore($pl->id))->missingPointerCount($p->id,new ProviderStore($p->id)));
+  }
+
+  /** SAFETY: an EMPTY provider store (mid-import / failed fetch) must never be read as "every channel is gone". */
+  public function test_prune_missing_skips_provider_with_empty_store(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u);
+    $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
+    $pl=Playlist::first();
+    $ps=new ProviderStore($p->id);
+    foreach ($ps->existingIds(range(1,9999)) as $id) $ps->deleteChannel($id); // store exists but is now empty
+    $this->assertSame(0,ProviderStore::channelCountFor($p->id));
+    \Illuminate\Support\Facades\Artisan::call('playlists:prune-missing',['ids'=>[$pl->id]]);
+    $this->assertSame(5,(new PlaylistStore($pl->id))->counts()['channels']); // all 5 kept — NOT blanked
+  }
+
+  /** SAFETY: a MISSING provider store must be skipped too, not treated as an empty one. */
+  public function test_prune_missing_skips_provider_with_missing_store(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u);
+    $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
+    $pl=Playlist::first();
+    @unlink(ProviderStore::path($p->id));
+    $this->assertFalse(ProviderStore::exists($p->id));
+    \Illuminate\Support\Facades\Artisan::call('playlists:prune-missing',['ids'=>[$pl->id]]);
+    $this->assertSame(5,(new PlaylistStore($pl->id))->counts()['channels']); // all 5 kept — NOT blanked
+  }
+
+  /** Manual channels (provider_id=0) have no provider store to reconcile against and must be left alone. */
+  public function test_prune_missing_leaves_manual_channels_alone(): void {
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $this->actingAs($u)->postJson('/playlists',['name'=>'Manual'])->assertOk();
+    $pl=Playlist::first(); $st=new PlaylistStore($pl->id);
+    $st->addManualChannel(['name'=>'My Channel','url'=>'http://h/manual.ts','group'=>'MINE']);
+    $this->assertSame([],$st->pointerProviderIds());                // nothing points at a provider
+    \Illuminate\Support\Facades\Artisan::call('playlists:prune-missing',['ids'=>[$pl->id]]);
+    $this->assertSame(1,(new PlaylistStore($pl->id))->counts()['channels']);
+  }
 }
