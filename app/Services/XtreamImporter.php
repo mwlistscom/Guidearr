@@ -120,11 +120,15 @@ class XtreamImporter
         $path     = ProviderStore::xmltvPath($provider->id);
         @unlink($path);
 
-        $bytes = 0;
+        $bytes  = 0;
+        $failed = false;
         try {
             $bytes = $this->downloadXmltv($xmltvUrl, $path);
         } catch (\Throwable $e) {
-            $log('Guide download skipped: ' . $e->getMessage());
+            // The guide reload below is atomic and only runs on a successful download, so the
+            // previously stored guide survives untouched — say so, rather than implying data loss.
+            $failed = true;
+            $log('Guide download failed: ' . $e->getMessage() . ' — keeping the previously stored guide.');
         }
 
         if ($bytes > 0 && is_file($path)) {
@@ -155,7 +159,11 @@ class XtreamImporter
             $log("Guide: {$guide['guide_channels']} channels, {$guide['programmes']} programmes (stop ≥ now-6h).");
         } else {
             @unlink($path);
-            $log('No XMLTV guide returned (provider may not supply one).');
+            if (! $failed) {
+                // Only claim the provider has no guide when it genuinely returned zero bytes without
+                // erroring — a failed download already logged its own, more specific reason above.
+                $log('No XMLTV guide returned (provider may not supply one).');
+            }
         }
 
         return [
