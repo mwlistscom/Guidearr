@@ -1,41 +1,50 @@
-# Guidearr v1.22.13 — Playlists stay in sync with their providers
+# Guidearr v1.22.14 — "(missing channel)" rows are pruned from playlists
 
-Your playlists now keep up with their providers automatically, and the "blank playlist" race is gone.
+Dead rows no longer pile up in your playlists. Provider refreshes now clear them out, and a new
+command cleans up the ones that already accumulated.
 
 ## Highlights
 
-### New provider channels flow into your playlists
-When a provider finishes refreshing, the channels it **gained** are now added to every playlist built
-from it — automatically. Placement is tidy:
+### Where "(missing channel)" came from
+A playlist row isn't a copy of a channel — it's a **pointer** at a channel in a provider's store, and
+provider channels are keyed on their **URL**. So when a provider drops a channel, or simply rotates its
+URL, the old channel is swept away after more than three missed refreshes and your playlist is left
+pointing at nothing. That's the **"(missing channel)"** row with a blank URL.
 
-- A new channel joins the **end of its own group's block**.
-- A **brand-new group** (with its channels) is appended at the **end** of the list.
+Those rows were never served to your players — the serve path already skipped them — but they cluttered
+the editor, and because playlist sync only ever **added** channels, they accumulated forever.
 
-The update is purely additive — your ordering, renames, group flags and deletions are all preserved,
-and nothing is duplicated. Previously, new provider channels never reached existing playlists.
+### Refreshes now remove as well as add
+When a provider finishes refreshing, each attached playlist is reconciled against it: new channels are
+added (as in v1.22.13) **and** orphaned pointers are dropped, in the same pass. Your ordering, renames,
+group flags and deletions are all still preserved, and nothing is duplicated or resurrected.
 
-### No more blank playlists
-Creating a playlist from a provider that was still importing used to capture **0** channels and serve
-empty forever. Now you can't create a playlist from a provider that is still updating or has no
-channels — the create dialog marks those providers *updating…* / *no channels yet* and blocks it, with
-the same guard enforced server-side. Manual playlists (no provider) are unaffected, and you'll be
-asked to confirm when you create one, in case you forgot to pick a provider.
+### Cleanup command
+`php artisan playlists:prune-missing [--dry-run]` clears orphaned pointers from every playlist right
+now, instead of waiting for each provider's next refresh — useful once, just after upgrading.
 
-### Repair command
-`php artisan playlists:backfill [--dry-run]` audits every playlist against its providers and additively
-fills in any channels that were never seeded — handy for fixing playlists created before this release.
-It's safe to re-run: no duplicates, and it never brings back channels you deleted.
+```bash
+docker compose exec app php artisan playlists:prune-missing --dry-run   # preview
+docker compose exec app php artisan playlists:prune-missing             # apply
+```
+
+### A provider outage can't blank your playlists
+Both the refresh sync and the command **skip any provider whose store is missing or currently empty** —
+mid-import, or a fetch that failed. Without that guard, a provider that briefly returned zero channels
+would look like "every channel is gone" and empty every playlist built from it. Pruning only ever
+removes a pointer whose channel is genuinely absent from a healthy, populated provider store.
 
 ## Upgrade
 ```bash
 cd /opt/Guidearr
 git pull
-docker compose build worker && docker compose up -d worker   # daemon picks up the refresh-sync
+docker compose build worker && docker compose up -d worker   # daemon picks up the reconcile
 docker compose exec app php artisan optimize:clear
-# optional: reconcile existing playlists now (preview with --dry-run first)
-docker compose exec app php artisan playlists:backfill --dry-run
+# clear orphans that already accumulated (preview with --dry-run first)
+docker compose exec app php artisan playlists:prune-missing --dry-run
 ```
-No migration. The refresh-sync applies on each provider's next refresh.
+No migration. The worker must be rebuilt and recreated for the reconcile to take effect — until then
+the old additive-only sync keeps running. The reconcile then applies on each provider's next refresh.
 
 ## License
 Free for personal and non-profit use. Commercial use is prohibited. See `LICENSE`.

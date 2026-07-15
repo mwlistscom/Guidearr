@@ -2,8 +2,53 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11 and v1.22.12.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13 and v1.22.14.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.22.14 — "(missing channel)" rows are pruned from playlists · 2026-07-15
+
+**Fixed**
+- **"(missing channel)" rows with a blank URL no longer pile up in the editor.** A playlist row is a
+  pointer `(provider_id, channel_id)` into a provider store, and provider channels are keyed on their
+  **URL**. When a provider drops a channel — or simply rotates its URL — the old row is swept after
+  more than three missed refreshes, and the playlist's pointer to it is orphaned. Those orphans
+  rendered as **"(missing channel)"** with no URL. They never actually served anything (serve already
+  skips them), but because playlist sync was purely **additive** they accumulated forever. Provider
+  refreshes now remove them as well as add new channels.
+
+**Added**
+- **`playlists:prune-missing` maintenance command.** `php artisan playlists:prune-missing [ids…]
+  [--dry-run]` clears orphaned pointers from all (or the named) playlists; `--dry-run` reports the
+  count per playlist without writing. Use it to clean up orphans that accumulated before this release
+  rather than waiting for each provider's next refresh.
+
+**Changed**
+- **Provider refresh sync now removes as well as adds.** `FeedWork`'s post-refresh playlist sync
+  reconciles each attached playlist against the provider store, so orphaned pointers are dropped on
+  the same pass that inserts new channels. Your ordering, renames, group flags and deletions are still
+  preserved, and nothing is duplicated or resurrected. This is a deliberate move away from the
+  strictly-additive sync introduced in v1.22.13.
+
+**Safety**
+- Both the command and the refresh sync **skip any provider whose store is missing or currently
+  empty** (mid-import, or a failed fetch). Without that guard a provider that momentarily returned
+  zero channels would look like "every channel is gone" and blank every playlist attached to it.
+  Pruning keys off the *resolved missing* state — a pointer whose channel is absent from the provider
+  store — never the raw empty-`url` column.
+
+**Internal**
+- `PlaylistStore`: extracted `deadPointerIds()`, added `missingPointerCount()` (dry-run) and
+  `pointerProviderIds()`; the previously-unused `reconcileProvider()` now routes through the shared
+  helper.
+
+**Upgrade note**
+- After `git pull`, rebuild and recreate the worker so the daemon picks up the reconcile —
+  `docker compose build worker && docker compose up -d worker`. Until the worker restarts the old
+  additive-only loop keeps running. The reconcile then applies on each provider's next refresh; to
+  clear existing orphans immediately, run `docker compose exec app php artisan playlists:prune-missing`
+  (add `--dry-run` first to preview).
 
 ---
 

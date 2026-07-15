@@ -321,9 +321,12 @@ class FeedWork extends Command
     }
 
     /**
-     * After a successful refresh, push any NEW provider channels into every attached playlist:
-     * each new channel joins the end of its group's block; a brand-new group (with its channels) is
-     * appended at the end. Purely additive — existing order, renames and (soft-)deletes are preserved.
+     * After a successful refresh, keep every attached playlist in sync with the provider store:
+     *   - ADD any NEW provider channels — each joins the end of its group's block; a brand-new
+     *     group (with its channels) is appended at the end.
+     *   - REMOVE pointers whose provider channel no longer exists (the store already applied the
+     *     >3-miss mark-sweep), which otherwise linger as "(missing channel)" rows in the editor.
+     * Existing order, renames and (soft-)deletes are preserved; nothing is duplicated or resurrected.
      * A per-playlist failure is logged and skipped so one bad store never fails the whole feed.
      */
     private function syncPlaylists(FeedQueue $job, Provider $provider): void
@@ -332,15 +335,20 @@ class FeedWork extends Command
             return;
         }
         $ps = new ProviderStore($provider->id);
+        // Never reconcile against an empty refresh — a provider that returned zero channels this run
+        // would otherwise blank every attached playlist. Additive sync of an empty store is a no-op.
+        $canReconcile = $ps->channelCount() > 0;
 
         foreach ($provider->playlists as $pl) {
             if (! PlaylistStore::existsFor($pl->id)) {
                 continue; // no store on disk yet — a later serve self-heals it from scratch
             }
             try {
-                $r = (new PlaylistStore($pl->id))->insertNewFromProvider($provider->id, $ps);
-                if ($r['channels_added'] > 0 || $r['groups_added'] > 0) {
-                    $job->log('info', "Playlist #{$pl->id} '{$pl->name}': added {$r['channels_added']} channel(s), {$r['groups_added']} group(s).");
+                $store = new PlaylistStore($pl->id);
+                $r = $store->insertNewFromProvider($provider->id, $ps);
+                $removed = $canReconcile ? $store->reconcileProvider($provider->id, $ps) : 0;
+                if ($r['channels_added'] > 0 || $r['groups_added'] > 0 || $removed > 0) {
+                    $job->log('info', "Playlist #{$pl->id} '{$pl->name}': added {$r['channels_added']} channel(s), {$r['groups_added']} group(s), removed {$removed} missing channel(s).");
                 }
             } catch (Throwable $e) {
                 $job->log('warning', "Playlist #{$pl->id} sync error (channels kept): ".$e->getMessage());

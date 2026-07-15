@@ -306,22 +306,44 @@ class PlaylistStore
         return $stmt->rowCount();
     }
 
-    /**
-     * Reconcile against a provider store: drop pointers whose channel no longer exists there
-     * (the provider store already applied the 3-miss mark-sweep before a channel disappears).
-     *
-     * @return int removed pointer count
-     */
-    public function reconcileProvider(int $providerId, ProviderStore $ps): int
+    /** Distinct provider ids this playlist still has pointer rows for (provider_id > 0, i.e. non-manual). */
+    public function pointerProviderIds(): array
+    {
+        return array_map('intval', $this->db->query(
+            'SELECT DISTINCT provider_id FROM playlist_channels WHERE provider_id > 0 ORDER BY provider_id'
+        )->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /** channel_ids this playlist points at for $providerId that no longer exist in the provider store. */
+    private function deadPointerIds(int $providerId, ProviderStore $ps): array
     {
         $ids = $this->db->prepare('SELECT channel_id FROM playlist_channels WHERE provider_id = ?');
         $ids->execute([$providerId]);
         $have = array_map('intval', $ids->fetchAll(PDO::FETCH_COLUMN));
         if (! $have) {
-            return 0;
+            return [];
         }
         $alive = $ps->existingIds($have);          // subset still present in the provider store
-        $dead = array_values(array_diff($have, $alive));
+
+        return array_values(array_diff($have, $alive));
+    }
+
+    /** Count of dead pointers for $providerId without deleting — for prune dry-runs. */
+    public function missingPointerCount(int $providerId, ProviderStore $ps): int
+    {
+        return count($this->deadPointerIds($providerId, $ps));
+    }
+
+    /**
+     * Reconcile against a provider store: drop pointers whose channel no longer exists there
+     * (the provider store already applied the 3-miss mark-sweep before a channel disappears).
+     * These render as "(missing channel)" in the editor and are skipped at serve time.
+     *
+     * @return int removed pointer count
+     */
+    public function reconcileProvider(int $providerId, ProviderStore $ps): int
+    {
+        $dead = $this->deadPointerIds($providerId, $ps);
         if (! $dead) {
             return 0;
         }
