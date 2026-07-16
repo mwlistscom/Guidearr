@@ -12,7 +12,14 @@ class FeedBrowseController extends Controller
 {
     public function users()
     {
-        $users = User::withCount('providers')->orderBy('name')->get();
+        $usersData = User::withCount('providers')->orderBy('name')->get()
+            ->map(fn ($u) => [
+                'id'        => $u->id,
+                'name'      => $u->name,
+                'email'     => $u->email,
+                'providers' => $u->providers_count,
+                'url'       => route('admin.feeds.user', $u),
+            ])->values();
 
         $queue = \App\Models\FeedQueue::with(['provider:id,name', 'user:id,name,email'])
             ->orderByDesc('updated_at')->limit(100)->get();
@@ -30,7 +37,7 @@ class FeedBrowseController extends Controller
 
         $purges = \App\Models\PurgeJob::orderByDesc('updated_at')->limit(50)->get();
 
-        return view('admin.feeds.users', compact('users', 'queueData', 'purges'));
+        return view('admin.feeds.users', compact('usersData', 'queueData', 'purges'));
     }
 
     /** Inline-edit a feed_queue row (type/state pulldowns, attempts/error counters). */
