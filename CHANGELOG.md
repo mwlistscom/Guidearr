@@ -2,8 +2,42 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13 and v1.22.14.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14 and v1.23.0.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.23.0 — Admin table upgrades & self-maintaining feeds · 2026-07-16
+
+**Added**
+- **Richer admin Users table.** New **Registered** and **Last login** columns, plus a
+  **currently-logged-in** dot (derived live from active sessions). Every column is sortable, you can
+  filter by name/email/status (including *online only*), and the list paginates **25 at a time**. A
+  new `last_login_at` is recorded on each successful sign-in.
+- **Paginated feed tables.** The admin **Feeds** job queue now paginates at **25/page**, and the
+  Users list on that page became a sortable grid with a **user ID** column, also 25/page.
+- **Provider ownership at a glance.** The Maintenance page's provider-activity table now shows each
+  provider's **owner name and user ID**.
+- **`providers:reap-cold` — stop refreshing feeds nobody watches.** A daily job disables (never
+  deletes) any provider with no playlist access or dashboard activity for **14 days**. All data is
+  kept, and the provider **re-enables itself automatically** the next time one of its playlists is
+  served or edited. Providers disabled by repeated fetch failures or by an admin are left alone.
+  Preview with `php artisan providers:reap-cold --dry-run`.
+- **`users:prune-unverified` — tidy up abandoned signups.** A daily job deletes accounts that never
+  verified their email within **14 days** of registering. **Admins are always protected**, and
+  manually created accounts (verified on creation) are never affected. Preview with
+  `php artisan users:prune-unverified --dry-run`.
+
+**Changed**
+- **Editing a playlist now keeps its providers "warm."** Previously only *serving* a playlist
+  marked its providers as recently used; now editing one in the dashboard does too, so actively
+  curated playlists are never mistaken for cold by the new reaper.
+
+**Upgrade note**
+- After `git pull`: run `php artisan migrate` (adds `last_login_at`), then recreate the scheduler
+  container so the two new daily jobs register (`docker compose up -d --force-recreate scheduler`).
+  No frontend rebuild is required. Preview both new commands with `--dry-run` before relying on the
+  daily schedule.
 
 ---
 
