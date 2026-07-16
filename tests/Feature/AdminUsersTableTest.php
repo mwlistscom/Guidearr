@@ -31,9 +31,11 @@ class AdminUsersTableTest extends TestCase
             ->assertSee('Registered')
             ->assertSee('Last login')
             ->assertSee($seen->last_login_at->format('Y-m-d H:i'))
-            ->assertSee('never')                 // the null-last-login user
-            ->assertSee('users-pager')           // pager shipped
-            ->assertSee('PAGE_SIZE = 25', false); // 25 per page
+            ->assertDontSee('never')                              // no "never" — falls back instead
+            ->assertSee($never->created_at->format('Y-m-d H:i'))  // never-logged-in shows its registration date
+            ->assertSee('No sign-in recorded yet')                // ...marked as a fallback, not a real login
+            ->assertSee('users-pager')                            // pager shipped
+            ->assertSee('PAGE_SIZE = 25', false);                 // 25 per page
     }
 
     public function test_online_users_are_derived_from_the_session_store(): void

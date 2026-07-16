@@ -38,7 +38,8 @@
     #users-table th.sortable .arr { opacity:.4; font-size:.7em; }
     #users-table th.sortable.sorted .arr { opacity:1; }
     td.when { white-space:nowrap; font-variant-numeric:tabular-nums; }
-    td.never { color:var(--muted, #888); }
+    /* Last login shown as the registration date because no sign-in has been recorded yet. */
+    td.when.fallback { color:var(--muted, #888); font-style:italic; }
     /* Pager. */
     .pager { display:flex; align-items:center; gap:.5rem; margin-top:1rem; flex-wrap:wrap; }
     .pager .info { color:var(--muted, #999); font-size:.9rem; margin-right:auto; }
@@ -76,7 +77,7 @@
                 data-role="{{ $u->is_admin ? 'admin' : 'user' }}"
                 data-verified="{{ $u->email_verified_at ? 1 : 0 }}"
                 data-registered="{{ optional($u->created_at)->timestamp ?? 0 }}"
-                data-lastlogin="{{ optional($u->last_login_at)->timestamp ?? 0 }}"
+                data-lastlogin="{{ optional($u->last_login_at ?? $u->created_at)->timestamp ?? 0 }}"
                 data-online="{{ $online ? 1 : 0 }}"
                 data-enabled="{{ $enabled ? 1 : 0 }}">
                 <td><span class="online-dot {{ $online ? 'on' : '' }}"
@@ -88,7 +89,8 @@
                 <td class="role-cell">{{ $u->is_admin ? 'admin' : 'user' }}@foreach ($u->socialAccounts->pluck('provider')->unique() as $prov)@if ($prov === 'google')<span class="prov-badge google" title="Linked Google account">G</span>@elseif ($prov === 'facebook')<span class="prov-badge facebook" title="Linked Facebook account">F</span>@endif@endforeach</td>
                 <td>{{ $u->email_verified_at ? '✓' : '—' }}</td>
                 <td class="when">{{ optional($u->created_at)->format('Y-m-d') ?? '—' }}</td>
-                <td class="when {{ $u->last_login_at ? '' : 'never' }}">{{ $u->last_login_at ? $u->last_login_at->format('Y-m-d H:i') : 'never' }}</td>
+                <td class="when {{ $u->last_login_at ? '' : 'fallback' }}"
+                    @unless ($u->last_login_at) title="No sign-in recorded yet — showing registration date" @endunless>{{ optional($u->last_login_at ?? $u->created_at)->format('Y-m-d H:i') ?? '—' }}</td>
                 <td class="actions">
                     <a class="icon" href="{{ route('admin.users.edit', $u) }}" title="Edit">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
