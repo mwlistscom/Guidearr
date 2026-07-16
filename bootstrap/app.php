@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
             'admin.password' => \App\Http\Middleware\EnsureAdminPasswordChanged::class,
+            'playlist.touch' => \App\Http\Middleware\TouchPlaylistOnEdit::class,
         ]);
 
         // Facebook posts its data-deletion signed_request server-to-server (no session/CSRF token);

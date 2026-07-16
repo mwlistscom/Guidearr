@@ -52,7 +52,7 @@ Route::post('email/resend-code', [VerifyEmailCodeController::class, 'resend'])
     ->middleware(['auth', 'throttle:10,1'])
     ->name('verification.resend');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth', 'verified', 'playlist.touch'])->group(function () {
     Route::view('dashboard', 'dashboard')->name('dashboard');
 
     Route::get('providers', [ProviderController::class, 'index'])->name('providers.index');
