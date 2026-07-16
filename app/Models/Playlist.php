@@ -87,6 +87,13 @@ class Playlist extends Model
         $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
         if ($ids) {
             Provider::whereIn('id', $ids)->update(['last_touch_at' => $now]);
+
+            // Revive providers the cold-reaper disabled — access means they're wanted again. Scoped
+            // to REAPED_STATUS so a fetch-failure or admin disable is never resurrected into a loop.
+            Provider::whereIn('id', $ids)
+                ->where('enabled', false)
+                ->where('last_status', Provider::REAPED_STATUS)
+                ->update(['enabled' => true]);
         }
     }
 
