@@ -5,14 +5,36 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
 
 class UserController extends Controller
 {
+    /** A user is shown "online" if a DB session for them was active within this many minutes. */
+    private const ONLINE_WINDOW_MINUTES = 15;
+
     public function index()
     {
-        return view('admin.users', ['users' => User::with('socialAccounts')->orderByDesc('id')->get()]);
+        $users = User::with('socialAccounts')->orderByDesc('id')->get();
+
+        // "Currently logged in" is derived from the database session store (SESSION_DRIVER=database):
+        // a session row with our user_id whose last_activity falls inside the online window. Keyed by
+        // id for O(1) lookup in the view. If sessions ever move off the DB driver this simply yields
+        // an empty set (no online dots), never an error.
+        $onlineIds = DB::table('sessions')
+            ->whereNotNull('user_id')
+            ->where('last_activity', '>=', now()->subMinutes(self::ONLINE_WINDOW_MINUTES)->timestamp)
+            ->distinct()
+            ->pluck('user_id')
+            ->flip()
+            ->all();
+
+        return view('admin.users', [
+            'users' => $users,
+            'onlineIds' => $onlineIds,
+            'onlineWindow' => self::ONLINE_WINDOW_MINUTES,
+        ]);
     }
 
     public function create()
