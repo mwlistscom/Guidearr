@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Services\PlaylistStore;
 use App\Services\ProviderStore;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -66,6 +67,34 @@ class Playlist extends Model
     public function providerIds(): array
     {
         return $this->providers()->pluck('providers.id')->all();
+    }
+
+    /**
+     * Record activity on this playlist: stamp its own last_touch_at and propagate the same
+     * timestamp to every backing provider (content providers + the guide provider), so a provider
+     * stays "warm" whenever its playlist is served OR edited. This is the signal the cold-provider
+     * reaper keys off. saveQuietly so a touch never looks like a content edit / fires model events.
+     */
+    public function markTouched(?Carbon $at = null): void
+    {
+        $now = $at ?? now();
+        $this->forceFill(['last_touch_at' => $now])->saveQuietly();
+
+        $ids = $this->providers()->pluck('providers.id')->all();
+        if ($this->guide_provider_id) {
+            $ids[] = (int) $this->guide_provider_id;
+        }
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
+        if ($ids) {
+            Provider::whereIn('id', $ids)->update(['last_touch_at' => $now]);
+
+            // Revive providers the cold-reaper disabled — access means they're wanted again. Scoped
+            // to REAPED_STATUS so a fetch-failure or admin disable is never resurrected into a loop.
+            Provider::whereIn('id', $ids)
+                ->where('enabled', false)
+                ->where('last_status', Provider::REAPED_STATUS)
+                ->update(['enabled' => true]);
+        }
     }
 
     /**

@@ -62,18 +62,20 @@
 <h2 style="margin-top:2.2rem">Provider activity</h2>
 <p class="muted">Last time each provider backed a served playlist. Use this to spot providers that have gone cold.</p>
 <table class="tbl">
-    <thead><tr><th>Provider</th><th>Type</th><th>Playlists</th><th>Last used</th><th class="r">Store size</th></tr></thead>
+    <thead><tr><th>Provider</th><th>Type</th><th>Owner</th><th class="r">User&nbsp;ID</th><th>Playlists</th><th>Last used</th><th class="r">Store size</th></tr></thead>
     <tbody>
         @forelse ($providers as $p)
             <tr>
                 <td>{{ $p['name'] }}</td>
                 <td class="muted">{{ $p['type'] }}</td>
+                <td class="muted">{{ $p['owner'] }}</td>
+                <td class="muted r">{{ $p['user_id'] ?? '—' }}</td>
                 <td class="muted">{{ $p['playlists'] }}</td>
                 <td class="muted">{{ $ago($p['last']) }}@if($p['last']) <span class="dim">({{ $p['last']->format('Y-m-d') }})</span>@endif</td>
                 <td class="r">{{ $human($p['bytes']) }}</td>
             </tr>
         @empty
-            <tr><td colspan="5" class="muted">No providers.</td></tr>
+            <tr><td colspan="7" class="muted">No providers.</td></tr>
         @endforelse
     </tbody>
 </table>

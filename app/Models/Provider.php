@@ -13,6 +13,14 @@ class Provider extends Model
 {
     public const TYPES = ['xtream', 'm3u', 'xmltv', 'manual'];
 
+    /**
+     * last_status marker written when the cold-provider reaper disables a provider. It distinguishes
+     * a "reaped for inactivity" disable (safe to auto-revive on next playlist access) from a disable
+     * caused by repeated fetch failures or an admin action (which must stay disabled). Only
+     * providers:reap-cold writes it, and only Playlist::markTouched() acts on it.
+     */
+    public const REAPED_STATUS = 'cold';
+
     protected $fillable = [
         'user_id', 'name', 'type', 'url', 'epg_url', 'username', 'password',
         'timeshift', 'myshift', 'enabled', 'enhance_guide', 'refresh_hour', 'refresh_minute',

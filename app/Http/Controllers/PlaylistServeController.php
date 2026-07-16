@@ -233,19 +233,8 @@ class PlaylistServeController extends Controller
 
     private function touch(Playlist $playlist): void
     {
-        $now = now();
-        $playlist->forceFill(['last_touch_at' => $now])->saveQuietly();
-
-        // Bump every provider backing this playlist (content providers + the guide provider)
-        // so admins can see real usage and prune what's gone cold.
-        $ids = $playlist->providers()->pluck('providers.id')->all();
-        if ($playlist->guide_provider_id) {
-            $ids[] = (int) $playlist->guide_provider_id;
-        }
-        $ids = array_values(array_unique(array_filter(array_map('intval', $ids))));
-        if ($ids) {
-            Provider::whereIn('id', $ids)->update(['last_touch_at' => $now]);
-        }
+        // Serve activity and edit activity share one signal — see Playlist::markTouched().
+        $playlist->markTouched();
     }
 
     /**

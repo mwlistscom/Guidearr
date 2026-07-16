@@ -36,12 +36,15 @@ class MaintenanceController extends Controller
             ->select('provider_id', DB::raw('count(*) as c'))
             ->groupBy('provider_id')->pluck('c', 'provider_id');
 
-        $providers = Provider::orderByRaw('last_touch_at is null desc')
+        $providers = Provider::with('user:id,name,email')
+            ->orderByRaw('last_touch_at is null desc')
             ->orderBy('last_touch_at', 'asc')->get()
             ->map(fn (Provider $p) => [
                 'id'        => $p->id,
                 'name'      => $p->name,
                 'type'      => $p->type,
+                'user_id'   => $p->user_id,
+                'owner'     => $p->user?->name ?? $p->user?->email ?? '—',
                 'last'      => $p->last_touch_at,
                 'playlists' => (int) ($linkCounts[$p->id] ?? 0),
                 'bytes'     => $this->fileBytes(ProviderStore::path($p->id)),

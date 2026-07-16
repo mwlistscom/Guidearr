@@ -13,21 +13,7 @@
 <div id="jq-grid"></div>
 
 <h2 class="sec">Users</h2>
-<table class="dtbl">
-    <thead><tr><th>User</th><th>Email</th><th style="width:8rem">Providers</th><th style="width:6rem"></th></tr></thead>
-    <tbody>
-    @forelse ($users as $u)
-        <tr>
-            <td>{{ $u->name }}</td>
-            <td style="color:var(--muted)">{{ $u->email }}</td>
-            <td>{{ $u->providers_count }}</td>
-            <td><a class="btn" href="{{ route('admin.feeds.user', $u) }}">View</a></td>
-        </tr>
-    @empty
-        <tr><td colspan="4" style="color:var(--muted)">No users.</td></tr>
-    @endforelse
-    </tbody>
-</table>
+<div id="users-grid"></div>
 
 <h2 class="sec">Data Purge Queue</h2>
 <p class="hint">Store-file cleanup for deleted accounts. Processed hourly by <code>feed:purge</code>.</p>
@@ -93,7 +79,8 @@
     };
 
     const table = new Tabulator('#jq-grid', {
-        data, layout: 'fitColumns', height: data.length > 12 ? '60vh' : undefined,
+        data, layout: 'fitColumns',
+        pagination: true, paginationSize: 25, paginationCounter: 'rows',
         editTriggerEvent: 'dblclick', placeholder: 'Queue is empty.',
         columns: [
             { title: 'Provider', field: 'provider', widthGrow: 2 },
@@ -119,6 +106,21 @@
 
     // type & state cells save on edit
     table.on('cellEdited', save);
+
+    // Users — sortable, paginated 25/page, with an ID column and a View link.
+    new Tabulator('#users-grid', {
+        data: @json($usersData), layout: 'fitColumns',
+        pagination: true, paginationSize: 25, paginationCounter: 'rows',
+        initialSort: [{ column: 'name', dir: 'asc' }], placeholder: 'No users.',
+        columns: [
+            { title: 'ID', field: 'id', width: 80, hozAlign: 'right' },
+            { title: 'User', field: 'name', widthGrow: 2 },
+            { title: 'Email', field: 'email', widthGrow: 3, formatter: c => `<span style="color:var(--muted)">${esc(c.getValue())}</span>` },
+            { title: 'Providers', field: 'providers', width: 110, hozAlign: 'right' },
+            { title: '', field: 'url', width: 90, hozAlign: 'center', headerSort: false,
+              formatter: c => `<a class="btn" href="${esc(c.getValue())}">View</a>` },
+        ],
+    });
 })();
 </script>
 @endsection
