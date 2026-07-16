@@ -1,50 +1,56 @@
-# Guidearr v1.22.14 — "(missing channel)" rows are pruned from playlists
+# Guidearr v1.23.0 — Admin table upgrades & self-maintaining feeds
 
-Dead rows no longer pile up in your playlists. Provider refreshes now clear them out, and a new
-command cleans up the ones that already accumulated.
+A friendlier admin, and feeds that quietly clean up after themselves.
 
 ## Highlights
 
-### Where "(missing channel)" came from
-A playlist row isn't a copy of a channel — it's a **pointer** at a channel in a provider's store, and
-provider channels are keyed on their **URL**. So when a provider drops a channel, or simply rotates its
-URL, the old channel is swept away after more than three missed refreshes and your playlist is left
-pointing at nothing. That's the **"(missing channel)"** row with a blank URL.
+### The admin Users table grew up
+- New **Registered** and **Last login** columns, plus a **currently-logged-in** dot that lights up
+  for anyone with an active session right now.
+- **Sort** any column, **filter** by name/email/status (including *online only*), and page through
+  **25 at a time**.
 
-Those rows were never served to your players — the serve path already skipped them — but they cluttered
-the editor, and because playlist sync only ever **added** channels, they accumulated forever.
+### Paginated feed tables
+The **Feeds** job queue now paginates at **25/page**, and the Users list on that page is a sortable
+grid with a **user ID** column. The Maintenance page's provider-activity table now shows each
+provider's **owner** and user ID, so it's obvious whose feed each row belongs to.
 
-### Refreshes now remove as well as add
-When a provider finishes refreshing, each attached playlist is reconciled against it: new channels are
-added (as in v1.22.13) **and** orphaned pointers are dropped, in the same pass. Your ordering, renames,
-group flags and deletions are all still preserved, and nothing is duplicated or resurrected.
+### Feeds that stop working when nobody's watching
+`providers:reap-cold` runs daily and **disables** any provider whose playlists haven't been served —
+or edited — for **14 days** (which also covers providers with no playlist at all). This stops the
+worker wasting cycles refreshing feeds nobody uses.
 
-### Cleanup command
-`php artisan playlists:prune-missing [--dry-run]` clears orphaned pointers from every playlist right
-now, instead of waiting for each provider's next refresh — useful once, just after upgrading.
+- **Nothing is deleted.** The feed store and all settings are kept.
+- **It heals itself.** The next time you serve or edit one of that provider's playlists, it
+  re-enables automatically.
+- **It's careful.** A provider disabled by repeated fetch failures or by an admin is never touched,
+  so nothing broken gets resurrected into a loop.
 
 ```bash
-docker compose exec app php artisan playlists:prune-missing --dry-run   # preview
-docker compose exec app php artisan playlists:prune-missing             # apply
+docker compose exec app php artisan providers:reap-cold --dry-run   # preview
 ```
 
-### A provider outage can't blank your playlists
-Both the refresh sync and the command **skip any provider whose store is missing or currently empty** —
-mid-import, or a fetch that failed. Without that guard, a provider that briefly returned zero channels
-would look like "every channel is gone" and empty every playlist built from it. Pruning only ever
-removes a pointer whose channel is genuinely absent from a healthy, populated provider store.
+### Abandoned signups clean themselves up
+`users:prune-unverified` runs daily and deletes accounts that never verified their email within
+**14 days** of registering. **Admins are always protected**, and accounts you create by hand (which
+are verified on creation) are never affected.
+
+```bash
+docker compose exec app php artisan users:prune-unverified --dry-run   # preview
+```
 
 ## Upgrade
 ```bash
 cd /opt/Guidearr
 git pull
-docker compose build worker && docker compose up -d worker   # daemon picks up the reconcile
+docker compose exec app php artisan migrate            # adds last_login_at
+docker compose up -d --force-recreate scheduler        # register the two new daily jobs
 docker compose exec app php artisan optimize:clear
-# clear orphans that already accumulated (preview with --dry-run first)
-docker compose exec app php artisan playlists:prune-missing --dry-run
+# preview the daily jobs before trusting the schedule:
+docker compose exec app php artisan providers:reap-cold --dry-run
+docker compose exec app php artisan users:prune-unverified --dry-run
 ```
-No migration. The worker must be rebuilt and recreated for the reconcile to take effect — until then
-the old additive-only sync keeps running. The reconcile then applies on each provider's next refresh.
+One migration (`last_login_at`); no frontend rebuild.
 
 ## License
 Free for personal and non-profit use. Commercial use is prohibited. See `LICENSE`.
