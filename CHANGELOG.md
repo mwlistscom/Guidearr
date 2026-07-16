@@ -2,8 +2,20 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14 and v1.23.0.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0 and v1.23.1.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.23.1 — Last login shows a registration-date fallback · 2026-07-16
+
+**Fixed**
+- **The admin Users "Last login" column no longer reads "never" for everyone.** Because login
+  tracking began in v1.23.0, existing accounts had no recorded sign-in. Rather than a bare *never*,
+  the column now falls back to the account's **registration date** — shown italic/muted with a
+  *"No sign-in recorded yet"* tooltip so it's clearly a fallback, not a fabricated login. Sorting
+  falls back the same way, so never-signed-in users order by when they joined. Once a real sign-in is
+  recorded, the actual timestamp is shown and sorted normally. Display-only; no migration.
 
 ---
 
