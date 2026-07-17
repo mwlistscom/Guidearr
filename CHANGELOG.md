@@ -2,8 +2,30 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0 and v1.23.1.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1 and v1.23.2.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.23.2 — Change Xtream credentials without breaking your playlists · 2026-07-17
+
+**Added**
+- **Editing an Xtream provider's URL, username, or password is now safe.** Previously, changing the
+  credentials rewrote every channel's stream URL — which gave each channel a new internal ID and
+  **orphaned every playlist** that pointed at it (channels showed as *"(missing channel)"*). Now,
+  saving a credential change on an Xtream provider:
+  - **validates the new login** before touching anything;
+  - **downloads the channel list** with the new credentials and compares it to your current channels;
+  - only if **at least 70%** still match, **rewrites the stored URLs in place** — each channel keeps
+    its ID, so every attached playlist keeps working automatically (same order, same groups, same
+    enabled/disabled selections, no re-import);
+  - **aborts with no changes** if the login fails or too few channels match — the provider is left
+    exactly as it was.
+
+  A **progress window** shows each step live. Providers left with **duplicate channels** by older
+  versions are consolidated automatically as part of the change. The provider **Type** is now locked
+  once an Xtream provider exists, so it can't be switched to an incompatible type by accident. The
+  match threshold defaults to 70% and is configurable via `XTREAM_CREDENTIAL_MATCH_THRESHOLD`.
 
 ---
 
