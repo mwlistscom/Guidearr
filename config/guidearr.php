@@ -35,6 +35,16 @@ return [
         'user_agent'       => env('FEED_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'),
     ],
 
+    // Xtream provider behaviour.
+    'xtream' => [
+        // Editing an Xtream provider's URL/username/password rewrites its stored
+        // channel URLs in place (keeping channel IDs stable so playlists survive).
+        // Before doing so it downloads the channel list with the new credentials and
+        // requires at least this fraction of the existing stream_ids to still match —
+        // a guard against a wrong account or a typo wiping every playlist pointer.
+        'credential_match_threshold' => (float) env('XTREAM_CREDENTIAL_MATCH_THRESHOLD', 0.70),
+    ],
+
     // health:check thresholds (read by the artisan health probe + the host heartbeat).
     'health' => [
         // The worker writes storage/app/health/worker.beat every poll (~every 'sleep'

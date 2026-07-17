@@ -7,7 +7,9 @@ use App\Models\FeedQueue;
 use App\Models\FeedLog;
 use App\Services\ProviderStore;
 use App\Services\ProviderValidator;
+use App\Services\XtreamCredentialMigrator;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
@@ -121,9 +123,45 @@ class ProviderController extends Controller
         }
 
         $data['last_touch_at'] = now();
+
+        // Changing an Xtream provider's URL/username/password can't just be saved: the
+        // channel URLs (which embed the credentials) and every playlist pointer would
+        // break. Instead, validate the match and rewrite the stored URLs in place — after
+        // the response is sent, streaming progress to the log overlay via the msgid.
+        if ($this->isXtreamCredentialChange($provider, $data)) {
+            $newUrl  = $data['url'];
+            $newUser = $data['username'];
+            $newPass = $data['password'] ?? $provider->password;
+
+            // Save everything EXCEPT the credentials now; the migration applies those only
+            // if the >=70% channel match passes (so a bad change leaves the provider intact).
+            $provider->update(Arr::except($data, ['url', 'username', 'password']));
+
+            $job = FeedQueue::openCredentialMigration($provider);
+            FeedLog::write($job->msgid, $provider->id, $provider->user_id, 'info',
+                'Login validated. Checking that the new credentials serve the same channels…');
+
+            [$pid, $msgid] = [$provider->id, $job->msgid];
+            defer(fn () => app(XtreamCredentialMigrator::class)->run($pid, $newUrl, $newUser, $newPass, $msgid));
+
+            return response()->json(['message' => 'Validating credentials…', 'msgid' => $msgid]);
+        }
+
         $provider->update($data);
 
         return response()->json(['message' => 'Provider updated.']);
+    }
+
+    /** True when this update changes an existing Xtream provider's URL, username, or password. */
+    private function isXtreamCredentialChange(Provider $provider, array $data): bool
+    {
+        return ($data['type'] ?? null) === 'xtream'
+            && $provider->type === 'xtream'
+            && (
+                ($data['url'] ?? null) !== $provider->url
+                || ($data['username'] ?? null) !== $provider->username
+                || array_key_exists('password', $data) // present only when a non-blank (changed) password was submitted
+            );
     }
 
     public function destroy(Provider $provider)

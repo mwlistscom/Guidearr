@@ -79,6 +79,33 @@ class FeedQueue extends Model
         return $job;
     }
 
+    /**
+     * Open a status row for an in-request Xtream credential migration. Unlike enqueue(),
+     * this is NOT picked up by a worker: state is 'running' with a null dstart, so
+     * claimNext() (which claims 'queued') ignores it and reclaimOrphans() (which needs a
+     * non-null dstart) leaves it alone. The migrator marks it done/error itself. Reusing a
+     * FeedQueue row lets the existing "update log" overlay tail progress by msgid.
+     */
+    public static function openCredentialMigration(Provider $provider): self
+    {
+        return static::updateOrCreate(
+            ['provider_id' => $provider->id],
+            [
+                'msgid'     => static::newMsgid(),
+                'user_id'   => $provider->user_id,
+                'type'      => $provider->type,
+                'state'     => 'running',
+                'processor' => 'credmigrate',
+                'dstart'    => null,
+                'dstop'     => null,
+                'elapsed'   => 0,
+                'hour'      => $provider->refresh_hour ?? 0,
+                'error'     => 0,
+                'attempts'  => 0,
+            ]
+        );
+    }
+
     /** Reset jobs stuck in 'running' past the orphan window (crashed/hung worker); count an error. */
     public static function reclaimOrphans(): int
     {

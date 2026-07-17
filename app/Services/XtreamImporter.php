@@ -18,12 +18,47 @@ class XtreamImporter
     /** scheme://host:port derived from the provider's panel URL. */
     public static function baseUrl(Provider $provider): string
     {
-        $u = parse_url((string) $provider->url);
+        return self::baseUrlFromString((string) $provider->url);
+    }
+
+    /** scheme://host:port derived from a raw panel URL string. */
+    public static function baseUrlFromString(string $url): string
+    {
+        $u = parse_url($url);
         $scheme = $u['scheme'] ?? 'http';
-        $host   = $u['host'] ?? trim((string) $provider->url);
+        $host   = $u['host'] ?? trim($url);
         $port   = isset($u['port']) ? ':' . $u['port'] : '';
 
         return rtrim("{$scheme}://{$host}{$port}", '/');
+    }
+
+    /** Build the playable Xtream live URL. Single source of truth for the URL shape. */
+    public static function xtreamLiveUrl(string $base, string $user, string $pass, string $sid): string
+    {
+        return "{$base}/live/" . rawurlencode($user) . '/' . rawurlencode($pass) . "/{$sid}.ts";
+    }
+
+    /**
+     * Fetch just the live-stream IDs for a set of credentials, without writing anything.
+     * Used to preview/match channels before applying a credential change.
+     *
+     * @return string[] stream_id values as strings
+     */
+    public function fetchLiveStreamIds(string $base, string $user, string $pass): array
+    {
+        $api = "{$base}/player_api.php?username=" . rawurlencode($user) . '&password=' . rawurlencode($pass);
+        $streams = $this->fetchJson($api . '&action=get_live_streams');
+        if (! is_array($streams) || count($streams) < 1) {
+            throw new \RuntimeException("This doesn't look like an Xtream API (bad streams response).");
+        }
+        $ids = [];
+        foreach ($streams as $s) {
+            if (is_array($s) && isset($s['stream_id']) && (string) $s['stream_id'] !== '') {
+                $ids[] = (string) $s['stream_id'];
+            }
+        }
+
+        return $ids;
     }
 
     /** Map one get_live_streams entry to a channels-table row (existing m3u-shaped columns). */
@@ -48,7 +83,7 @@ class XtreamImporter
             'tvg_logo' => (string) ($s['stream_icon'] ?? ''),
             'group'    => $group,
             'type'     => (string) ($s['stream_type'] ?? 'Live'),
-            'url'      => "{$base}/live/" . rawurlencode($user) . '/' . rawurlencode($pass) . "/{$sid}.ts",
+            'url'      => self::xtreamLiveUrl($base, $user, $pass, $sid),
             'ext'      => 'ts',
         ];
     }

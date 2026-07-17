@@ -285,6 +285,14 @@ window.GXP = (function () {
             $('f-id').value = d.id ?? '';
             $('f-name').value = d.name ?? '';
             $('f-type').value = d.type ?? 'xtream';
+            // Type is fixed once an Xtream provider exists — changing it would strand its
+            // channel store. A disabled <select> still returns .value to payload(), so the
+            // type is still submitted; we just prevent the user from changing it.
+            const lockType = !!d.id && (d.type === 'xtream');
+            $('f-type').disabled = lockType;
+            $('f-type').style.opacity = lockType ? '.55' : '';
+            $('f-type').style.cursor = lockType ? 'not-allowed' : '';
+            $('f-type').title = lockType ? 'Type can’t be changed for an existing Xtream provider.' : '';
             $('f-url').value = d.url ?? '';
             $('f-epg').value = d.epg_url ?? '';
             $('f-username').value = d.username ?? '';
