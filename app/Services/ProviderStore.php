@@ -590,6 +590,114 @@ class ProviderStore
         return (int) $this->db->lastInsertId();
     }
 
+    /**
+     * Extract the Xtream stream_id from a stored live URL of the shape
+     * {base}/live/{user}/{pass}/{STREAM_ID}.{ext}. Returns null for any URL that
+     * isn't in that Xtream live shape (e.g. a manual channel's arbitrary URL).
+     */
+    public static function streamIdFromUrl(string $url): ?string
+    {
+        return preg_match('#/live/[^/]+/[^/]+/([^/]+?)(?:\.[A-Za-z0-9]+)?$#', $url, $m) ? $m[1] : null;
+    }
+
+    /**
+     * The set of Xtream stream_ids currently held in this store (imported channels
+     * only; manual 'user' rows are skipped). Used to match against a fresh download
+     * before applying a credential change.
+     *
+     * @return string[]
+     */
+    public function xtreamStreamIds(): array
+    {
+        $ids = [];
+        foreach ($this->db->query("SELECT url FROM channels WHERE type <> 'user'") as $r) {
+            $sid = self::streamIdFromUrl((string) $r['url']);
+            if ($sid !== null) {
+                $ids[] = $sid;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Rewrite every imported channel's URL in place to a new base/credentials,
+     * keyed on the stable stream_id and PRESERVING the surviving row's id — so the
+     * playlist pointers that reference it stay valid. Manual ('user') rows and any
+     * non-Xtream URL are left untouched. Rebuilds the URL identically to the importer,
+     * so a subsequent refresh upserts in place rather than re-creating rows.
+     *
+     * Collision-safe: when several rows share a stream_id (e.g. an earlier credential
+     * change left both the old and new account's rows behind), they are MERGED — the
+     * row not already at the target URL is kept and rewritten, the rest are deleted,
+     * and the returned `remap` maps each deleted row id to its surviving row id so the
+     * caller can repoint playlist pointers. Without this, rewriting two rows to the same
+     * URL would trip UNIQUE(url).
+     *
+     * @return array{updated:int, deleted:int, skipped:int, total:int, remap:array<int,int>}
+     */
+    public function rewriteXtreamCredentials(string $newBase, string $newUser, string $newPass): array
+    {
+        $rows = $this->db->query('SELECT id, url, type FROM channels')->fetchAll(PDO::FETCH_ASSOC);
+
+        // Group importable rows by stream_id; manual/non-Xtream rows are skipped whole.
+        $groups = [];
+        $skipped = 0;
+        foreach ($rows as $r) {
+            $sid = ($r['type'] === 'user') ? null : self::streamIdFromUrl((string) $r['url']);
+            if ($sid === null) {
+                $skipped++;
+
+                continue;
+            }
+            $groups[$sid][] = ['id' => (int) $r['id'], 'url' => (string) $r['url']];
+        }
+
+        $updated = 0;
+        $deleted = 0;
+        $remap = [];
+        $upd = $this->db->prepare('UPDATE channels SET url = :url WHERE id = :id');
+        $del = $this->db->prepare('DELETE FROM channels WHERE id = :id');
+
+        try {
+            $this->begin();
+            foreach ($groups as $sid => $group) {
+                $target = XtreamImporter::xtreamLiveUrl($newBase, $newUser, $newPass, (string) $sid);
+
+                // Survivor = keep the row NOT already at the target (the old-account row that
+                // carries the playlist's curation); if every row is already at target, keep the
+                // lowest-id one. Break ties by lowest id.
+                $pool = array_values(array_filter($group, fn ($x) => $x['url'] !== $target)) ?: $group;
+                usort($pool, fn ($a, $b) => $a['id'] <=> $b['id']);
+                $survivor = $pool[0];
+
+                // Delete the other rows FIRST so the survivor can take the target URL without
+                // tripping UNIQUE(url); record the pointer remap deleted -> survivor.
+                foreach ($group as $row) {
+                    if ($row['id'] === $survivor['id']) {
+                        continue;
+                    }
+                    $del->execute([':id' => $row['id']]);
+                    $remap[$row['id']] = $survivor['id'];
+                    $deleted++;
+                }
+
+                if ($survivor['url'] !== $target) {
+                    $upd->execute([':url' => $target, ':id' => $survivor['id']]);
+                    $updated++;
+                }
+            }
+            $this->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        return ['updated' => $updated, 'deleted' => $deleted, 'skipped' => $skipped, 'total' => count($rows), 'remap' => $remap];
+    }
+
     public function upsertGroup(string $title, int $order, string $version): void
     {
         $this->groupStmt ??= $this->db->prepare(

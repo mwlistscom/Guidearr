@@ -357,6 +357,66 @@ class PlaylistStore
         return count($dead);
     }
 
+    /**
+     * Consolidate pointers after a provider store merged duplicate channels (e.g. a
+     * credential change collapsed an old + new account row into one). `$remap` maps
+     * each deleted provider channel_id to its surviving channel_id.
+     *
+     * For every pointer to a deleted id: if the playlist also points at the survivor,
+     * DROP the duplicate and leave the survivor's own enabled/deleted flags intact (so the
+     * kept generation's curation is preserved); otherwise REPOINT the pointer to the
+     * survivor, carrying its flags over. All pointer rows are handled regardless of their
+     * enabled/deleted state, so nothing is orphaned.
+     *
+     * @param  array<int,int>  $remap  deleted channel_id => survivor channel_id
+     * @return array{repointed:int, merged:int}
+     */
+    public function remapProviderPointers(int $providerId, array $remap): array
+    {
+        if (! $remap) {
+            return ['repointed' => 0, 'merged' => 0];
+        }
+
+        $find    = $this->db->prepare('SELECT id, enabled, deleted FROM playlist_channels WHERE provider_id = ? AND channel_id = ?');
+        $repoint = $this->db->prepare('UPDATE playlist_channels SET channel_id = :new WHERE id = :id');
+        $drop    = $this->db->prepare('DELETE FROM playlist_channels WHERE id = :id');
+
+        $repointed = 0;
+        $merged = 0;
+        try {
+            $this->begin();
+            foreach ($remap as $deletedCid => $survivorCid) {
+                $find->execute([$providerId, (int) $deletedCid]);
+                $dead = $find->fetch(PDO::FETCH_ASSOC);
+                if (! $dead) {
+                    continue; // playlist never referenced the deleted row
+                }
+
+                $find->execute([$providerId, (int) $survivorCid]);
+                $surv = $find->fetch(PDO::FETCH_ASSOC);
+
+                if ($surv) {
+                    // Survivor keeps its own enabled/deleted flags — just drop the duplicate.
+                    $drop->execute([':id' => $dead['id']]);
+                    $merged++;
+                } else {
+                    // No survivor pointer yet — repoint this one. (A later deleted id that maps to
+                    // the same survivor will then find it and merge, so re-query each iteration.)
+                    $repoint->execute([':new' => (int) $survivorCid, ':id' => $dead['id']]);
+                    $repointed++;
+                }
+            }
+            $this->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        return ['repointed' => $repointed, 'merged' => $merged];
+    }
+
     public function groups(bool $includeDeleted = false): array
     {
         $where = $includeDeleted ? '' : 'WHERE g.deleted = 0';
