@@ -2,8 +2,41 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1 and v1.23.2.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2 and v1.23.3.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.23.3 — Change your M3U URL without breaking your playlists · 2026-07-20
+
+**Added**
+- **Editing an M3U provider's URL is now safe** — the same protection Xtream credentials got in
+  v1.23.2. Previously, pointing a provider at a new M3U link re-imported every channel under a new
+  internal ID, which **orphaned every playlist** that referenced them (channels showed as
+  *"(missing channel)"*). Now, saving a new M3U URL:
+  - **verifies the link is a real M3U**, then downloads it;
+  - **matches it against your current channels** by `tvg-id` (falling back to name + group), so it
+    still recognises the same provider even when it rotates the stream URL of every channel (e.g. a
+    renewed subscription link);
+  - only if **at least 70%** still match, **rewrites the matched channel URLs in place** — each
+    channel keeps its ID, so attached playlists keep working (order, groups and enabled/disabled
+    selections preserved) — and then imports the rest of the list normally;
+  - **aborts with no changes** if too few match, leaving the URL and your playlists untouched.
+
+  Progress is shown live in the update window. The match threshold is configurable via
+  `M3U_URL_MATCH_THRESHOLD`.
+- **Changing a Guide XML (XMLTV) URL now refreshes automatically.** It's verified as a real XML
+  guide and then re-downloaded straight away, instead of waiting for the next scheduled run. Guide
+  data has no playlist pointers, so nothing else is affected.
+- **A provider's Type can no longer be changed once it exists** (previously only locked for Xtream).
+  Switching type would strand the provider's channel/guide store.
+
+**Fixed**
+- **A freshly seeded playlist's channel order now follows its group order.** Groups were laid out in
+  the provider's group order while the flat channel list was ordered alphabetically by group title,
+  so the two disagreed — the group pane could start with *"WORLD CUP"* while the channel list started
+  with *"ARABIC"*. Channels now seed in group-pane order (channels in an orphan group sort last, by
+  ID within a group), and newly appended groups on refresh inherit the same ordering.
 
 ---
 
