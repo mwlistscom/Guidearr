@@ -4,8 +4,8 @@ namespace App\Models;
 
 use App\Services\PlaylistStore;
 use App\Services\ProviderStore;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
@@ -72,10 +72,12 @@ class Playlist extends Model
     /**
      * Record activity on this playlist: stamp its own last_touch_at and propagate the same
      * timestamp to every backing provider (content providers + the guide provider), so a provider
-     * stays "warm" whenever its playlist is served OR edited. This is the signal the cold-provider
-     * reaper keys off. saveQuietly so a touch never looks like a content edit / fires model events.
+     * stays "warm" whenever its playlist is served, viewed OR edited. This is the signal the
+     * cold-provider reaper keys off, so ONLY user activity may call it — never the worker,
+     * scheduler or a migrator. saveQuietly so a touch never looks like a content edit / fires
+     * model events.
      */
-    public function markTouched(?Carbon $at = null): void
+    public function markTouched(?CarbonInterface $at = null): void
     {
         $now = $at ?? now();
         $this->forceFill(['last_touch_at' => $now])->saveQuietly();
@@ -95,6 +97,28 @@ class Playlist extends Model
                 ->where('last_status', Provider::REAPED_STATUS)
                 ->update(['enabled' => true]);
         }
+    }
+
+    /**
+     * Bulk markTouched() for every playlist a user owns — the signal behind "opened the playlists
+     * grid". Rows touched more recently than $staleBefore are skipped so a reloading grid doesn't
+     * write on every request. Returns the number of playlists stamped.
+     */
+    public static function touchAllForUser(int $userId, ?CarbonInterface $staleBefore = null): int
+    {
+        $q = static::where('user_id', $userId);
+        if ($staleBefore) {
+            $q->where(fn ($w) => $w->whereNull('last_touch_at')->orWhere('last_touch_at', '<', $staleBefore));
+        }
+
+        $now = now();
+        $touched = 0;
+        foreach ($q->get() as $playlist) {
+            $playlist->markTouched($now); // propagates to the backing providers
+            $touched++;
+        }
+
+        return $touched;
     }
 
     /**

@@ -163,7 +163,6 @@ class M3uProviderMigrator
                 'url' => $newUrl,
                 'last_status' => 'ok',
                 'last_refresh_at' => now(),
-                'last_touch_at' => now(),
             ])->save();
 
             if ($store->channelCount() > 0) {
@@ -171,7 +170,9 @@ class M3uProviderMigrator
                     $ps = new PlaylistStore($pl->id);
                     $ps->insertNewFromProvider($providerId, $store);
                     $ps->reconcileProvider($providerId, $store);
-                    $pl->markTouched();
+                    // Deliberately NOT markTouched(): last_touch_at tracks USER activity only, and
+                    // this runs in the background. The edit that started it already stamped the
+                    // provider in ProviderController::update().
                 }
             }
 
