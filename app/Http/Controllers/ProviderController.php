@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Provider;
 use App\Models\FeedQueue;
 use App\Models\FeedLog;
+use App\Services\M3uProviderMigrator;
 use App\Services\ProviderStore;
 use App\Services\ProviderValidator;
 use App\Services\XtreamCredentialMigrator;
@@ -147,6 +148,32 @@ class ProviderController extends Controller
             return response()->json(['message' => 'Validating credentials…', 'msgid' => $msgid]);
         }
 
+        // Changing an M3U provider's URL: same idea as Xtream. The signature was already
+        // verified above; the migrator confirms it's the SAME provider (>=70% channel match by
+        // tvg-id/name) and rewrites the matched channel URLs in place so playlists survive.
+        if ($this->isUrlChange($provider, $data, 'm3u')) {
+            $newUrl = $data['url'];
+            $provider->update(Arr::except($data, ['url'])); // save everything but the URL now
+
+            $job = FeedQueue::openCredentialMigration($provider);
+            FeedLog::write($job->msgid, $provider->id, $provider->user_id, 'info',
+                'M3U validated. Checking the new URL serves the same channels…');
+
+            [$pid, $msgid] = [$provider->id, $job->msgid];
+            defer(fn () => app(M3uProviderMigrator::class)->run($pid, $newUrl, $msgid));
+
+            return response()->json(['message' => 'Validating the new M3U…', 'msgid' => $msgid]);
+        }
+
+        // Changing a Guide XML (xmltv) URL: it was already verified as an XML guide above, and
+        // guide data has no playlist pointers (reloaded atomically), so just save and refresh.
+        if ($this->isUrlChange($provider, $data, 'xmltv')) {
+            $provider->update($data);
+            $job = FeedQueue::enqueue($provider);
+
+            return response()->json(['message' => 'Guide URL updated — refreshing.', 'msgid' => $job->msgid]);
+        }
+
         $provider->update($data);
 
         return response()->json(['message' => 'Provider updated.']);
@@ -162,6 +189,14 @@ class ProviderController extends Controller
                 || ($data['username'] ?? null) !== $provider->username
                 || array_key_exists('password', $data) // present only when a non-blank (changed) password was submitted
             );
+    }
+
+    /** True when this update changes an existing provider's URL, for a given (unchanged) type. */
+    private function isUrlChange(Provider $provider, array $data, string $type): bool
+    {
+        return ($data['type'] ?? null) === $type
+            && $provider->type === $type
+            && ($data['url'] ?? null) !== $provider->url;
     }
 
     public function destroy(Provider $provider)

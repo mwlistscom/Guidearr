@@ -45,6 +45,15 @@ return [
         'credential_match_threshold' => (float) env('XTREAM_CREDENTIAL_MATCH_THRESHOLD', 0.70),
     ],
 
+    // M3U provider behaviour.
+    'm3u' => [
+        // Changing an M3U provider's URL matches the new list to the current channels by
+        // tvg-id (fallback name+group) and rewrites matched channel URLs in place (keeping
+        // channel IDs stable so playlists survive). It requires at least this fraction to
+        // match — otherwise the new URL is treated as a different provider and rejected.
+        'url_match_threshold' => (float) env('M3U_URL_MATCH_THRESHOLD', 0.70),
+    ],
+
     // health:check thresholds (read by the artisan health probe + the host heartbeat).
     'health' => [
         // The worker writes storage/app/health/worker.beat every poll (~every 'sleep'

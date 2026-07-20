@@ -621,18 +621,11 @@ class ProviderStore
     }
 
     /**
-     * Rewrite every imported channel's URL in place to a new base/credentials,
-     * keyed on the stable stream_id and PRESERVING the surviving row's id — so the
-     * playlist pointers that reference it stay valid. Manual ('user') rows and any
-     * non-Xtream URL are left untouched. Rebuilds the URL identically to the importer,
-     * so a subsequent refresh upserts in place rather than re-creating rows.
-     *
-     * Collision-safe: when several rows share a stream_id (e.g. an earlier credential
-     * change left both the old and new account's rows behind), they are MERGED — the
-     * row not already at the target URL is kept and rewritten, the rest are deleted,
-     * and the returned `remap` maps each deleted row id to its surviving row id so the
-     * caller can repoint playlist pointers. Without this, rewriting two rows to the same
-     * URL would trip UNIQUE(url).
+     * Rewrite every imported Xtream channel's URL in place to new base/credentials, keyed
+     * on the stable stream_id and PRESERVING the surviving row's id. Manual ('user') rows
+     * and non-Xtream URLs are skipped. Delegates the collision-safe, merging rewrite to
+     * rewriteChannelUrls(); rebuilds URLs identically to the importer so a later refresh
+     * upserts in place.
      *
      * @return array{updated:int, deleted:int, skipped:int, total:int, remap:array<int,int>}
      */
@@ -640,8 +633,7 @@ class ProviderStore
     {
         $rows = $this->db->query('SELECT id, url, type FROM channels')->fetchAll(PDO::FETCH_ASSOC);
 
-        // Group importable rows by stream_id; manual/non-Xtream rows are skipped whole.
-        $groups = [];
+        $plan = [];
         $skipped = 0;
         foreach ($rows as $r) {
             $sid = ($r['type'] === 'user') ? null : self::streamIdFromUrl((string) $r['url']);
@@ -650,40 +642,94 @@ class ProviderStore
 
                 continue;
             }
-            $groups[$sid][] = ['id' => (int) $r['id'], 'url' => (string) $r['url']];
+            $plan[(int) $r['id']] = XtreamImporter::xtreamLiveUrl($newBase, $newUser, $newPass, (string) $sid);
+        }
+
+        return $this->rewriteChannelUrls($plan) + ['skipped' => $skipped, 'total' => count($rows)];
+    }
+
+    /**
+     * Apply a set of channel-URL changes IN PLACE, PRESERVING each surviving row's id so
+     * playlist pointers stay valid. `$plan` maps a channel row id to the URL it should
+     * become; rows not in the plan are left untouched.
+     *
+     * Collision-safe: when several rows would end up at the same URL (duplicate rows, or a
+     * URL that already belongs to another row) they are MERGED onto one survivor — which
+     * prefers a row whose current URL is NOT already the target (so a curated pre-change
+     * row is kept over an already-migrated duplicate), tie-broken by lowest id. Losers are
+     * deleted and returned in `remap` (deleted id => survivor id) so the caller can repoint
+     * playlist pointers. Survivors that change are parked on a unique temp URL first, so
+     * chained/rotated URL reassignments never trip UNIQUE(url) mid-transaction.
+     *
+     * @param  array<int,string>  $plan  channel row id => new URL
+     * @return array{updated:int, deleted:int, remap:array<int,int>}
+     */
+    public function rewriteChannelUrls(array $plan): array
+    {
+        if (! $plan) {
+            return ['updated' => 0, 'deleted' => 0, 'remap' => []];
+        }
+
+        // Current state (url is UNIQUE), read once — all decisions use this ORIGINAL state.
+        $urlById = [];
+        foreach ($this->db->query('SELECT id, url FROM channels') as $r) {
+            $urlById[(int) $r['id']] = (string) $r['url'];
+        }
+        $idByUrl = array_flip($urlById);
+
+        // Group the plan by target URL; fold in any current (non-planned) owner of that URL
+        // as a merge candidate, then pick the survivor + deletions from the original state.
+        $byTarget = [];
+        foreach ($plan as $id => $target) {
+            if (isset($urlById[(int) $id])) {
+                $byTarget[(string) $target][] = (int) $id;
+            }
+        }
+
+        $survivorOf = [];
+        $remap = [];
+        foreach ($byTarget as $target => $wanters) {
+            $cands = $wanters;
+            // Fold in a row that currently sits at this URL ONLY if it isn't itself planned —
+            // a planned row is handled by its own target group, so absorbing it here would
+            // break URL swaps/cycles (which the temp-park step below applies safely instead).
+            $owner = $idByUrl[$target] ?? null;
+            if ($owner !== null && ! isset($plan[$owner])) {
+                $cands[] = $owner;
+            }
+            $notAt = array_values(array_filter($cands, fn ($id) => ($urlById[$id] ?? null) !== $target));
+            $pool = $notAt ?: $cands;
+            sort($pool);
+            $survivor = $pool[0];
+            $survivorOf[$target] = $survivor;
+            foreach ($cands as $id) {
+                if ($id !== $survivor) {
+                    $remap[$id] = $survivor;
+                }
+            }
         }
 
         $updated = 0;
         $deleted = 0;
-        $remap = [];
-        $upd = $this->db->prepare('UPDATE channels SET url = :url WHERE id = :id');
+        $set = $this->db->prepare('UPDATE channels SET url = :url WHERE id = :id');
         $del = $this->db->prepare('DELETE FROM channels WHERE id = :id');
-
         try {
             $this->begin();
-            foreach ($groups as $sid => $group) {
-                $target = XtreamImporter::xtreamLiveUrl($newBase, $newUser, $newPass, (string) $sid);
-
-                // Survivor = keep the row NOT already at the target (the old-account row that
-                // carries the playlist's curation); if every row is already at target, keep the
-                // lowest-id one. Break ties by lowest id.
-                $pool = array_values(array_filter($group, fn ($x) => $x['url'] !== $target)) ?: $group;
-                usort($pool, fn ($a, $b) => $a['id'] <=> $b['id']);
-                $survivor = $pool[0];
-
-                // Delete the other rows FIRST so the survivor can take the target URL without
-                // tripping UNIQUE(url); record the pointer remap deleted -> survivor.
-                foreach ($group as $row) {
-                    if ($row['id'] === $survivor['id']) {
-                        continue;
-                    }
-                    $del->execute([':id' => $row['id']]);
-                    $remap[$row['id']] = $survivor['id'];
-                    $deleted++;
+            // 1) Park each changing survivor on a unique temp URL, freeing its old URL.
+            foreach ($survivorOf as $target => $sid) {
+                if (($urlById[$sid] ?? null) !== $target) {
+                    $set->execute([':url' => '__gx_tmp__:'.$sid, ':id' => $sid]);
                 }
-
-                if ($survivor['url'] !== $target) {
-                    $upd->execute([':url' => $target, ':id' => $survivor['id']]);
+            }
+            // 2) Delete the losers (removes any row still holding a target URL).
+            foreach ($remap as $id => $sid) {
+                $del->execute([':id' => $id]);
+                $deleted++;
+            }
+            // 3) Assign each survivor its final target URL (now guaranteed free).
+            foreach ($survivorOf as $target => $sid) {
+                if (($urlById[$sid] ?? null) !== $target) {
+                    $set->execute([':url' => $target, ':id' => $sid]);
                     $updated++;
                 }
             }
@@ -695,7 +741,29 @@ class ProviderStore
             throw $e;
         }
 
-        return ['updated' => $updated, 'deleted' => $deleted, 'skipped' => $skipped, 'total' => count($rows), 'remap' => $remap];
+        return ['updated' => $updated, 'deleted' => $deleted, 'remap' => $remap];
+    }
+
+    /**
+     * All importable channels with the fields needed to match against a fresh download
+     * (id, tvg_id, name, group_title, url). Manual ('user') rows are excluded.
+     *
+     * @return list<array{id:int,tvg_id:string,name:string,group_title:string,url:string}>
+     */
+    public function channelsForMatching(): array
+    {
+        $out = [];
+        foreach ($this->db->query("SELECT id, tvg_id, name, group_title, url FROM channels WHERE type <> 'user'") as $r) {
+            $out[] = [
+                'id' => (int) $r['id'],
+                'tvg_id' => (string) $r['tvg_id'],
+                'name' => (string) $r['name'],
+                'group_title' => (string) $r['group_title'],
+                'url' => (string) $r['url'],
+            ];
+        }
+
+        return $out;
     }
 
     public function upsertGroup(string $title, int $order, string $version): void
