@@ -2,8 +2,37 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2 and v1.23.3.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3 and v1.23.4.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.23.4 — Browsing counts as activity · 2026-07-20
+
+**Changed**
+- **Simply using the dashboard now keeps your providers active.** The inactivity reaper introduced
+  in v1.23.0 only counted playlist *serves* and *edits*, so a user who logged in and looked around
+  without changing anything still drifted toward being disabled after 14 days. **Viewing now counts
+  too** — opening a playlist, opening a provider, or just loading the Playlists or Providers list
+  marks everything it shows as active. Viewing a provider that was already disabled for inactivity
+  **re-enables it on the spot**; providers disabled by repeated fetch failures or by an admin are
+  still left alone.
+- **A provider with no playlist attached now behaves predictably.** It has no serve traffic to keep
+  it warm, so if nobody views or edits it for **14 days** it is disabled and stops being refreshed —
+  no more nightly downloads for a feed nobody is using. **Nothing is deleted**: its channel data,
+  settings and any playlists are kept, and opening it (or the Providers list) turns it straight back
+  on.
+- **"Last activity" now means real user activity only.** Background work — the refresh worker, the
+  scheduler, and the URL/credential migrators added in v1.23.2–v1.23.3 — no longer marks a provider
+  as recently used. Previously an automatic maintenance task could make an abandoned provider look
+  active, so it was never reaped. The Maintenance page's activity columns are correspondingly more
+  honest.
+
+**Note**
+- Activity is recorded at most **once per hour per item**, so a dashboard left open doesn't
+  generate constant database writes.
+- Playlists themselves are never disabled by inactivity — only providers stop refreshing, so your
+  playlist URLs keep serving throughout.
 
 ---
 

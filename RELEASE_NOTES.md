@@ -1,31 +1,50 @@
-# Guidearr v1.23.3 — Change your M3U URL without breaking your playlists
+# Guidearr v1.23.4 — Browsing counts as activity
 
-v1.23.2 made **Xtream** credential changes safe. This release does the same for **M3U** providers — and fixes a playlist ordering quirk.
+v1.23.0 added an inactivity reaper: a provider nobody has used for **14 days** is disabled so
+Guidearr stops downloading a feed nobody is watching. This release fixes what "used" means.
 
-## Editing an M3U provider's URL is now safe
+## Looking around now counts
 
-Previously, pointing a provider at a new M3U link re-imported every channel under a new internal ID, which **orphaned every playlist** that referenced them (channels turned into *"(missing channel)"*).
+Previously only *serving* a playlist or *editing* one marked things as active. If you logged in,
+opened your playlist, checked a channel and logged out, none of that registered.
 
-Now, saving a new M3U URL:
+Now **viewing counts too**:
 
-1. **Verifies the link is a real M3U**, then downloads it.
-2. **Matches it against your current channels** by `tvg-id` (falling back to name + group) — so it still recognises the same provider even when it **rotates the stream URL of every channel**, as a renewed subscription link often does.
-3. If **≥ 70%** still match, **rewrites the matched channel URLs in place** — each channel keeps its ID, so attached playlists keep working: **same order, same groups, same enabled/disabled selections** — then imports the rest of the list normally.
-4. If too few match, it **stops and changes nothing** — the URL and your playlists are left exactly as they were.
+- opening a playlist marks it — and every provider behind it — as active;
+- opening a provider marks that provider;
+- just loading the **Playlists** or **Providers** list marks everything it shows.
 
-Progress is shown live in the update window. The threshold can be tuned with `M3U_URL_MATCH_THRESHOLD`.
+And if you view a provider that had already been disabled for inactivity, it **turns back on
+immediately** — no need to edit anything. Providers disabled by repeated fetch failures, or by an
+admin, are still left alone.
 
-## Guide XML URLs refresh immediately
+## Providers with no playlist
 
-Changing a **Guide XML (XMLTV)** URL now verifies it's a real XML guide and re-downloads it right away, instead of waiting for the next scheduled run.
+A provider you added but never attached to a playlist has no serve traffic to keep it warm. If
+nobody views or edits it for **14 days**, it is now disabled and stops refreshing — no more nightly
+downloads for a feed nobody is using.
 
-## Provider Type is locked once created
+**Nothing is deleted.** Its channel data, settings and credentials are all kept. Open it — or just
+load the Providers list — and it resumes on the next scheduled refresh.
 
-A provider's **Type** can no longer be changed after it exists (previously only Xtream was locked) — switching it would strand that provider's channel/guide store.
+## "Last activity" means *you*
 
-## Fixed: playlist channel order now follows group order
+Background jobs no longer count as activity. The refresh worker, the scheduler, and the URL /
+credential migrators from v1.23.2–v1.23.3 used to be able to mark a provider as recently used, which
+meant an abandoned provider could look busy forever and never be reaped. Only real user
+activity — a view, an edit, or a playlist being served to your player — sets it now.
 
-A freshly seeded playlist laid its **groups** out in the provider's group order but its **channel list** alphabetically by group title, so the two disagreed — the group pane might start with *"WORLD CUP"* while the channel list started with *"ARABIC"*. Channels now seed in group-pane order, and groups appended on a later refresh inherit the same ordering.
+The **Maintenance** page's activity columns are correspondingly more honest about what has actually
+been used.
+
+## Good to know
+
+- Activity is recorded at most **once per hour per item**, so a dashboard left open in a tab doesn't
+  generate constant database writes.
+- **Playlists are never disabled** by inactivity — only provider refreshing stops, so your playlist
+  URLs keep serving throughout.
+- Preview what would be disabled at any time:
+  `docker compose exec app php artisan providers:reap-cold --dry-run`
 
 ## Upgrade
 ```bash
@@ -33,6 +52,7 @@ cd /opt/Guidearr
 git pull
 docker compose exec app php artisan optimize:clear   # refresh cached views/config
 ```
+No migration and no frontend rebuild are required.
 
 ## License
 Free for personal and non-profit use. Commercial use is prohibited. See `LICENSE`.
