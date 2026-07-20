@@ -109,7 +109,9 @@ class XtreamCredentialMigrator
                     $r = (new PlaylistStore($pl->id))->remapProviderPointers($provider->id, $res['remap']);
                     $repointed += $r['repointed'];
                     $merged += $r['merged'];
-                    $pl->markTouched();
+                    // Deliberately NOT markTouched(): last_touch_at tracks USER activity only, and
+                    // this runs in the background. The edit that started it already stamped the
+                    // provider in ProviderController::update().
                 }
                 $log('info', "Playlists: {$playlists->count()} updated — {$repointed} pointers repointed, {$merged} merged onto survivors.");
             }
@@ -120,7 +122,6 @@ class XtreamCredentialMigrator
                 'password' => $newPass,
                 'last_status' => 'ok',
                 'last_refresh_at' => now(),
-                'last_touch_at' => now(),
             ])->save();
 
             $log('info', 'New credentials saved. Every attached playlist now serves the new URLs automatically.');

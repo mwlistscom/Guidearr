@@ -35,6 +35,34 @@ class ProvidersReapColdTest extends TestCase
         $this->assertDatabaseHas('providers', ['id' => $p->id]); // row kept, not deleted
     }
 
+    /**
+     * The headline case: a provider with NO playlist attached and no user activity for 14 days
+     * stops being refreshed. The reaper disables it, and feed:due only enqueues enabled providers,
+     * so no further download is scheduled — while the row and its feed store are kept intact.
+     */
+    public function test_provider_with_no_playlist_stops_being_refreshed_after_14_days(): void
+    {
+        $p = $this->provider(['last_touch_at' => now()->subDays(15), 'refresh_hour' => 0, 'refresh_minute' => 0]);
+        $this->assertSame(0, $p->playlists()->count(), 'precondition: no playlist attached');
+
+        Artisan::call('providers:reap-cold'); // default --days=14
+
+        $this->assertFalse((bool) $p->fresh()->enabled);
+
+        Artisan::call('feed:due');
+        $this->assertDatabaseMissing('feed_queue', ['provider_id' => $p->id]);
+    }
+
+    /** 14 days is a minimum — a provider idle for 13 days is still refreshed. */
+    public function test_provider_with_no_playlist_is_kept_until_the_threshold(): void
+    {
+        $p = $this->provider(['last_touch_at' => now()->subDays(13)]);
+
+        Artisan::call('providers:reap-cold');
+
+        $this->assertTrue((bool) $p->fresh()->enabled);
+    }
+
     public function test_keeps_a_warm_provider_enabled(): void
     {
         $p = $this->provider(['last_touch_at' => now()->subDay()]);
