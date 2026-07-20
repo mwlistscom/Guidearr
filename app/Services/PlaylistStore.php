@@ -193,7 +193,7 @@ class PlaylistStore
         $stmt->execute([$providerId]);
         $have = array_flip(array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN)));
 
-        // Genuinely-new provider channels, in provider order (group_title, id).
+        // Genuinely-new provider channels, in provider group-pane order (group position_order, id).
         $newRows = [];
         $ps->streamForSeed(function (array $r) use (&$newRows, $have) {
             if (! isset($have[(int) $r['id']])) {
