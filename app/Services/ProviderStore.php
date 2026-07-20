@@ -433,10 +433,19 @@ class ProviderStore
         }
     }
 
-    /** Stream every channel (id + group + minimal data) ordered by group then id — used to seed playlists. */
+    /** Stream every channel (id + group + minimal data) in group-pane order — used to seed playlists. */
     public function streamForSeed(callable $cb): void
     {
-        $stmt = $this->db->query('SELECT id, group_title, name, url, tvg_id, tvg_logo, tvg_name FROM channels ORDER BY group_title, id');
+        // Emit channels in GROUP-PANE order (groups.position_order), not alphabetically by title,
+        // so a freshly-seeded playlist's flat channel order matches its group order — otherwise the
+        // group pane and the channel list disagree (e.g. group #1 "WORLD CUP" but the first channels
+        // are "ARABIC"). Matches groups() ORDER BY exactly; channels whose group has no groups row
+        // (orphans, added as trailing panes later) sort last. Within a group, id order.
+        $stmt = $this->db->query(
+            'SELECT c.id, c.group_title, c.name, c.url, c.tvg_id, c.tvg_logo, c.tvg_name
+             FROM channels c LEFT JOIN groups g ON g.group_title = c.group_title
+             ORDER BY COALESCE(g.position_order, 1e12), c.group_title COLLATE NOCASE, c.id'
+        );
         while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $cb($r);
         }

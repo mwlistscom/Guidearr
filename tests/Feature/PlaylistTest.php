@@ -32,6 +32,20 @@ class PlaylistTest extends TestCase { use RefreshDatabase;
     $rows=$st->groups(); $this->assertSame('US-ENT',$rows[0]['group_title']); // seeded in provider group order
   }
 
+  public function test_seed_flat_order_follows_group_order_not_alphabetical(): void {
+    // providerWithStore seeds groups US-ENT(10) then CANADA(20) — deliberately NON-alphabetical
+    // (CANADA sorts first). The flat channel order must follow the GROUP order (US-ENT block first),
+    // not the alphabetical group_title order the seed used to produce.
+    $u=User::factory()->create(['email_verified_at'=>now()]);
+    $p=$this->providerWithStore($u);
+    $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
+    $pl=Playlist::first(); $st=new PlaylistStore($pl->id);
+    $flat=array_map(fn($r)=>$r['group_title'],$st->channels(100,0));
+    $this->assertSame(['US-ENT','US-ENT','CANADA','CANADA','CANADA'],$flat);
+    // group pane order agrees
+    $this->assertSame(['US-ENT','CANADA'],array_map(fn($r)=>$r['group_title'],$st->groups()));
+  }
+
   public function test_reconcile_drops_vanished_pointers(): void {
     $u=User::factory()->create(['email_verified_at'=>now()]);
     $p=$this->providerWithStore($u);
@@ -156,7 +170,7 @@ class PlaylistTest extends TestCase { use RefreshDatabase;
     $this->actingAs($u)->postJson('/playlists',['name'=>'PL','providers'=>[$p->id]])->assertOk();
     $pl=Playlist::first(); $st=new PlaylistStore($pl->id);
     $ids=fn()=>array_map(fn($x)=>(int)$x['channel_id'],(new PlaylistStore($pl->id))->allForServe());
-    $this->assertSame([3,4,5,1,2],$ids()); // seed order = group_title, id
+    $this->assertSame([1,2,3,4,5],$ids()); // seed order follows GROUP order: US-ENT block (1,2) then CANADA (3,4,5)
     // provider refresh: a NEW channel in an existing group (US C=6) + a NEW group with a channel (Sport 1=7)
     $ps=new ProviderStore($p->id); $ps->begin();
     $ps->upsertChannel(['name'=>'US C','url'=>'http://h/6.ts','group'=>'US-ENT'],'v2');
@@ -165,7 +179,7 @@ class PlaylistTest extends TestCase { use RefreshDatabase;
     $r=$st->insertNewFromProvider($p->id,$ps);
     $this->assertSame(2,$r['channels_added']); $this->assertSame(1,$r['groups_added']);
     // US C (6) joins the END of the US-ENT block (right after US B=2); the new group's Sport 1 (7) goes last
-    $this->assertSame([3,4,5,1,2,6,7],$ids());
+    $this->assertSame([1,2,6,3,4,5,7],$ids());
     // idempotent: a second refresh with no new provider channels changes nothing
     $this->assertSame(0,(new PlaylistStore($pl->id))->insertNewFromProvider($p->id,$ps)['channels_added']);
     // a soft-deleted channel is NOT re-added by a later refresh
