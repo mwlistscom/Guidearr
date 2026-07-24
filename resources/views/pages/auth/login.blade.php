@@ -9,7 +9,7 @@
         <x-passkey-verify />
         {{-- @end-chisel-passkeys --}}
 
-        <form method="POST" action="{{ route('login.store') }}" class="flex flex-col gap-6">
+        <form method="POST" action="{{ route('login.store') }}" class="flex flex-col gap-6" data-login-form>
             @csrf
 
             <!-- Email Address -->
@@ -54,12 +54,41 @@
                 @enderror
             </div>
 
-            <div class="flex items-center justify-end">
-                <flux:button variant="primary" type="submit" class="w-full" data-test="login-button">
+            <div class="flex flex-col items-center gap-2">
+                <flux:button variant="primary" type="submit" class="w-full" data-test="login-button" data-login-submit>
                     {{ __('Log in') }}
                 </flux:button>
+                <flux:text data-login-note class="hidden text-sm text-center text-zinc-500 dark:text-zinc-400">
+                    {{ __('Signing in… this can take a few seconds, please wait.') }}
+                </flux:text>
             </div>
         </form>
+
+        {{-- Prevent double-submits: the Turnstile verification round-trip can take
+             several seconds, and a second click would reuse the single-use token
+             and fail. Disable the button and show a hint on submit. --}}
+        <script>
+            (function () {
+                function bindLoginBusy() {
+                    var form = document.querySelector('[data-login-form]');
+                    if (! form || form.dataset.busyBound) return;
+                    form.dataset.busyBound = '1';
+                    form.addEventListener('submit', function () {
+                        var btn = form.querySelector('[data-login-submit]');
+                        var note = form.querySelector('[data-login-note]');
+                        if (btn) {
+                            btn.setAttribute('disabled', 'disabled');
+                            btn.setAttribute('aria-busy', 'true');
+                            btn.style.opacity = '0.65';
+                            btn.style.cursor = 'wait';
+                        }
+                        if (note) note.classList.remove('hidden');
+                    });
+                }
+                bindLoginBusy();
+                document.addEventListener('livewire:navigated', bindLoginBusy);
+            })();
+        </script>
 
         <x-social-login-buttons />
 

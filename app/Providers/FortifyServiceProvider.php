@@ -18,6 +18,12 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
+use Laravel\Fortify\Actions\AttemptToAuthenticate;
+use Laravel\Fortify\Actions\CanonicalizeUsername;
+use Laravel\Fortify\Actions\EnsureLoginIsNotThrottled;
+use Laravel\Fortify\Actions\PrepareAuthenticatedSession;
+use Laravel\Fortify\Contracts\RedirectsIfTwoFactorAuthenticatable;
+use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
@@ -37,6 +43,7 @@ class FortifyServiceProvider extends ServiceProvider
     {
         $this->configureActions();
         $this->configureAuthentication();
+        $this->configureLoginPipeline();
         $this->configureViews();
         $this->configureRateLimiting();
 
@@ -49,14 +56,6 @@ class FortifyServiceProvider extends ServiceProvider
     private function configureAuthentication(): void
     {
         Fortify::authenticateUsing(function (Request $request) {
-            // Verify the Cloudflare Turnstile CAPTCHA before checking credentials.
-            // Turnstile::rules() is a no-op (nullable) when unconfigured or under
-            // the test suite, so this stays enforced only in configured production.
-            Validator::make(
-                $request->only('cf-turnstile-response'),
-                ['cf-turnstile-response' => Turnstile::rules()],
-            )->validate();
-
             $user = User::where('email', $request->email)->first();
 
             if ($user
@@ -67,6 +66,40 @@ class FortifyServiceProvider extends ServiceProvider
 
             return null;
         });
+    }
+
+    /**
+     * Insert the Turnstile CAPTCHA check as a single step in the login pipeline.
+     *
+     * The CAPTCHA cannot live in the authenticateUsing() callback: Fortify calls
+     * that callback TWICE per login when two-factor is enabled (once in
+     * RedirectsIfTwoFactorAuthenticatable to identify the user, once in
+     * AttemptToAuthenticate). Turnstile tokens are single-use, so the second
+     * verification trips Cloudflare's "timeout-or-duplicate" error. A pipeline
+     * pipe runs exactly once, so verifying here is safe.
+     *
+     * This mirrors Fortify's default login pipeline (see AuthenticatedSession
+     * controller's loginPipeline()) with our Turnstile pipe inserted before the
+     * credential-checking actions. Turnstile::rules() is a no-op when unconfigured
+     * or under the test suite, so this stays enforced only in configured production.
+     */
+    private function configureLoginPipeline(): void
+    {
+        Fortify::authenticateThrough(fn (Request $request) => array_filter([
+            config('fortify.limiters.login') ? null : EnsureLoginIsNotThrottled::class,
+            config('fortify.lowercase_usernames') ? CanonicalizeUsername::class : null,
+            function (Request $request, $next) {
+                Validator::make(
+                    $request->only('cf-turnstile-response'),
+                    ['cf-turnstile-response' => Turnstile::rules()],
+                )->validate();
+
+                return $next($request);
+            },
+            Features::enabled(Features::twoFactorAuthentication()) ? RedirectsIfTwoFactorAuthenticatable::class : null,
+            AttemptToAuthenticate::class,
+            PrepareAuthenticatedSession::class,
+        ]));
     }
 
     /**
