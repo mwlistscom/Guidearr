@@ -1,50 +1,45 @@
-# Guidearr v1.23.4 — Browsing counts as activity
+# Guidearr v1.23.5 — A CAPTCHA on the sign-in page
 
-v1.23.0 added an inactivity reaper: a provider nobody has used for **14 days** is disabled so
-Guidearr stops downloading a feed nobody is watching. This release fixes what "used" means.
+The admin login and the sign-up page already sat behind a Cloudflare Turnstile CAPTCHA. The main
+**sign-in page** was the one door still without one — and it's exactly the door automated
+password-guessers were rattling. This release closes that gap.
 
-## Looking around now counts
+## What changed
 
-Previously only *serving* a playlist or *editing* one marked things as active. If you logged in,
-opened your playlist, checked a channel and logged out, none of that registered.
+The public `/login` form now shows the same near-invisible **Turnstile** widget as the rest of the
+app. A bot filling in email-and-password guesses is stopped by the CAPTCHA **before any password is
+checked**, on top of the existing rate limit. If you sign in normally you'll barely notice it — the
+widget usually verifies on its own with no puzzle to solve.
 
-Now **viewing counts too**:
+Signing in also feels a little clearer now: the button disables and shows a **"Signing in…"** hint
+while the CAPTCHA is verified, so a slow moment doesn't tempt a second click.
 
-- opening a playlist marks it — and every provider behind it — as active;
-- opening a provider marks that provider;
-- just loading the **Playlists** or **Providers** list marks everything it shows.
+## Turning it on
 
-And if you view a provider that had already been disabled for inactivity, it **turns back on
-immediately** — no need to edit anything. Providers disabled by repeated fetch failures, or by an
-admin, are still left alone.
+The CAPTCHA only activates when Turnstile keys are configured, so **nothing changes for installs
+that haven't set them up** — no surprise CAPTCHA appears on your login page.
 
-## Providers with no playlist
+To enable it:
 
-A provider you added but never attached to a playlist has no serve traffic to keep it warm. If
-nobody views or edits it for **14 days**, it is now disabled and stops refreshing — no more nightly
-downloads for a feed nobody is using.
+1. Create a free **Turnstile** widget at the Cloudflare dashboard (Turnstile → Add site) to get a
+   **Site Key** and a **Secret Key**.
+2. Set them in your environment (the admin **Environment** editor, or `.env`):
+   ```
+   TURNSTILE_SITE_KEY=your-site-key
+   TURNSTILE_SECRET_KEY=your-secret-key
+   ```
+3. Reload — the widget appears on sign-in, sign-up and the admin login.
 
-**Nothing is deleted.** Its channel data, settings and credentials are all kept. Open it — or just
-load the Providers list — and it resumes on the next scheduled refresh.
-
-## "Last activity" means *you*
-
-Background jobs no longer count as activity. The refresh worker, the scheduler, and the URL /
-credential migrators from v1.23.2–v1.23.3 used to be able to mark a provider as recently used, which
-meant an abandoned provider could look busy forever and never be reaped. Only real user
-activity — a view, an edit, or a playlist being served to your player — sets it now.
-
-The **Maintenance** page's activity columns are correspondingly more honest about what has actually
-been used.
+Leave the keys unset and Guidearr behaves exactly as before.
 
 ## Good to know
 
-- Activity is recorded at most **once per hour per item**, so a dashboard left open in a tab doesn't
-  generate constant database writes.
-- **Playlists are never disabled** by inactivity — only provider refreshing stops, so your playlist
-  URLs keep serving throughout.
-- Preview what would be disabled at any time:
-  `docker compose exec app php artisan providers:reap-cold --dry-run`
+- Same protection already covered the **admin login** and **registration**; this brings the public
+  login in line.
+- The CAPTCHA is verified **once per sign-in**, and stacks on top of the login rate limit (a handful
+  of attempts per minute per account).
+- No new outbound dependency for your players or playlist URLs — this only affects the browser
+  sign-in page.
 
 ## Upgrade
 ```bash
