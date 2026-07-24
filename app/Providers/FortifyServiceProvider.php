@@ -8,12 +8,14 @@ use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
 use App\Listeners\UpdateLastLoginTimestamp;
 use App\Models\User;
+use App\Support\Turnstile;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Fortify;
@@ -47,6 +49,14 @@ class FortifyServiceProvider extends ServiceProvider
     private function configureAuthentication(): void
     {
         Fortify::authenticateUsing(function (Request $request) {
+            // Verify the Cloudflare Turnstile CAPTCHA before checking credentials.
+            // Turnstile::rules() is a no-op (nullable) when unconfigured or under
+            // the test suite, so this stays enforced only in configured production.
+            Validator::make(
+                $request->only('cf-turnstile-response'),
+                ['cf-turnstile-response' => Turnstile::rules()],
+            )->validate();
+
             $user = User::where('email', $request->email)->first();
 
             if ($user

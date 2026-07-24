@@ -46,6 +46,14 @@
             <!-- Remember Me -->
             <flux:checkbox name="remember" :label="__('Remember me')" :checked="old('remember')" />
 
+            <!-- Cloudflare Turnstile CAPTCHA -->
+            <div class="flex flex-col gap-2">
+                <x-turnstile />
+                @error('cf-turnstile-response')
+                    <flux:text class="text-sm text-red-500">{{ $message }}</flux:text>
+                @enderror
+            </div>
+
             <div class="flex items-center justify-end">
                 <flux:button variant="primary" type="submit" class="w-full" data-test="login-button">
                     {{ __('Log in') }}
