@@ -7,6 +7,21 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## v1.23.5 — CAPTCHA on the sign-in page · 2026-07-24
+
+**Changed**
+- **The main sign-in page now uses a Cloudflare Turnstile CAPTCHA**, matching the admin login and
+  the sign-up page, which already had one. The public `/login` form was the last auth page without
+  it, and the access logs showed automated password-guessing hitting exactly that form — the CAPTCHA
+  now stops those bots before any password is checked, on top of the existing rate limit. Real users
+  see the usual near-invisible Turnstile widget; nothing changes if you sign in normally.
+
+**Note**
+- The CAPTCHA only activates when Turnstile keys are configured, so unconfigured installs and the
+  automated test suite are unaffected.
+
+---
+
 ## v1.23.4 — Browsing counts as activity · 2026-07-20
 
 **Changed**
