@@ -139,6 +139,12 @@ class ProviderValidator
 
     private function result(bool $ok, string $message, ?string $timeshift = null, int $bytes = 0): array
     {
+        // Cap the timezone to the providers.timeshift column width — the value comes from an external,
+        // user-supplied Xtream server, so a long/garbage value must never overflow the column (500).
+        if ($timeshift !== null) {
+            $timeshift = mb_substr($timeshift, 0, 64);
+        }
+
         return ['ok' => $ok, 'message' => $message, 'timeshift' => $timeshift, 'bytes' => $bytes];
     }
 }
