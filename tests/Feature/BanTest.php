@@ -49,7 +49,7 @@ class BanTest extends TestCase
         $this->actingAs($this->admin())
             ->post(route('admin.users.store'), [
                 'name' => 'X', 'email' => 'blocked@example.com', 'role' => 'user',
-                'password' => 'Sup3r-Secret-Pw!', 'password_confirmation' => 'Sup3r-Secret-Pw!',
+                'password' => 'password', 'password_confirmation' => 'password',
             ])->assertSessionHasErrors('email');
 
         $this->assertDatabaseMissing('users', ['email' => 'blocked@example.com']);
@@ -58,12 +58,12 @@ class BanTest extends TestCase
     public function test_banned_active_user_cannot_log_in(): void
     {
         $user = User::factory()->create([
-            'email' => 'u@example.com', 'password' => Hash::make('secret-password'),
+            'email' => 'u@example.com', 'password' => Hash::make('password'),
             'status' => 'active', 'email_verified_at' => now(),
         ]);
         Ban::ban($user->email);
 
-        $this->post(route('login.store'), ['email' => 'u@example.com', 'password' => 'secret-password'])
+        $this->post(route('login.store'), ['email' => 'u@example.com', 'password' => 'password'])
             ->assertSessionHasErrors();
         $this->assertGuest();
     }
