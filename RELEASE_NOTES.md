@@ -1,54 +1,60 @@
-# Guidearr v1.23.5 — A CAPTCHA on the sign-in page
+# Guidearr v1.23.6 — Ban list, maintenance controls, and admin tooling
 
-The admin login and the sign-up page already sat behind a Cloudflare Turnstile CAPTCHA. The main
-**sign-in page** was the one door still without one — and it's exactly the door automated
-password-guessers were rattling. This release closes that gap.
+This release is a big lift for the **admin panel**: a proper ban list, one-click maintenance jobs that
+stream their progress, and a much more useful Feeds view — plus a fix for a provider bug that was
+quietly 500-ing on some Xtream sign-ups.
 
-## What changed
+## A real ban list
 
-The public `/login` form now shows the same near-invisible **Turnstile** widget as the rest of the
-app. A bot filling in email-and-password guesses is stopped by the CAPTCHA **before any password is
-checked**, on top of the existing rate limit. If you sign in normally you'll barely notice it — the
-widget usually verifies on its own with no puzzle to solve.
+Until now, "banning" someone just meant setting their account to *banned* — which vanished the moment
+the account was deleted, and did nothing to stop them signing up again. Now there's a proper
+**ban list**, keyed on the email address:
 
-Signing in also feels a little clearer now: the button disables and shows a **"Signing in…"** hint
-while the CAPTCHA is verified, so a slow moment doesn't tempt a second click.
+- A ban **survives account deletion** and **blocks both re-registration and sign-in** with that address.
+- It's enforced everywhere that matters: the main sign-in pipeline, registration, social (Google/Facebook)
+  login, and the admin login.
+- Manage it under **Users → Ban list** (with a reason and who set each ban). On the Users page the ban
+  control is now a **toggle switch**, and when you delete a user you can **add their email to the ban list
+  in the same step**.
 
-## Turning it on
+Deleting a user is also safer: it's a clear confirmation dialog now, it **won't let you delete your own
+account or the last admin**, and it warns you explicitly before removing any admin.
 
-The CAPTCHA only activates when Turnstile keys are configured, so **nothing changes for installs
-that haven't set them up** — no surprise CAPTCHA appears on your login page.
+## Maintenance you can actually run
 
-To enable it:
+The admin **Maintenance** page gained a set of **Run now** controls for the background housekeeping jobs —
+health check, vacuum, log trim, purge, the cold-provider reaper, and stuck-job reclaim:
 
-1. Create a free **Turnstile** widget at the Cloudflare dashboard (Turnstile → Add site) to get a
-   **Site Key** and a **Secret Key**.
-2. Set them in your environment (the admin **Environment** editor, or `.env`):
-   ```
-   TURNSTILE_SITE_KEY=your-site-key
-   TURNSTILE_SECRET_KEY=your-secret-key
-   ```
-3. Reload — the widget appears on sign-in, sign-up and the admin login.
+- They run **in the background** and stream their output **live into a popup**, so a slow job (vacuuming
+  large feed stores can take minutes) no longer freezes the request or trips a gateway timeout.
+- The riskier jobs that **delete accounts or edit playlists** (prune-unverified, prune-missing) run a
+  **dry run first** — you see exactly what *would* change, then click **Apply for real** to commit.
 
-Leave the keys unset and Guidearr behaves exactly as before.
+Every run, manual or scheduled, is now recorded in its own **`maintenance.log`** (kept 30 days) that shows
+up under **Logs**, separate from the worker log.
 
-## Good to know
+## A sharper Feeds view
 
-- Same protection already covered the **admin login** and **registration**; this brings the public
-  login in line.
-- The CAPTCHA is verified **once per sign-in**, and stacks on top of the login rate limit (a handful
-  of attempts per minute per account).
-- No new outbound dependency for your players or playlist URLs — this only affects the browser
-  sign-in page.
+The **Job Queue** now tells you far more at a glance:
 
-## Upgrade
-```bash
-cd /opt/Guidearr
-git pull
-docker compose exec app php artisan optimize:clear   # refresh cached views/config
-```
-No migration and no frontend rebuild are required.
+- The owner's **user number** and the provider's **next scheduled refresh** time.
+- A clear **COLD / DISABLED** badge (with the row dimmed) for providers the inactivity reaper has parked —
+  instead of a misleading "done".
+- Per-row actions: **Run** (refresh now — which re-enables a cold provider), **Log** (that provider's
+  recent run log), **Edit**, and **Delete**.
 
-## License
-Free for personal and non-profit use. Commercial use is prohibited. See `LICENSE`.
-© Jules Potvin.
+The **Users** and **Feeds → users** tables also gained a **playlist count**, a **sign-in-method icon**
+(Google / Facebook / password), and a **last-touch** column — which updates whenever someone pulls their
+m3u/xtream link, not just when they log in — so it's easy to see who's still active.
+
+## Fixed
+
+- **Adding an Xtream provider whose server reports a long timezone name** (for example
+  `Africa/Casablanca`) no longer fails with a 500. The `timeshift` field was too small for many real
+  timezone names; it's been widened and the incoming value is capped defensively.
+
+## Upgrading
+
+Pull the new version and apply migrations as usual (`php artisan migrate`) — this release adds the `bans`
+table and widens `providers.timeshift`. Nothing needs configuring; the new admin features appear
+automatically.
