@@ -12,32 +12,84 @@ class FeedBrowseController extends Controller
 {
     public function users()
     {
-        $usersData = User::withCount('providers')->orderBy('name')->get()
-            ->map(fn ($u) => [
-                'id'        => $u->id,
-                'name'      => $u->name,
-                'email'     => $u->email,
-                'providers' => $u->providers_count,
-                'url'       => route('admin.feeds.user', $u),
-            ])->values();
+        $usersData = User::withCount(['providers', 'playlists'])
+            ->withMax('providers as providers_touch_at', 'last_touch_at')
+            ->withMax('playlists as playlists_touch_at', 'last_touch_at')
+            ->orderBy('name')->get()
+            ->map(function ($u) {
+                // "Last touch" = the most recent human activity across the user's providers/playlists
+                // (a served m3u/xtream download stamps last_touch_at even with no dashboard login).
+                $touch = collect([$u->providers_touch_at, $u->playlists_touch_at])->filter()->max();
 
-        $queue = \App\Models\FeedQueue::with(['provider:id,name', 'user:id,name,email'])
-            ->orderByDesc('updated_at')->limit(100)->get();
+                return [
+                    'id'        => $u->id,
+                    'name'      => $u->name,
+                    'email'     => $u->email,
+                    'providers' => $u->providers_count,
+                    'playlists' => $u->playlists_count,
+                    'lastlogin' => optional($u->last_login_at)->format('Y-m-d H:i'),
+                    'lasttouch' => $touch ? \Illuminate\Support\Carbon::parse($touch)->format('Y-m-d H:i') : null,
+                    'url'       => route('admin.feeds.user', $u),
+                    'delUrl'    => route('admin.users.destroy', $u),
+                    'is_self'   => $u->id === auth()->id(),
+                    'is_admin'  => (bool) $u->is_admin,
+                ];
+            })->values();
+
+        $queue = \App\Models\FeedQueue::with([
+            'provider:id,name,enabled,last_status,refresh_hour,refresh_minute,last_refresh_at',
+            'user:id,name,email',
+        ])->orderByDesc('updated_at')->limit(100)->get();
 
         $queueData = $queue->map(fn ($j) => [
             'id'       => $j->id,
             'provider' => $j->provider->name ?? '#' . $j->provider_id,
+            'user_id'  => $j->user_id,
             'email'    => $j->user->email ?? '—',
             'type'     => $j->type,
             'state'    => $j->state,
             'attempts' => $j->attempts,
             'error'    => $j->error,
+            'next'     => $this->nextStart($j->provider),
             'updated'  => optional($j->updated_at)->format('Y-m-d H:i:s'),
+            // A disabled provider isn't pending work; surface WHY (cold-reaped vs otherwise disabled)
+            // so the row can be badged + dimmed instead of showing a stale job state.
+            'disabled' => $j->provider ? ! $j->provider->enabled : false,
+            'cold'     => $j->provider && $j->provider->last_status === \App\Models\Provider::REAPED_STATUS,
         ])->values();
 
         $purges = \App\Models\PurgeJob::orderByDesc('updated_at')->limit(50)->get();
 
         return view('admin.feeds.users', compact('usersData', 'queueData', 'purges'));
+    }
+
+    /**
+     * Human next-refresh time for a provider, mirroring FeedDue's daily-slot logic
+     * (refresh_hour:refresh_minute). Disabled providers never refresh; a provider whose slot has
+     * passed but hasn't refreshed since is "due now".
+     */
+    private function nextStart(?Provider $p): string
+    {
+        if (! $p) {
+            return '—';
+        }
+        // Only enabled providers are ever enqueued (see FeedDue), so a disabled provider has no next
+        // start — surface that plainly instead of a blank so it's obvious WHY there's no date.
+        if (! $p->enabled) {
+            return 'disabled';
+        }
+
+        $now  = now();
+        $slot = $now->copy()->setTime((int) ($p->refresh_hour ?? 0), (int) ($p->refresh_minute ?? 0), 0);
+
+        if ($now->lt($slot)) {
+            return $slot->format('Y-m-d H:i');
+        }
+        if ($p->last_refresh_at !== null && $p->last_refresh_at->gte($slot)) {
+            return $slot->copy()->addDay()->format('Y-m-d H:i');
+        }
+
+        return 'due now';
     }
 
     /** Inline-edit a feed_queue row (type/state pulldowns, attempts/error counters). */
@@ -64,6 +116,46 @@ class FeedBrowseController extends Controller
         $job->update([$field => $value]);
 
         return response()->json(['ok' => true]);
+    }
+
+    /**
+     * Manually trigger a refresh for a queued row's provider. A disabled/cold provider is re-enabled
+     * and touched (so the reaper won't immediately disable it again), mirroring "access revives a
+     * cold provider", then the job is enqueued for the worker to pick up.
+     */
+    public function queueRun(\App\Models\FeedQueue $job)
+    {
+        $provider = Provider::find($job->provider_id);
+        if (! $provider) {
+            return response()->json(['message' => 'Provider no longer exists.'], 404);
+        }
+
+        $provider->forceFill(['enabled' => true, 'last_touch_at' => now()])->save();
+        \App\Models\FeedQueue::enqueue($provider);
+
+        return response()->json(['ok' => true, 'message' => 'Refresh queued.']);
+    }
+
+    /**
+     * Recent feed-log lines for a queue row's provider (across runs — a cold row's own run may have
+     * been trimmed). Newest-run lines last, capped. Shape mirrors ProviderController::feedPayload.
+     */
+    public function queueLog(\App\Models\FeedQueue $job)
+    {
+        $lines = \App\Models\FeedLog::where('provider_id', $job->provider_id)
+            ->orderByDesc('id')->limit(500)->get()
+            ->sortBy('id')->values()
+            ->map(fn (\App\Models\FeedLog $l) => [
+                'level'   => $l->level,
+                'message' => $l->message,
+                'at'      => optional($l->created_at)->format('Y-m-d H:i:s'),
+            ]);
+
+        return response()->json([
+            'provider' => $job->provider->name ?? '#'.$job->provider_id,
+            'state'    => $job->state,
+            'logs'     => $lines,
+        ]);
     }
 
     /** Delete a feed_queue row; disable its provider so it is not re-queued. */

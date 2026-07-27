@@ -7,6 +7,7 @@ use App\Actions\Fortify\CreateNewUser;
 /* @end-chisel-registration */
 use App\Actions\Fortify\ResetUserPassword;
 use App\Listeners\UpdateLastLoginTimestamp;
+use App\Models\Ban;
 use App\Models\User;
 use App\Support\Turnstile;
 use Illuminate\Auth\Events\Login;
@@ -60,6 +61,7 @@ class FortifyServiceProvider extends ServiceProvider
 
             if ($user
                 && $user->status === 'active'
+                && ! Ban::isBanned($user->email)
                 && Hash::check($request->password, $user->password)) {
                 return $user;
             }

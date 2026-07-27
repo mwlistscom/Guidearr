@@ -4,15 +4,16 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Playlist;
-use App\Models\Provider;
 use App\Services\PlaylistStore;
-use App\Services\ProviderStore;
+use App\Support\MaintenanceLog;
+use App\Support\MaintenanceTasks;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 class MaintenanceController extends Controller
 {
-    /** Show stale playlists (by last-served activity) and a read-only provider activity table. */
+    /** Show stale playlists, a per-user activity table, and the maintenance-task controls. */
     public function index(Request $request)
     {
         $days = max(0, min(3650, (int) $request->query('days', 30)));
@@ -31,31 +32,67 @@ class MaintenanceController extends Controller
                 'bytes' => $this->fileBytes(PlaylistStore::path($p->id)),
             ]);
 
-        // Provider activity (read-only) — linked-playlist counts in one grouped query.
-        $linkCounts = DB::table('playlist_providers')
-            ->select('provider_id', DB::raw('count(*) as c'))
-            ->groupBy('provider_id')->pluck('c', 'provider_id');
-
-        $providers = Provider::with('user:id,name,email')
-            ->orderByRaw('last_touch_at is null desc')
-            ->orderBy('last_touch_at', 'asc')->get()
-            ->map(fn (Provider $p) => [
-                'id'        => $p->id,
-                'name'      => $p->name,
-                'type'      => $p->type,
-                'user_id'   => $p->user_id,
-                'owner'     => $p->user?->name ?? $p->user?->email ?? '—',
-                'last'      => $p->last_touch_at,
-                'playlists' => (int) ($linkCounts[$p->id] ?? 0),
-                'bytes'     => $this->fileBytes(ProviderStore::path($p->id)),
-            ]);
-
         return view('admin.maintenance', [
-            'days'         => $days,
-            'stale'        => $stale,
-            'providers'    => $providers,
-            'totalStale'   => $stale->count(),
-            'reclaimBytes' => $stale->sum('bytes'),
+            'days'          => $days,
+            'stale'         => $stale,
+            'tasks'         => MaintenanceTasks::safe(),
+            'destructive'   => MaintenanceTasks::destructive(),
+            'totalStale'    => $stale->count(),
+            'reclaimBytes'  => $stale->sum('bytes'),
+        ]);
+    }
+
+    /**
+     * Kick off one whitelisted task in the BACKGROUND (detached `maintenance:run`) and return a token
+     * the popup polls. Running inline would block the request and, for a slow VACUUM, trip a gateway
+     * timeout (504); detaching keeps the HTTP response instant and streams progress to the log.
+     */
+    public function run(Request $request)
+    {
+        $key = (string) $request->input('task');
+        $task = MaintenanceTasks::all()[$key] ?? null;
+
+        if (! $task || ! ($task['manual'] ?? false)) {
+            return response()->json(['message' => 'Unknown or non-runnable maintenance task.'], 422);
+        }
+
+        // Destructive tasks are run --dry-run FIRST (preview); a real apply only happens when the
+        // popup re-requests with dry=false after showing the operator what would change.
+        $dry = $request->boolean('dry') && ($task['dryRun'] ?? false);
+        $token = Str::random(16);
+
+        // Don't spawn a real detached process under the test suite — just return the contract.
+        if (! app()->runningUnitTests()) {
+            $php = is_file('/usr/local/bin/php') ? '/usr/local/bin/php' : 'php';
+            $cmd = 'nohup '.$php.' '.escapeshellarg(base_path('artisan'))
+                .' maintenance:run '.escapeshellarg($key).' --token='.escapeshellarg($token)
+                .($dry ? ' --dry' : '')
+                .' > /dev/null 2>&1 &';
+
+            // The trailing `&` backgrounds the task; the shell returns at once so run() does not block.
+            Process::fromShellCommandline($cmd, base_path())->run();
+        }
+
+        return response()->json(['ok' => true, 'token' => $token, 'label' => $task['label'], 'dry' => $dry]);
+    }
+
+    /** Poll a running task's slice of the maintenance log by token (for the popup). */
+    public function output(Request $request)
+    {
+        $token = (string) $request->query('token');
+        $log = MaintenanceLog::read();
+        $pos = $token !== '' ? strrpos($log, 'BEGIN '.$token) : false;
+
+        if ($pos === false) {
+            return response()->json(['started' => false, 'done' => false, 'text' => '']);
+        }
+
+        $run = substr($log, $pos);
+
+        return response()->json([
+            'started' => true,
+            'done'    => str_contains($run, 'END '.$token),
+            'text'    => $run,
         ]);
     }
 
@@ -74,7 +111,7 @@ class MaintenanceController extends Controller
         }
 
         return redirect()->route('admin.maintenance')
-            ->with('status', $deleted . ' playlist' . ($deleted === 1 ? '' : 's') . ' deleted.');
+            ->with('status', $deleted.' playlist'.($deleted === 1 ? '' : 's').' deleted.');
     }
 
     private function fileBytes(string $path): int

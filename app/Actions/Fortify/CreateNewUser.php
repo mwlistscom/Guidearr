@@ -4,10 +4,12 @@ namespace App\Actions\Fortify;
 
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
+use App\Models\Ban;
 use App\Models\User;
-use Illuminate\Support\Facades\Validator;
-use Laravel\Fortify\Contracts\CreatesNewUsers;
 use App\Support\Turnstile;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
+use Laravel\Fortify\Contracts\CreatesNewUsers;
 
 class CreateNewUser implements CreatesNewUsers
 {
@@ -25,6 +27,13 @@ class CreateNewUser implements CreatesNewUsers
             'password' => $this->passwordRules(),
             'cf-turnstile-response' => Turnstile::rules(),
         ])->validate();
+
+        // A banned email cannot re-register (the ban outlives any deleted account).
+        if (Ban::isBanned($input['email'] ?? null)) {
+            throw ValidationException::withMessages([
+                'email' => __('This email address is not permitted to register.'),
+            ]);
+        }
 
         $user = User::create([
             'name' => $input['name'],

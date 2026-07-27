@@ -2,8 +2,43 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3 and v1.23.4.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5 and v1.23.6.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.23.6 — Ban list, maintenance controls, and admin tooling · 2026-07-27
+
+**Added**
+- **A real ban list.** Admins can ban an *email address*, not just disable an account. Bans live in
+  their own list (with a reason and who set them), so they **survive account deletion** and **block
+  re-registration and sign-in** with that address — enforced on the sign-in pipeline, registration,
+  social login and the admin login. Manage it under **Users → Ban list**; the Users-page ban control
+  is now a toggle switch kept in sync with the list, and deleting a user can add their email in one step.
+- **On-demand maintenance controls.** The admin **Maintenance** page can now run the housekeeping jobs
+  (health check, vacuum, log trim, purge, cold-provider reaper, stuck-job reclaim) on demand. They run
+  in the **background** with progress **streamed live into a popup**, so a slow job like vacuuming the
+  feed stores no longer ties up the request or times out (no more 504). The account-deleting /
+  playlist-editing jobs (prune-unverified, prune-missing) offer a **dry run first** — you see exactly
+  what would change, then click **Apply for real**.
+- **A dedicated maintenance log.** Every maintenance run — manual or scheduled — is recorded in its own
+  `maintenance.log` (kept 30 days) that appears under **Logs**, separate from the worker log.
+- **Feeds Job Queue tools.** Each row now shows the owner's user number, the next scheduled refresh time,
+  and a clear **COLD / DISABLED** badge (with the row dimmed) for providers the reaper has parked —
+  instead of a stale "done". New per-row actions: **Run** (refresh now, re-enabling a cold provider),
+  **Log** (view that provider's recent run log), Edit and Delete.
+
+**Changed**
+- The admin **Users** and **Feeds → users** tables gained a playlist count, a sign-in-method icon
+  (Google / Facebook / password) and a **last-touch** column — updated even by an m3u/xtream download,
+  not just a login — so it's easy to spot who's still active. Deleting a user is now a proper dialog
+  (with an optional "also ban") that **refuses to delete your own account or the last admin**, and warns
+  explicitly before deleting any admin.
+
+**Fixed**
+- **Adding an Xtream provider whose server reports a long timezone name** (e.g. `Africa/Casablanca`)
+  no longer fails with a 500. The `timeshift` field was too small for many real zone names; it has been
+  widened and the value is now capped defensively.
 
 ---
 

@@ -7,6 +7,7 @@ use App\Models\Provider;
 use App\Models\User;
 use App\Services\PlaylistStore;
 use App\Services\ProviderStore;
+use App\Support\MaintenanceLog;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -101,5 +102,75 @@ class AdminMaintenanceTest extends TestCase
         $this->actingAs($this->admin())
             ->post(route('admin.maintenance.prune'), [])
             ->assertSessionHasErrors('ids');
+    }
+
+    public function test_maintenance_page_shows_task_controls(): void
+    {
+        $this->actingAs($this->admin())->get(route('admin.maintenance'))
+            ->assertOk()
+            ->assertSee('Maintenance tasks')
+            ->assertSee('Health check')
+            ->assertSee('Run now');
+    }
+
+    public function test_run_returns_a_token_for_a_valid_task(): void
+    {
+        $this->actingAs($this->admin())
+            ->postJson(route('admin.maintenance.run'), ['task' => 'reclaim'])
+            ->assertOk()
+            ->assertJson(['ok' => true])
+            ->assertJsonStructure(['ok', 'token', 'label']);
+    }
+
+    public function test_run_rejects_unknown_task(): void
+    {
+        $this->actingAs($this->admin())
+            ->postJson(route('admin.maintenance.run'), ['task' => 'rm-rf-everything'])
+            ->assertStatus(422);
+    }
+
+    public function test_run_allows_destructive_task_as_dry_run(): void
+    {
+        // Destructive tasks ARE runnable, but the popup runs them --dry-run first (preview).
+        $this->actingAs($this->admin())
+            ->postJson(route('admin.maintenance.run'), ['task' => 'prune-unverified', 'dry' => 1])
+            ->assertOk()
+            ->assertJson(['ok' => true, 'dry' => true])
+            ->assertJsonStructure(['ok', 'token', 'label', 'dry']);
+    }
+
+    public function test_dry_run_command_marks_the_log_and_makes_no_changes(): void
+    {
+        // A recently-created unverified user must NOT be deleted by a dry run of prune-unverified.
+        $victim = User::factory()->create(['email_verified_at' => null, 'created_at' => now()->subDays(30)]);
+
+        $this->artisan('maintenance:run', ['task' => 'prune-unverified', '--token' => 'dry1', '--dry' => true])
+            ->assertExitCode(0);
+
+        $this->assertNotNull($victim->fresh(), 'dry run must not delete anyone');
+        $this->assertStringContainsString('DRY RUN', MaintenanceLog::read());
+    }
+
+    public function test_output_endpoint_tails_a_run_by_token(): void
+    {
+        MaintenanceLog::write('=== BEGIN tok9 — Health check ===');
+        MaintenanceLog::write('hello from the task');
+        MaintenanceLog::write('=== END tok9 — exit=0 ===');
+
+        $this->actingAs($this->admin())
+            ->getJson(route('admin.maintenance.output', ['token' => 'tok9']))
+            ->assertOk()
+            ->assertJson(['started' => true, 'done' => true])
+            ->assertSee('hello from the task');
+    }
+
+    public function test_maintenance_run_command_logs_begin_and_end(): void
+    {
+        $this->artisan('maintenance:run', ['task' => 'reclaim', '--token' => 'cmd1'])
+            ->assertExitCode(0);
+
+        $log = MaintenanceLog::read();
+        $this->assertStringContainsString('BEGIN cmd1', $log);
+        $this->assertStringContainsString('END cmd1', $log);
     }
 }

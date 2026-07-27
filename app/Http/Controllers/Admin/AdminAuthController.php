@@ -2,6 +2,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Ban;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,6 +31,7 @@ class AdminAuthController extends Controller
         $user = User::where('email', $request->email)->first();
 
         if (! $user || ! $user->is_admin || $user->status !== 'active'
+            || Ban::isBanned($user->email)
             || ! Hash::check($request->password, $user->password)) {
             throw ValidationException::withMessages([
                 'email' => __('Those credentials do not match an active admin account.'),

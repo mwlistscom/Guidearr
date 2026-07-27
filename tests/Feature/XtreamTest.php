@@ -4,12 +4,27 @@ namespace Tests\Feature;
 
 use App\Models\Provider;
 use App\Services\ProviderStore;
+use App\Services\ProviderValidator;
 use App\Services\XmltvParser;
 use App\Services\XtreamImporter;
 use Tests\TestCase;
 
 class XtreamTest extends TestCase
 {
+    public function test_validator_caps_timeshift_to_the_column_width(): void
+    {
+        // The timezone comes from an external Xtream server; a long value must not overflow
+        // providers.timeshift (varchar 64) and 500 the request. Regression for the widen fix.
+        $result = new \ReflectionMethod(ProviderValidator::class, 'result');
+        $result->setAccessible(true);
+
+        $capped = $result->invoke(new ProviderValidator, true, 'ok', str_repeat('Z', 200), 0);
+        $this->assertSame(64, mb_strlen($capped['timeshift']));
+
+        $none = $result->invoke(new ProviderValidator, true, 'ok', null, 0);
+        $this->assertNull($none['timeshift']);
+    }
+
     private function fixture(): string
     {
         $now = time();

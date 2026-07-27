@@ -90,10 +90,10 @@ class AdminUserCreateTest extends TestCase
 
         $html = $this->actingAs($admin)->get(route('admin.users'))->assertOk()->getContent();
 
-        // Each linked provider gets its lettered badge; the plain user gets neither.
-        $this->assertStringContainsString('prov-badge google', $html);
-        $this->assertStringContainsString('prov-badge facebook', $html);
-        $this->assertSame(1, substr_count($html, 'prov-badge google'));   // only the google user
-        $this->assertSame(1, substr_count($html, 'prov-badge facebook')); // only the facebook user
+        // The sign-in method shows as a lettered icon in the Login column; the plain user gets neither.
+        $this->assertStringContainsString('loginico google', $html);
+        $this->assertStringContainsString('loginico facebook', $html);
+        $this->assertSame(1, substr_count($html, 'loginico google'));   // only the google user
+        $this->assertSame(1, substr_count($html, 'loginico facebook')); // only the facebook user
     }
 }

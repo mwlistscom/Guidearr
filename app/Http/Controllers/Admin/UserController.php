@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Ban;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +17,7 @@ class UserController extends Controller
 
     public function index()
     {
-        $users = User::with('socialAccounts')->orderByDesc('id')->get();
+        $users = User::with('socialAccounts')->withCount('playlists')->orderByDesc('id')->get();
 
         // "Currently logged in" is derived from the database session store (SESSION_DRIVER=database):
         // a session row with our user_id whose last_activity falls inside the online window. Keyed by
@@ -51,6 +52,10 @@ class UserController extends Controller
             'role' => ['required', Rule::in(['user', 'admin'])],
             'password' => ['required', 'confirmed', Password::defaults()],
         ]);
+
+        if (Ban::isBanned($validated['email'])) {
+            return back()->withErrors(['email' => 'That email is on the ban list. Remove it there first to create an account.'])->withInput();
+        }
 
         $user = new User;
         $user->forceFill([
@@ -111,6 +116,9 @@ class UserController extends Controller
 
         $user->forceFill($attrs)->save();
 
+        // Keep the email-keyed ban list in sync with the account's status.
+        $this->syncBan($user, $validated['status'] === 'banned', $request->user()->id);
+
         return redirect()->route('admin.users')->with('status', "{$user->email} updated.");
     }
 
@@ -129,7 +137,20 @@ class UserController extends Controller
 
         $user->forceFill(['status' => $enabling ? 'active' : 'banned'])->save();
 
+        // Flipping the switch to "banned" adds the email to the ban list; unbanning removes it.
+        $this->syncBan($user, ! $enabling, $request->user()->id);
+
         return back()->with('status', $enabling ? "{$user->email} unbanned." : "{$user->email} banned.");
+    }
+
+    /** Mirror an account's banned state into the email-keyed bans table. */
+    private function syncBan(User $user, bool $banned, int $adminId): void
+    {
+        if ($banned) {
+            Ban::ban($user->email, 'Banned from Users admin', $adminId);
+        } else {
+            Ban::unban($user->email);
+        }
     }
 
     public function verify(User $user)
@@ -145,14 +166,35 @@ class UserController extends Controller
 
     public function destroy(User $user, Request $request)
     {
+        $fail = function (string $message) use ($request) {
+            return $request->expectsJson()
+                ? response()->json(['message' => $message], 422)
+                : back()->withErrors(['user' => $message]);
+        };
+
         if ($user->id === $request->user()->id) {
-            return back()->withErrors(['user' => 'You cannot delete yourself.']);
+            return $fail('You cannot delete yourself.');
         }
         if ($user->is_admin && User::where('is_admin', true)->count() <= 1) {
-            return back()->withErrors(['user' => 'Cannot delete the last admin.']);
+            return $fail('Cannot delete the last admin.');
         }
+
+        $email = $user->email;
+        // Optional "also ban" — capture the email into the ban list BEFORE the row is gone, so the
+        // person cannot re-register. Deleting cascades their providers/playlists (stores via feed:purge).
+        $alsoBan = $request->boolean('ban');
+        if ($alsoBan) {
+            Ban::ban($email, 'Banned on account deletion', $request->user()->id);
+        }
+
         $user->delete();
 
-        return back()->with('status', 'User deleted.');
+        $message = $alsoBan
+            ? "User deleted and {$email} added to the ban list."
+            : 'User deleted.';
+
+        return $request->expectsJson()
+            ? response()->json(['ok' => true, 'message' => $message])
+            : back()->with('status', $message);
     }
 }
