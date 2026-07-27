@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AdminAuthController;
 use App\Http\Controllers\Admin\AdminController;
 use App\Http\Controllers\Admin\AdminPasswordController;
+use App\Http\Controllers\Admin\BanController;
 use App\Http\Controllers\Admin\EnvController;
 use App\Http\Controllers\Admin\FeedBrowseController;
 use App\Http\Controllers\Admin\LegalController;
@@ -31,6 +32,14 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
             Route::get('users', [UserController::class, 'index'])->name('users');
             Route::get('users/create', [UserController::class, 'create'])->name('users.create');
             Route::post('users', [UserController::class, 'store'])->name('users.store');
+
+            // Ban list (email-keyed) — a submenu under Users. Declared before users/{user} so the
+            // literal "bans" segment is never captured as a {user} binding.
+            Route::get('users/bans', [BanController::class, 'index'])->name('bans');
+            Route::post('users/bans', [BanController::class, 'store'])->name('bans.store');
+            Route::patch('users/bans/{ban}', [BanController::class, 'update'])->name('bans.update');
+            Route::delete('users/bans/{ban}', [BanController::class, 'destroy'])->name('bans.destroy');
+
             Route::get('users/{user}/edit', [UserController::class, 'edit'])->name('users.edit');
             Route::put('users/{user}', [UserController::class, 'update'])->name('users.update');
             Route::patch('users/{user}/toggle', [UserController::class, 'toggle'])->name('users.toggle');
@@ -39,6 +48,8 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
 
             Route::get('feeds', [FeedBrowseController::class, 'users'])->name('feeds');
             Route::patch('feeds/queue/{job}', [FeedBrowseController::class, 'queueUpdate'])->name('feeds.queue.update');
+            Route::post('feeds/queue/{job}/run', [FeedBrowseController::class, 'queueRun'])->name('feeds.queue.run');
+            Route::get('feeds/queue/{job}/log', [FeedBrowseController::class, 'queueLog'])->name('feeds.queue.log');
             Route::delete('feeds/queue/{job}', [FeedBrowseController::class, 'queueDelete'])->name('feeds.queue.delete');
             Route::get('feeds/user/{user}', [FeedBrowseController::class, 'providers'])->name('feeds.user');
             Route::get('feeds/provider/{provider}', [FeedBrowseController::class, 'channels'])->name('feeds.provider');
@@ -55,6 +66,8 @@ Route::prefix(config('guidearr.admin.path', 'admin'))->name('admin.')->group(fun
 
             Route::get('maintenance', [MaintenanceController::class, 'index'])->name('maintenance');
             Route::post('maintenance/prune', [MaintenanceController::class, 'prune'])->name('maintenance.prune');
+            Route::post('maintenance/run', [MaintenanceController::class, 'run'])->name('maintenance.run');
+            Route::get('maintenance/output', [MaintenanceController::class, 'output'])->name('maintenance.output');
             Route::patch('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'updateChannel'])->name('feeds.channel.update');
             Route::delete('feeds/provider/{provider}/channels/{channel}', [FeedBrowseController::class, 'deleteChannel'])->name('feeds.channel.delete');
 

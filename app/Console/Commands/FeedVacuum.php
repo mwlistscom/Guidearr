@@ -30,7 +30,24 @@ class FeedVacuum extends Command
         $done = 0;
         $failed = 0;
 
+        $human = function (int $bytes): string {
+            $u = ['B', 'KB', 'MB', 'GB'];
+            $i = 0;
+            $n = (float) $bytes;
+            while ($n >= 1024 && $i < count($u) - 1) {
+                $n /= 1024;
+                $i++;
+            }
+
+            return ($i === 0 ? (int) $n : number_format($n, 1)).$u[$i];
+        };
+
+        $total = count($files);
+        $this->line($total ? "Vacuuming {$total} store(s)…" : 'No store files found to vacuum.');
+
+        $i = 0;
         foreach ($files as $f) {
+            $i++;
             $b = (int) @filesize($f);
             try {
                 $db = new PDO('sqlite:'.$f);
@@ -43,12 +60,14 @@ class FeedVacuum extends Command
                 $before += $b;
                 $after += $a;
                 $done++;
-                if ($b - $a > 1048576) {
-                    $this->line(sprintf('%s: %.0fMB -> %.0fMB', basename($f), $b / 1048576, $a / 1048576));
-                }
+                // One line per store so a long run streams visible progress (not just a final total).
+                $this->line(sprintf(
+                    '[%d/%d] %s: %s -> %s (reclaimed %s)',
+                    $i, $total, basename($f), $human($b), $human($a), $human(max(0, $b - $a))
+                ));
             } catch (Throwable $e) {
                 $failed++;
-                $this->warn(basename($f).': '.$e->getMessage());
+                $this->warn(sprintf('[%d/%d] %s: %s', $i, $total, basename($f), $e->getMessage()));
             }
         }
 

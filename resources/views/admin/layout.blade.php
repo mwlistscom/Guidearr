@@ -32,6 +32,12 @@
         .sidebar nav a.active { color:#fff; background:rgba(244,117,33,.10); border-left-color:var(--accent); }
         .sidebar nav a.active svg { color:var(--accent); }
         .sidebar nav .disabled { opacity:.38; }
+        /* Nested submenu item (e.g. Ban list under Users) — revealed on hover or when in-section. */
+        .sidebar nav .navgroup { display:flex; flex-direction:column; }
+        .sidebar nav a.subitem { padding-left:2.9rem; font-size:.85rem; display:none; }
+        .sidebar nav .navgroup:hover a.subitem,
+        .sidebar nav .navgroup.open a.subitem { display:flex; }
+        .sidebar nav a.subitem svg { width:15px; height:15px; }
         .sidebar nav svg { width:18px; height:18px; flex-shrink:0; stroke-linecap:round; stroke-linejoin:round; }
         .sidebar .spacer { flex:1; }
         .sidebar .foot { padding:1rem 1.25rem; border-top:1px solid var(--border); }
@@ -125,10 +131,16 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
                     Status
                 </a>
-                <a href="{{ route('admin.users') }}" class="{{ request()->routeIs('admin.users') ? 'active' : '' }}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                    Users
-                </a>
+                <div class="navgroup {{ request()->routeIs('admin.users') || request()->routeIs('admin.bans') ? 'open' : '' }}">
+                    <a href="{{ route('admin.users') }}" class="{{ request()->routeIs('admin.users') ? 'active' : '' }}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                        Users
+                    </a>
+                    <a href="{{ route('admin.bans') }}" class="subitem {{ request()->routeIs('admin.bans') ? 'active' : '' }}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                        Ban list
+                    </a>
+                </div>
                 <a href="{{ route('admin.feeds') }}" class="{{ request()->routeIs('admin.feeds') || request()->routeIs('admin.feeds.*') ? 'active' : '' }}">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 9v12"/></svg>
                     Feeds

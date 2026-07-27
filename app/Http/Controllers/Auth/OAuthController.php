@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\Ban;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Support\SocialLogin;
@@ -43,6 +44,11 @@ class OAuthController extends Controller
 
         if (! $oauthUser->getEmail()) {
             return redirect()->route('login')->withErrors(['email' => "{$label} did not share an email address, which is required to sign in."]);
+        }
+
+        // A banned email cannot sign in or auto-provision an account via social login either.
+        if (Ban::isBanned($oauthUser->getEmail())) {
+            return redirect()->route('login')->withErrors(['email' => 'This account is not permitted to sign in.']);
         }
 
         $user = $this->resolveUser($provider, $oauthUser);

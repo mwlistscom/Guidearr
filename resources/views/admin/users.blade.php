@@ -28,6 +28,9 @@
     .prov-badge.google { background:#4285f4; }
     .prov-badge.facebook { background:#1877f2; }
     td.role-cell { white-space:nowrap; }
+    /* Keep the action icons on a single row (don't wrap onto two lines). */
+    #users-table td.actions { flex-wrap:nowrap; white-space:nowrap; }
+    #users-table th:last-child, #users-table td.actions { width:1%; }
     /* Currently-logged-in indicator. */
     .online-dot { display:inline-block; width:.6rem; height:.6rem; border-radius:50%;
         background:transparent; box-shadow:inset 0 0 0 1.5px var(--muted, #888); }
@@ -48,6 +51,22 @@
     .pager button:hover:not(:disabled) { border-color:var(--accent); }
     .pager button.cur { background:var(--accent); color:#1a1205; font-weight:700; border-color:var(--accent); }
     .pager button:disabled { opacity:.4; cursor:default; }
+    /* Sign-in method icons. */
+    .login-cell { white-space:nowrap; }
+    .loginico { display:inline-flex; align-items:center; justify-content:center; width:1.15rem; height:1.15rem;
+        border-radius:50%; font-size:.66rem; font-weight:700; color:#fff; line-height:1; }
+    .loginico.google { background:#4285f4; }
+    .loginico.facebook { background:#1877f2; }
+    .loginico.pw { background:#3a3d44; }
+    /* Ban/unban toggle switch (checked = enabled/active). */
+    .switch { position:relative; display:inline-block; width:2.4rem; height:1.3rem; vertical-align:middle; }
+    .switch input { opacity:0; width:0; height:0; }
+    .switch .slider { position:absolute; inset:0; cursor:pointer; background:#dc2626; border-radius:999px; transition:background .15s; }
+    .switch .slider:before { content:""; position:absolute; height:1rem; width:1rem; left:.15rem; bottom:.15rem;
+        background:#fff; border-radius:50%; transition:transform .15s; }
+    .switch input:checked + .slider { background:#22c55e; }
+    .switch input:checked + .slider:before { transform:translateX(1.1rem); }
+    .switch input:disabled + .slider { opacity:.45; cursor:not-allowed; }
 </style>
 
 <table id="users-table">
@@ -57,24 +76,33 @@
             <th class="sortable" data-key="id" data-type="num">ID <span class="arr"></span></th>
             <th class="sortable" data-key="name" data-type="text">Name <span class="arr"></span></th>
             <th class="sortable" data-key="email" data-type="text">Email <span class="arr"></span></th>
+            <th class="sortable" data-key="login" data-type="text" title="Sign-in method">Login <span class="arr"></span></th>
             <th class="sortable" data-key="status" data-type="text">Status <span class="arr"></span></th>
             <th class="sortable" data-key="role" data-type="text">Role <span class="arr"></span></th>
+            <th class="sortable" data-key="playlists" data-type="num">Playlists <span class="arr"></span></th>
             <th class="sortable" data-key="verified" data-type="num">Verified <span class="arr"></span></th>
             <th class="sortable" data-key="registered" data-type="num">Registered <span class="arr"></span></th>
             <th class="sortable" data-key="lastlogin" data-type="num">Last login <span class="arr"></span></th>
             <th>Actions</th>
         </tr>
     </thead>
+    @php($activeAdmins = $users->where('is_admin', true)->where('status', 'active')->count())
     <tbody>
         @foreach ($users as $u)
             @php($enabled = $u->status === 'active')
             @php($online = isset($onlineIds[$u->id]))
+            @php($socials = $u->socialAccounts->pluck('provider')->unique()->values())
+            @php($loginKey = $socials->first() ?? ($u->password ? 'password' : 'none'))
+            @php($isSelf = auth()->id() === $u->id)
+            @php($lockToggle = $enabled && ($isSelf || ($u->is_admin && $activeAdmins <= 1)))
             <tr
                 data-id="{{ $u->id }}"
                 data-name="{{ strtolower($u->name) }}"
                 data-email="{{ strtolower($u->email) }}"
+                data-login="{{ $loginKey }}"
                 data-status="{{ $enabled ? 'enabled' : 'banned' }}"
                 data-role="{{ $u->is_admin ? 'admin' : 'user' }}"
+                data-playlists="{{ $u->playlists_count }}"
                 data-verified="{{ $u->email_verified_at ? 1 : 0 }}"
                 data-registered="{{ optional($u->created_at)->timestamp ?? 0 }}"
                 data-lastlogin="{{ optional($u->last_login_at ?? $u->created_at)->timestamp ?? 0 }}"
@@ -85,8 +113,19 @@
                 <td>{{ $u->id }}</td>
                 <td>{{ $u->name }}</td>
                 <td>{{ $u->email }}</td>
-                <td><span class="badge {{ $enabled ? 'active' : 'banned' }}">{{ $enabled ? 'Enabled' : 'Banned' }}</span></td>
-                <td class="role-cell">{{ $u->is_admin ? 'admin' : 'user' }}@foreach ($u->socialAccounts->pluck('provider')->unique() as $prov)@if ($prov === 'google')<span class="prov-badge google" title="Linked Google account">G</span>@elseif ($prov === 'facebook')<span class="prov-badge facebook" title="Linked Facebook account">F</span>@endif@endforeach</td>
+                <td class="login-cell">@if ($socials->contains('google'))<span class="loginico google" title="Google sign-in">G</span>@endif @if ($socials->contains('facebook'))<span class="loginico facebook" title="Facebook sign-in">F</span>@endif @if ($socials->isEmpty())@if ($u->password)<span class="loginico pw" title="Email &amp; password">@</span>@else<span class="muted" title="No sign-in method set">—</span>@endif @endif</td>
+                <td>
+                    <form class="inline" method="POST" action="{{ route('admin.users.toggle', $u) }}">
+                        @csrf @method('PATCH')
+                        <label class="switch" title="{{ $enabled ? ($lockToggle ? 'Cannot ban this account' : 'Enabled — switch off to ban') : 'Banned — switch on to unban' }}">
+                            <input type="checkbox" {{ $enabled ? 'checked' : '' }} {{ $lockToggle ? 'disabled' : '' }}
+                                onchange="if(!this.checked){ if(confirm('Ban {{ $u->email }}? They will be signed out and added to the ban list.')){this.form.submit();}else{this.checked=true;} } else { this.form.submit(); }">
+                            <span class="slider"></span>
+                        </label>
+                    </form>
+                </td>
+                <td class="role-cell">{{ $u->is_admin ? 'admin' : 'user' }}</td>
+                <td>{{ $u->playlists_count }}</td>
                 <td>{{ $u->email_verified_at ? '✓' : '—' }}</td>
                 <td class="when">{{ optional($u->created_at)->format('Y-m-d') ?? '—' }}</td>
                 <td class="when {{ $u->last_login_at ? '' : 'fallback' }}"
@@ -107,22 +146,11 @@
                             </button>
                         @endif
                     </form>
-                    <form class="inline" method="POST" action="{{ route('admin.users.toggle', $u) }}">
-                        @csrf @method('PATCH')
-                        @if ($enabled)
-                            <button class="icon on" title="Ban">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
-                            </button>
-                        @else
-                            <button class="icon off" title="Unban">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-                            </button>
-                        @endif
-                    </form>
-                    <form class="inline" method="POST" action="{{ route('admin.users.destroy', $u) }}"
-                          onsubmit="return confirm('Delete {{ $u->email }}?')">
+                    <form class="inline" method="POST" action="{{ route('admin.users.destroy', $u) }}">
                         @csrf @method('DELETE')
-                        <button class="icon danger" title="Delete">
+                        <input type="hidden" name="ban" value="0">
+                        <button class="icon danger" title="Delete user + all their playlists"
+                                onclick="return userDelete(this, '{{ $u->email }}')">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         </button>
                     </form>
@@ -229,5 +257,15 @@
     sf.addEventListener('change', function () { state.page = 1; render(); });
     render();
 })();
+
+// Delete a user: confirm the delete, then ask whether to also ban the email so they can't re-register.
+function userDelete(btn, email) {
+    if (!confirm('Delete ' + email + ' and all their playlists and providers? This cannot be undone.')) {
+        return false;
+    }
+    btn.form.querySelector('input[name=ban]').value =
+        confirm('Also add ' + email + ' to the ban list so they cannot re-register?') ? '1' : '0';
+    return true;
+}
 </script>
 @endsection
