@@ -26,17 +26,16 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD}
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
     volumes: [ "dbdata:/var/lib/mysql" ]
-    ports: [ "33060:3306" ]
+    # Bound to loopback: the app reaches MySQL over the compose network (DB_HOST=db),
+    # so this mapping is only for local tooling. Publishing it on 0.0.0.0 would expose
+    # the database to your whole LAN. Use an SSH tunnel for remote access.
+    ports: [ "127.0.0.1:33060:3306" ]
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 40s
-  mailpit:
-    image: axllent/mailpit:latest
-    restart: unless-stopped
-    ports: [ "8025:8025" ]
   worker:
     build: .
     restart: unless-stopped

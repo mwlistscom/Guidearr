@@ -7,6 +7,30 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## v1.23.7 — Mail goes through your own relay; database no longer exposed to the LAN
+
+**Changed**
+- **No mail server is bundled any more.** The `mailpit` service has been removed from
+  `docker-compose.yml.example`. It published an **unauthenticated** web inbox on port `8025`,
+  bound to every interface — so anyone who could reach the host could read every message the app
+  sent, including **password-reset and email-verification links**. Guidearr now relays through
+  **your** SMTP server instead. `setup.sh` asks for the relay host, port, and (optional)
+  credentials, picking `smtps` automatically for port 465. Leave the host blank and mail is
+  written to the Laravel log rather than delivered — you can fill it in later under
+  **Admin → Environment**.
+- **MySQL is bound to loopback.** `docker-compose.yml.example` published `33060:3306` on
+  `0.0.0.0`, putting the database on the LAN of every install that followed it. It is now
+  `127.0.0.1:33060:3306`. The app is unaffected — it reaches MySQL over the Compose network
+  (`DB_HOST=db`); the published port only ever served local tooling. Use an SSH tunnel for
+  remote access.
+
+> **Upgrading:** these are changes to the *example* compose file — your own `docker-compose.yml`
+> is not touched. To apply them, change the `db` port mapping to `127.0.0.1:33060:3306`, delete
+> the `mailpit` service, point `MAIL_*` at a real relay (or set `MAIL_MAILER=log`), then
+> `docker compose up -d db && docker compose rm -sf mailpit`.
+
+---
+
 ## v1.23.6 — Ban list, maintenance controls, and admin tooling · 2026-07-27
 
 **Added**
