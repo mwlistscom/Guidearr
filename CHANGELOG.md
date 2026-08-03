@@ -9,6 +9,16 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ## Unreleased
 
+**Added**
+- **Brand images are now resized on upload.** The app image ships with GD, and an uploaded icon or
+  logo is capped at the largest size it is ever displayed (icon 512 px, logo 1200 px on the longest
+  edge). Aspect ratio and transparency are preserved, files already within the cap are stored
+  byte-for-byte untouched, and nothing is ever enlarged. A full-resolution export no longer becomes
+  a multi-megabyte download for every visitor.
+  - Animated GIFs are left alone — GD would keep only the first frame.
+  - If the resize can't run (no GD, an unreadable file, or an image too large to decode within the
+    memory limit) the upload is kept exactly as it arrived rather than lost.
+
 **Changed**
 - **The Branding page now tells you what size to upload.** Neither image is resized on the server,
   so an oversized file is downloaded in full by every visitor and then scaled down and discarded by
