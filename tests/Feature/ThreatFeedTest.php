@@ -237,6 +237,25 @@ class ThreatFeedTest extends TestCase
         $this->assertSame(5, Settings::threatFeedMinHits());
     }
 
+    public function test_config_page_offers_a_copy_button_for_the_feed_url(): void
+    {
+        Settings::set('threat_feed_slug', 'copyable-slug-value');
+
+        $this->actingAs($this->admin())
+            ->get(route('admin.config'))
+            ->assertOk()
+            // The button targets the element holding the URL...
+            ->assertSee('data-copy="tfUrl"', false)
+            ->assertSee('id="tfUrl"', false)
+            // ...and must not submit the surrounding settings form.
+            ->assertSee('type="button" class="copybtn"', false)
+            // Clipboard API for the normal HTTPS case...
+            ->assertSee('navigator.clipboard', false)
+            // ...and a fallback, because the stack also publishes a plain-HTTP port
+            // where navigator.clipboard is unavailable and the button would be dead.
+            ->assertSee('execCommand', false);
+    }
+
     public function test_config_page_renders_both_controls(): void
     {
         Settings::set('threat_feed_slug', 'visible-slug-value');

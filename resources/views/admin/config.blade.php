@@ -74,7 +74,11 @@
             </label>
         </div>
 
-        <p class="muted small">Copy: <code>{{ $threatFeedUrl }}</code></p>
+        <p class="muted small copyrow">
+            <code id="tfUrl">{{ $threatFeedUrl }}</code>
+            {{-- type="button": this sits inside the settings form and must not submit it. --}}
+            <button type="button" class="copybtn" data-copy="tfUrl" aria-label="Copy the feed URL">Copy</button>
+        </p>
         <p class="muted small">
             Only the last part is editable &mdash; it's the secret, and one was generated for you. Change it to anything you like (letters, numbers, dot, dash, underscore or tilde; 8 characters or more). A wrong one returns 404, so the address can't be found by guessing.
             <strong>List after N attacks</strong> is how many hostile requests one address must make before it appears &mdash; lower lists more, sooner.
@@ -105,9 +109,71 @@
     .urlbuild { display:flex; align-items:center; flex-wrap:wrap; gap:.15rem; margin-top:.4rem; }
     .urlbuild .prefix { font-family:ui-monospace,monospace; font-size:.8rem; color:var(--muted); white-space:nowrap; }
     .urlbuild .fld { margin:0; flex:1 1 12rem; min-width:10rem; }
+    .copyrow { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+    .copyrow code { word-break:break-all; }
+    .copybtn { flex:none; cursor:pointer; font:inherit; font-size:.78rem; padding:.2rem .6rem;
+               border-radius:.35rem; border:1px solid rgba(255,255,255,.22); background:#0f1012; color:#e6e7ea; }
+    .copybtn:hover { border-color:rgba(255,255,255,.4); }
+    .copybtn.done { border-color:rgba(110,231,183,.5); color:#6ee7b7; }
     .row .fld { width:11rem; }
     .err { color:#f87171; font-size:.82rem; display:block; margin:.2rem 0; }
     .save { background:var(--accent); color:#1a1205; border:none; font-weight:700; border-radius:.5rem; padding:.55rem 1.1rem; cursor:pointer; }
     .ok { background:rgba(110,231,183,.12); border:1px solid rgba(110,231,183,.4); color:#6ee7b7; padding:.6rem .8rem; border-radius:.5rem; margin-bottom:1rem; max-width:48rem; }
 </style>
+
+<script>
+    document.querySelectorAll('[data-copy]').forEach(function (btn) {
+        var source = document.getElementById(btn.getAttribute('data-copy'));
+        if (!source) { return; }
+
+        function flash(label, ok) {
+            btn.textContent = label;
+            btn.classList.toggle('done', ok);
+            setTimeout(function () {
+                btn.textContent = 'Copy';
+                btn.classList.remove('done');
+            }, 1600);
+        }
+
+        // navigator.clipboard exists only in a secure context. The admin panel is
+        // normally HTTPS, but the stack also publishes a plain-HTTP port for a local
+        // reverse proxy — so fall back to a throwaway textarea + execCommand there
+        // rather than leaving the button dead.
+        function legacyCopy(text) {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+            document.body.removeChild(ta);
+
+            return ok;
+        }
+
+        function fallback(text) {
+            var ok = legacyCopy(text);
+            flash(ok ? 'Copied' : 'Press Ctrl+C', ok);
+        }
+
+        btn.addEventListener('click', function () {
+            var text = source.textContent.trim();
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(
+                    function () { flash('Copied', true); },
+                    function () { fallback(text); }
+                );
+
+                return;
+            }
+
+            fallback(text);
+        });
+    });
+</script>
 @endsection
