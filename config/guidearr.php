@@ -18,6 +18,29 @@ return [
     'update_check' => (bool) env('GUIDEARR_UPDATE_CHECK', true),
     'github_repo'  => env('GUIDEARR_GITHUB_REPO', 'mwlistscom/Guidearr'),
 
+    // Threat feed: a plain-text list of IPs caught probing this install, shaped for a
+    // firewall (pfBlockerNG and friends) to poll as a custom IPv4/IPv6 list.
+    //
+    // The switch, the secret URL and the listing threshold live in the settings store and
+    // are edited under Admin -> Configuration — they are NOT here, so a fresh install or an
+    // upgrade needs nothing run by hand. These are the advanced knobs only.
+    'threat_feed' => [
+        // How far back to look. Scanners rotate hosts within a day or two, so a long
+        // window is what gives the list any depth at all.
+        'window_days' => (int) env('THREAT_FEED_WINDOW_DAYS', 30),
+        // Hard cap, so a log flood cannot turn into a firewall rule explosion.
+        'max_entries' => (int) env('THREAT_FEED_MAX_ENTRIES', 5000),
+        // Rebuild at most this often when a request finds the cached file stale. The
+        // scheduler also refreshes hourly; this is what makes the very first fetch work.
+        'min_rebuild_seconds' => (int) env('THREAT_FEED_MIN_REBUILD_SECONDS', 900),
+        // Comma-separated IPs/CIDRs never to emit, on top of the built-in exclusions
+        // (private/reserved space, and any host that has served a playlist).
+        'allowlist' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('THREAT_FEED_ALLOWLIST', '')),
+        ), static fn ($v) => $v !== '')),
+    ],
+
     // Background feed downloader limits (all overridable via .env).
     'feed' => [
         'max_bytes'        => (int) env('FEED_MAX_BYTES', 1288490188), // ~1.2 GB hard cap

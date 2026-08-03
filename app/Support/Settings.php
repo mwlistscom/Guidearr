@@ -78,4 +78,48 @@ class Settings
     {
         return max(1, min(16, (int) self::get('worker_limit', 1)));
     }
+
+    /** Is the firewall-facing threat feed being served? */
+    public static function threatFeedEnabled(): bool
+    {
+        return (bool) self::get('threat_feed_enabled', false);
+    }
+
+    /**
+     * Secret URL segment the threat feed is served under. Generated and stored on
+     * first read so a fresh install has a working URL with no setup step — there is
+     * nothing for an admin to run, and no window where the endpoint exists under a
+     * guessable path. Admins can replace it with their own value.
+     */
+    public static function threatFeedSlug(): string
+    {
+        $slug = trim((string) self::get('threat_feed_slug', ''));
+
+        if ($slug === '') {
+            $slug = bin2hex(random_bytes(16));
+            self::set('threat_feed_slug', $slug);
+        }
+
+        return $slug;
+    }
+
+    /**
+     * Hostile requests from one address before it is listed. Clamped to a sane 1–10000.
+     * A stored null or empty string falls back to the default rather than casting to 0,
+     * which would otherwise list an address on its very first 404.
+     */
+    public static function threatFeedMinHits(): int
+    {
+        $v = self::get('threat_feed_min_hits');
+
+        return max(1, min(10000, $v === null || $v === '' ? 20 : (int) $v));
+    }
+
+    /** Absolute URL to hand to pfBlockerNG (or any firewall) as a custom list source. */
+    public static function threatFeedUrl(): string
+    {
+        $base = self::linksBaseUrl() ?: rtrim((string) config('app.url'), '/');
+
+        return $base.'/security/threat-feed/'.self::threatFeedSlug();
+    }
 }

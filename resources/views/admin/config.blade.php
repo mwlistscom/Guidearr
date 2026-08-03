@@ -51,6 +51,37 @@
         </div>
     </div>
 
+    <div class="card">
+        <h2>Threat feed</h2>
+        <p class="muted">Publishes a plain-text list of IP addresses caught probing this install &mdash; scanners asking for <code>/.env</code>, <code>/wp-login.php</code> and the like &mdash; for a firewall to block at the edge. Point <strong>pfBlockerNG</strong> (or any tool that reads a URL list) at the address below as a custom IPv4 source. Hosts that have successfully pulled a playlist are never listed, and neither is private or reserved address space.</p>
+
+        <label class="check">
+            <input type="checkbox" name="threat_feed_enabled" value="1" @checked(old('threat_feed_enabled', $threatFeedEnabled))>
+            <span>Serve the feed</span>
+        </label>
+
+        <div class="row" style="margin-top:.8rem">
+            <label style="flex:1 1 22rem">Feed URL
+                @error('threat_feed_slug')<span class="err">{{ $message }}</span>@enderror
+                <input type="text" name="threat_feed_slug" value="{{ old('threat_feed_slug', $threatFeedSlug) }}" class="fld mono" spellcheck="false">
+            </label>
+            <label>List after N attacks
+                @error('threat_feed_min_hits')<span class="err">{{ $message }}</span>@enderror
+                <input type="number" name="threat_feed_min_hits" min="1" max="10000" value="{{ old('threat_feed_min_hits', $threatFeedMinHits) }}" class="fld">
+            </label>
+        </div>
+
+        <p class="muted small">Full URL: <code>{{ $threatFeedUrl }}</code></p>
+        <p class="muted small">
+            The URL segment is secret and generated for you &mdash; change it to anything you like. A wrong one returns 404, so the endpoint can't be discovered by guessing.
+            @if ($threatFeedGeneratedAt)
+                Currently listing <strong>{{ $threatFeedCount }}</strong> address(es); rebuilt {{ $threatFeedGeneratedAt }}.
+            @else
+                Not built yet &mdash; it is generated on the first fetch, then refreshed hourly.
+            @endif
+        </p>
+    </div>
+
     <button type="submit" class="save">Save configuration</button>
 </form>
 
@@ -64,6 +95,8 @@
     .fld.mono { width:100%; font-family:ui-monospace,monospace; }
     .row { display:flex; gap:1.4rem; flex-wrap:wrap; }
     .row label { display:flex; flex-direction:column; font-size:.85rem; color:#cdd2da; }
+    .check { display:flex; align-items:center; gap:.5rem; font-size:.9rem; color:#cdd2da; cursor:pointer; }
+    .check input { width:auto; margin:0; }
     .row .fld { width:11rem; }
     .err { color:#f87171; font-size:.82rem; display:block; margin:.2rem 0; }
     .save { background:var(--accent); color:#1a1205; border:none; font-weight:700; border-radius:.5rem; padding:.55rem 1.1rem; cursor:pointer; }

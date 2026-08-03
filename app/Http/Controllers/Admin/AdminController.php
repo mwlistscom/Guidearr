@@ -7,6 +7,7 @@ use App\Models\Provider;
 use App\Models\User;
 use App\Services\ReleaseCheck;
 use App\Support\Settings;
+use App\Support\ThreatFeed;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 
@@ -80,11 +81,21 @@ class AdminController extends Controller
     /** Config pane: serving links + rate-limit knobs. */
     public function config()
     {
+        $generatedAt = ThreatFeed::generatedAt();
+
         return view('admin.config', [
             'linksBaseUrl'     => Settings::linksBaseUrl(),
             'serveMaxIps'      => Settings::serveMaxIps(),
             'serveWindowHours' => Settings::serveWindowHours(),
             'workerLimit'      => Settings::workerLimit(),
+            // threatFeedSlug() mints and stores a secret segment on first read, so the URL
+            // is ready to copy on a fresh install with nothing to run.
+            'threatFeedEnabled'     => Settings::threatFeedEnabled(),
+            'threatFeedSlug'        => Settings::threatFeedSlug(),
+            'threatFeedMinHits'     => Settings::threatFeedMinHits(),
+            'threatFeedUrl'         => Settings::threatFeedUrl(),
+            'threatFeedCount'       => ThreatFeed::entryCount(),
+            'threatFeedGeneratedAt' => $generatedAt?->format('Y-m-d H:i T'),
         ]);
     }
 
@@ -96,6 +107,14 @@ class AdminController extends Controller
             'serve_max_ips'      => ['required', 'integer', 'min:1', 'max:100000'],
             'serve_window_hours' => ['required', 'integer', 'min:1', 'max:168'],
             'worker_limit'       => ['required', 'integer', 'min:1', 'max:16'],
+            // Optional so an older or partial submission of this form keeps working —
+            // validated only when the threat-feed section is actually posted.
+            // A single URL segment: no slashes, so it can't be pushed onto another route.
+            'threat_feed_slug'     => ['sometimes', 'required', 'string', 'min:8', 'max:128', 'regex:/^[A-Za-z0-9._~-]+$/'],
+            'threat_feed_min_hits' => ['sometimes', 'required', 'integer', 'min:1', 'max:10000'],
+        ], [
+            'threat_feed_slug.regex' => 'The feed URL segment may contain only letters, numbers, dot, dash, underscore or tilde — no slashes or spaces.',
+            'threat_feed_slug.min'   => 'The feed URL segment must be at least 8 characters, so it can\'t be guessed.',
         ]);
 
         $url = trim((string) ($data['links_base_url'] ?? ''));
@@ -109,6 +128,13 @@ class AdminController extends Controller
         Settings::set('serve_max_ips', (int) $data['serve_max_ips']);
         Settings::set('serve_window_hours', (int) $data['serve_window_hours']);
         Settings::set('worker_limit', (int) $data['worker_limit']);
+        // Only touch the threat-feed settings when that section was submitted, so a form
+        // post without it can't silently switch the feed off.
+        if ($request->has('threat_feed_slug')) {
+            Settings::set('threat_feed_enabled', $request->boolean('threat_feed_enabled'));
+            Settings::set('threat_feed_slug', $data['threat_feed_slug']);
+            Settings::set('threat_feed_min_hits', (int) $data['threat_feed_min_hits']);
+        }
 
         return redirect()->route('admin.config')->with('status', 'Configuration saved.');
     }
