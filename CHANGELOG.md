@@ -2,17 +2,12 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7 and v1.23.8.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8 and v1.23.9.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
 
 ---
 
-## Unreleased
-
-**Fixed**
-- **The brand mark was clipped top and bottom on the dashboard.** Flux wraps the logo in a 24 px
-  box with `overflow-hidden`, inside a fixed-height row, so the larger mark was cut off — while the
-  admin sidebar, which has no fixed row height, showed it whole. Both now render it the same way.
+## v1.23.9 — Assets built into the image, and a feed pfBlockerNG can read · 2026-08-03
 
 **Changed**
 - **The threat feed is now bare addresses only** — no header, no `#` comments, one IP per line.
@@ -31,6 +26,14 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   and rejects one without a file extension. The address shown in **Admin → Config** carries the
   extension; the route ignores it, so the bare form still resolves and any install already
   configured against the old URL keeps working.
+
+**Fixed**
+- **The admin panel's wordmark no longer looks bolder than the dashboard's.** It was weight 800
+  with tight tracking in pure white, beside a dashboard rendering the same name at weight 500. Both
+  now match.
+- **The brand mark was clipped top and bottom on the dashboard.** Flux wraps the logo in a 24 px
+  box with `overflow-hidden`, inside a fixed-height row, so the larger mark was cut off — while the
+  admin sidebar, which has no fixed row height, showed it whole. Both now render it the same way.
 
 ---
 
