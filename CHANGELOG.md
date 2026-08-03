@@ -17,6 +17,10 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   and publishes them into `public/build` when a container starts, which is what makes
   `docker compose up -d --build` refresh them. Node is not needed on the host, and there is no
   extra step to run.
+- **The threat feed URL now ends in `.txt`.** pfBlockerNG works out a list's format from the URL
+  and rejects one without a file extension. The address shown in **Admin → Config** carries the
+  extension; the route ignores it, so the bare form still resolves and any install already
+  configured against the old URL keeps working.
 
 ---
 

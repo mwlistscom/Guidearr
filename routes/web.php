@@ -49,7 +49,13 @@ Route::get('strm', [PlaylistServeController::class, 'strm'])->name('serve.strm')
 // Firewall-facing blocklist of IPs caught probing this install (pfBlockerNG custom list).
 // text/plain, one address per line. Off until switched on under Admin -> Configuration;
 // a wrong token 404s rather than 403s, so probing cannot confirm the endpoint exists.
+//
+// A trailing `.txt` is accepted and ignored. pfBlockerNG infers a list's format from the
+// URL and wants a file extension, so the address shown in the admin panel carries one —
+// but the bare form still resolves, because installs configured before this keep working.
 Route::get('security/threat-feed/{token}', function (string $token) {
+    $token = preg_replace('/\.txt$/i', '', $token);
+
     abort_unless(Settings::threatFeedEnabled() && hash_equals(Settings::threatFeedSlug(), $token), 404);
 
     // Build on demand when the cached file is missing or stale, so the first fetch after

@@ -120,6 +120,8 @@ class Settings
     {
         $base = self::linksBaseUrl() ?: rtrim((string) config('app.url'), '/');
 
-        return $base.'/security/threat-feed/'.self::threatFeedSlug();
+        // The .txt is cosmetic — the route strips it — but pfBlockerNG infers a list's
+        // format from the URL and rejects one without a file extension.
+        return $base.'/security/threat-feed/'.self::threatFeedSlug().'.txt';
     }
 }
