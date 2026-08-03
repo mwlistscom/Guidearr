@@ -152,18 +152,29 @@ class ThreatFeedTest extends TestCase
         $this->assertSame(['198.51.100.7'], array_keys($selected));
     }
 
-    public function test_rendered_feed_is_plain_lines_with_hash_comments(): void
+    public function test_the_feed_is_bare_addresses_with_no_comments_or_header(): void
     {
-        $body = ThreatFeed::render(['203.0.113.9' => 30, '198.51.100.7' => 50], 30, 20);
-        $lines = explode("\n", trim($body));
+        $body = ThreatFeed::render(['203.0.113.9' => 30, '198.51.100.7' => 50]);
+        $lines = explode("\n", rtrim($body, "\n"));
 
-        $addresses = array_values(array_filter($lines, static fn ($l) => ! str_starts_with($l, '#')));
+        $this->assertSame(['203.0.113.9', '198.51.100.7'], $lines, 'ordered, one address per line');
 
-        $this->assertSame(['203.0.113.9', '198.51.100.7'], $addresses);
+        // Anything that is not an address can break a consumer that does not strip comments.
+        $this->assertStringNotContainsString('#', $body, 'the feed must carry no comments');
+        $this->assertStringNotContainsString('Guidearr', $body, 'no header');
 
-        foreach ($addresses as $a) {
-            $this->assertNotFalse(filter_var($a, FILTER_VALIDATE_IP), "not a bare IP: $a");
+        foreach ($lines as $line) {
+            $this->assertNotFalse(filter_var($line, FILTER_VALIDATE_IP), "not a bare IP: {$line}");
         }
+
+        $this->assertStringEndsWith("\n", $body, 'trailing newline so the last address is a full line');
+        $this->assertStringNotContainsString("\r", $body, 'LF endings only');
+    }
+
+    public function test_an_empty_feed_is_an_empty_document(): void
+    {
+        // Not a lone header, which some parsers would treat as a malformed list.
+        $this->assertSame('', ThreatFeed::render([]));
     }
 
     public function test_a_url_segment_is_provisioned_automatically(): void
