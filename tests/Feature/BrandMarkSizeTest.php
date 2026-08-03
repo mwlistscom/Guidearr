@@ -116,4 +116,27 @@ class BrandMarkSizeTest extends TestCase
             $this->assertStringNotContainsString($prop, $component, "{$prop} reintroduces a frame around the mark");
         }
     }
+
+    public function test_the_dashboard_mark_is_not_clipped_by_flux(): void
+    {
+        // Flux wraps the logo slot in `[:where(&)]:h-6 ... overflow-hidden` inside an
+        // `h-10` anchor — 24px with clipping — which cut the mark off top and bottom while
+        // the admin sidebar, having no fixed row height, showed it whole. The inline styles
+        // are what override that, so assert them in the RENDERED page, not just the source.
+        $user = User::factory()->create(['email_verified_at' => now()]);
+
+        $html = $this->actingAs($user)->get('/dashboard')->assertOk()->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/<a[^>]*style="[^"]*height:auto[^"]*"[^>]*data-flux-sidebar-brand/',
+            $html,
+            'the brand row must grow instead of being pinned to h-10',
+        );
+
+        $this->assertStringContainsString(
+            'style="width:63px;height:63px;overflow:visible',
+            $html,
+            'the logo wrapper must override Flux h-6 + overflow-hidden, or the mark is clipped',
+        );
+    }
 }
