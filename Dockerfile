@@ -8,5 +8,8 @@ RUN apk add --no-cache git unzip libzip-dev icu-dev oniguruma-dev linux-headers 
  && docker-php-ext-configure gd --with-jpeg --with-webp \
  && docker-php-ext-install pdo_mysql mbstring bcmath zip intl opcache pcntl gd \
  && apk del $PHPIZE_DEPS
+# The base image ships no php.ini, so PHP would otherwise run on compiled-in defaults
+# (2M uploads) that contradict both nginx and the app's own validation.
+COPY docker/php.ini /usr/local/etc/php/conf.d/zz-guidearr.ini
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www/html
