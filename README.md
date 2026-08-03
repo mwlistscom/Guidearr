@@ -450,6 +450,11 @@ docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler   # reload importer/worker code held in memory
 ```
 
+> `--build` is not optional. The frontend assets are compiled **inside the image** and
+> published into `public/build` when a container starts, so skipping the rebuild leaves you
+> on the previous stylesheet and any new styling silently has no effect. There is no
+> separate `npm run build` step — Node is not needed on the host.
+
 ---
 
 ## Versioning

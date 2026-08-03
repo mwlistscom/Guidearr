@@ -7,6 +7,19 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Changed**
+- **Frontend assets are now built into the image.** They were compiled by hand and committed
+  nowhere — `public/build` is gitignored, and neither the `Dockerfile` nor the documented upgrade
+  path ran `npm run build`. An upgraded install therefore kept whatever stylesheet it already had,
+  so any newly added CSS class silently did nothing. The image now compiles them during the build
+  and publishes them into `public/build` when a container starts, which is what makes
+  `docker compose up -d --build` refresh them. Node is not needed on the host, and there is no
+  extra step to run.
+
+---
+
 ## v1.23.8 — Branding overhaul, and uploads that no longer time out · 2026-08-03
 
 **Added**
