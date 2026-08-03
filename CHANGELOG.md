@@ -2,67 +2,63 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6 and v1.23.7.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7 and v1.23.8.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
 
 ---
 
-## Unreleased
-
-**Changed**
-- **New default logo and icon**, replacing the placeholders — both properly transparent (logo 88%, icon 70%), 1200 × 655 / 186 KB and 512 × 510 / 264 KB.
-- **The brand mark is bigger, and the same everywhere.** It sat at 32 px in the app chrome and
-  30 px in the admin sidebar — of which padding and a border left only ~24 px of actual mark — so
-  it was hard to make out and visibly different between the two pages. Both now render the icon on
-  its own at **63 px** — no tile, no border, no padding — so what you see is the mark itself rather
-  than a box around it. The standalone legal/licence/docs headers moved 30 px → 40 px to match
-  each other.
-
-**Fixed**
-- **Uploading a logo could hang and end in a 504.** The official PHP image ships **no `php.ini`
-  at all**, so PHP ran on its compiled-in defaults: **2 MB** for a file and **8 MB** for a whole
-  request, while nginx accepted 20 MB and the app's own validation advertised 10 MB. A body over
-  8 MB made PHP abort without reading it, nginx sat waiting on the dead upstream, and the browser
-  showed **504 Gateway Time-out after five minutes**. Between 2 MB and 8 MB the file was silently
-  discarded instead, so the upload just bounced back. Guidearr now ships a `php.ini` with the
-  layers in agreement — nginx 20 MB ≥ post 16 MB ≥ upload 12 MB ≥ the app's 10 MB rule — so an
-  oversized file gets a clear validation message rather than a timeout. `memory_limit` is raised
-  to 256 MB so the new upload resizing can actually run on a full-sized image.
-
-- **The default logo showed a grey checkerboard on the landing page.** The shipped
-  `logo-default.png` had an image editor's transparency checkerboard **flattened into it as real
-  pixels** — every pixel was fully opaque, and 86% of them were the alternating light greys that
-  are supposed to *represent* transparency. On the landing page that rendered as an ugly checked
-  slab behind the wordmark. The background is now genuinely transparent; the artwork itself is
-  byte-for-byte the same (15,276 mark pixels before and after), and the file is 67% smaller
-  (156 KB → 51 KB). The unused duplicate `default.png` was carrying the same fault and has been
-  replaced too.
+## v1.23.8 — Branding overhaul, and uploads that no longer time out · 2026-08-03
 
 **Added**
 - **Brand images are now resized on upload.** The app image ships with GD, and an uploaded icon or
   logo is capped at the largest size it is ever displayed (icon 512 px, logo 1200 px on the longest
   edge). Aspect ratio and transparency are preserved, files already within the cap are stored
-  byte-for-byte untouched, and nothing is ever enlarged. A full-resolution export no longer becomes
-  a multi-megabyte download for every visitor.
-  - Animated GIFs are left alone — GD would keep only the first frame.
-  - If the resize can't run (no GD, an unreadable file, or an image too large to decode within the
-    memory limit) the upload is kept exactly as it arrived rather than lost.
+  byte-for-byte untouched, and nothing is ever enlarged — so a full-resolution export no longer
+  becomes a multi-megabyte download for every visitor.
+  - Animated GIFs are left alone; GD would keep only the first frame.
+  - If the resize can't run — no GD, an unreadable file, or an image too large to decode within the
+    memory limit — the upload is kept exactly as it arrived rather than lost.
+- **The Branding page tells you what size to upload.** Each asset shows a **recommended size**
+  (icon **256 × 256**, logo **600 × 300**), says where and how large it is actually drawn, and
+  reports the **dimensions and weight of the file currently in use** — with a warning when it is far
+  bigger than it needs to be.
 
 **Changed**
-- **The Branding page now tells you what size to upload.** Neither image is resized on the server,
-  so an oversized file is downloaded in full by every visitor and then scaled down and discarded by
-  their browser. Each asset now shows a **recommended size** (icon **256 × 256**, logo **600 × 300**),
-  says where and how large it is actually drawn, and reports the **dimensions and weight of the file
-  currently in use** — with a warning when it is far bigger than it needs to be. The description of
-  where the icon appears has also been corrected.
+- **New default logo and icon**, replacing the placeholders — both properly transparent (logo 88%,
+  icon 70%), at 1200 × 655 / 186 KB and 512 × 510 / 264 KB.
+- **The brand mark is bigger, and the same everywhere.** It sat at 32 px in the app chrome and
+  30 px in the admin sidebar — of which padding and a border left only ~24 px of actual mark — so it
+  was hard to make out and visibly different between the two pages. Both now render the icon on its
+  own at **63 px**: no tile, no border, no padding, so what you see is the mark rather than a box
+  around it. The standalone legal/licence/docs headers moved 30 px → 40 px to match each other.
 
 **Fixed**
-- **Brand assets are no longer re-downloaded on every page view.** The icon and logo are served
-  with `no-cache` so a fresh upload appears immediately — but nothing compared the validator, so a
-  browser's conditional request was answered with the whole image every time. They now carry an
-  **ETag** and honour `If-None-Match` / `If-Modified-Since`, so a revalidation costs a **304 with an
-  empty body** instead of the full file. Uploads still appear instantly. On one install these two
-  files accounted for **792 MB in six days**, with not a single 304.
+- **Uploading a logo could hang and end in a 504.** The official PHP image ships **no `php.ini` at
+  all**, so PHP ran on its compiled-in defaults: **2 MB** for a file and **8 MB** for a whole
+  request, while nginx accepted 20 MB and the app's own validation advertised 10 MB. A body over
+  8 MB made PHP abort without reading it, nginx sat waiting on the dead upstream, and the browser
+  showed **504 Gateway Time-out after five minutes**. Between 2 MB and 8 MB the file was silently
+  discarded instead, so the upload simply bounced back. Guidearr now ships a `php.ini` with the
+  layers in agreement — nginx 20 MB ≥ post 16 MB ≥ upload 12 MB ≥ the app's 10 MB rule — so an
+  oversized file gets a clear validation message rather than a timeout. `memory_limit` is raised to
+  256 MB so the new upload resizing can run on a full-sized image.
+- **The default logo showed a grey checkerboard on the landing page.** The shipped
+  `logo-default.png` had an image editor's transparency checkerboard **flattened into it as real
+  pixels** — every pixel fully opaque, 86% of them the alternating light greys that are supposed to
+  *represent* transparency. The background is now genuinely transparent; the artwork is
+  byte-for-byte identical (15,276 mark pixels before and after) and the file is 67% smaller. The
+  unused duplicate `default.png` carried the same fault and was replaced too.
+- **Brand assets are no longer re-downloaded on every page view.** They are served with `no-cache`
+  so a fresh upload appears immediately, but nothing compared the validator — a browser's
+  conditional request was answered with the whole image every time. They now carry an **ETag** and
+  honour `If-None-Match` / `If-Modified-Since`, so revalidating costs a **304 with an empty body**
+  instead of the full file. Uploads still appear instantly. On one install these two files accounted
+  for **792 MB in six days**, without a single 304.
+
+**Upgrading**
+- This release changes the `Dockerfile` (it adds GD and a `php.ini`), so the usual
+  `docker compose up -d --build` is required — a plain `git pull` is not enough for the upload
+  fixes to take effect.
 
 ---
 
