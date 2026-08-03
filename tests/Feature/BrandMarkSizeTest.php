@@ -94,26 +94,25 @@ class BrandMarkSizeTest extends TestCase
 
     public function test_the_mark_has_no_frame_background_or_padding(): void
     {
-        // The frame is decoration. Padding or a border inside it eats the mark: at 48px
-        // with 2px padding and a 1px border, object-fit:contain rendered only 42px — the
-        // box looked bigger while the logo barely moved.
-        $adminCss = $this->adminCss();
-        preg_match('/\.sidebar \.brand \.logo \{([^}]*)\}/s', $adminCss, $m);
-
+        // About the MARK, not the row. The row carries padding on purpose — that is what
+        // positions the brand block, and both chromes share it. What must stay clean is
+        // the box immediately around the icon: a tile, border or inner padding there is
+        // what put a visible box around it and shrank the mark inside its own frame.
+        preg_match('/\.sidebar \.brand \.logo \{([^}]*)\}/s', $this->adminCss(), $m);
         $this->assertNotEmpty($m, 'admin sidebar mark rule not found');
-        // No tile, no border, no padding — anything here either shrinks the mark or puts a
-        // visible box around it. Both were asked for and removed.
-        foreach (['background', 'border', 'padding'] as $prop) {
-            $this->assertDoesNotMatchRegularExpression(
-                '/(?<![-a-z])'.$prop.'\s*:/',
-                $m[1],
-                "{$prop} reintroduces a frame around the admin mark",
-            );
-        }
 
         $component = file_get_contents(resource_path('views/components/app-logo.blade.php'));
-        foreach (['background:', 'border:', 'padding:'] as $prop) {
-            $this->assertStringNotContainsString($prop, $component, "{$prop} reintroduces a frame around the mark");
+        preg_match("/\\\$frame = '([^']*)'/", $component, $f);
+        preg_match("/\\\$mark = '([^']*)'/", $component, $k);
+        $this->assertNotEmpty($f, 'the mark frame style not found');
+        $this->assertNotEmpty($k, 'the mark style not found');
+
+        foreach (['background', 'border', 'padding'] as $prop) {
+            $pattern = '/(?<![-a-z])'.$prop.'\s*:/';
+
+            $this->assertDoesNotMatchRegularExpression($pattern, $m[1], "{$prop} frames the admin mark");
+            $this->assertDoesNotMatchRegularExpression($pattern, $f[1], "{$prop} frames the app-chrome mark");
+            $this->assertDoesNotMatchRegularExpression($pattern, $k[1], "{$prop} is set on the image itself");
         }
     }
 
@@ -160,21 +159,32 @@ class BrandMarkSizeTest extends TestCase
 
     public function test_both_brand_rows_have_identical_geometry(): void
     {
-        // Flux renders the app-chrome brand row as `h-10 flex items-center px-2 gap-2`,
-        // with our inline height:auto override — so: no vertical padding, .5rem sides,
-        // .5rem gap. The admin sidebar carried 1.05rem of vertical padding and a .6rem
-        // gap, which pushed its mark and wordmark ~17px lower than the dashboard's.
+        // The two rows are styled by unrelated systems — plain CSS in the admin sidebar,
+        // Flux utilities overridden inline in the component — so the only thing keeping
+        // them aligned is that they carry the same values. Compare them directly rather
+        // than pinning a number, so either can be retuned as long as both move together.
         preg_match('/\.sidebar \.brand \{([^}]*)\}/s', $this->adminCss(), $m);
         $this->assertNotEmpty($m, 'admin brand rule not found');
 
-        $rule = $m[1];
-
-        $this->assertMatchesRegularExpression('/gap:\s*\.5rem/', $rule, 'gap must match Flux gap-2');
-        $this->assertMatchesRegularExpression('/padding:\s*0 \.5rem/', $rule, 'no vertical padding; .5rem sides, matching px-2');
-        $this->assertMatchesRegularExpression('/height:\s*auto/', $rule, 'the row must grow to the mark, as the dashboard does');
-
-        // The component carries the same height override for the Flux row.
         $component = file_get_contents(resource_path('views/components/app-logo.blade.php'));
-        $this->assertStringContainsString('height:auto', $component);
+        preg_match("/\\\$row = '([^']*)'/", $component, $r);
+        $this->assertNotEmpty($r, 'the component brand-row style not found');
+
+        foreach (['padding', 'height'] as $prop) {
+            preg_match('/(?<![-a-z])'.$prop.':\s*([^;]+)/', $m[1], $a);
+            preg_match('/(?<![-a-z])'.$prop.':\s*([^;]+)/', $r[1], $b);
+
+            $this->assertNotEmpty($a, "admin brand rule has no {$prop}");
+            $this->assertNotEmpty($b, "component brand row has no {$prop}");
+            $this->assertSame(
+                trim($a[1]),
+                trim($b[1]),
+                "{$prop} differs between the admin sidebar and the app chrome — the rows will not line up",
+            );
+        }
+
+        // Gap and type are matched too; Flux uses gap-2 / text-sm / font-medium.
+        $this->assertMatchesRegularExpression('/gap:\s*\.5rem/', $m[1], 'gap must match Flux gap-2');
+        $this->assertMatchesRegularExpression('/font-size:\s*\.875rem/', $m[1], 'must match text-sm');
     }
 }
