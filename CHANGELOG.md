@@ -9,6 +9,23 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ## v1.23.7 — Mail goes through your own relay; database no longer exposed to the LAN
 
+**Added**
+- **A threat feed your firewall can block from.** Guidearr can publish a plain-text list of the IP
+  addresses caught probing it — the scanners constantly asking for `/.env`, `/wp-login.php`,
+  `/.ssh/id_rsa` and the like — for **pfBlockerNG** (or anything that polls a URL list) to consume
+  as a custom IPv4/IPv6 source. Switch it on under **Admin → Configuration → Threat feed**, which
+  also shows the URL to copy and lets you set **how many attacks list an address** (default 20).
+  - **The URL is secret and created for you.** There is nothing to run after an install or an
+    upgrade: the address is generated on first view, the list builds itself on the first fetch,
+    and it refreshes hourly from then on. You can replace the URL segment with your own; a wrong
+    one returns 404, so the endpoint can't be found by guessing.
+  - **It will not list your users.** Any host that has successfully pulled a playlist is excluded
+    outright — a customer's player can share an address with a scanner, and cutting it off would
+    stop their service. Private and reserved addresses are never listed either, so the reverse
+    proxy and health checks can't be blocked by accident.
+  - Only requests the app answered with a refusal count, matched against the exact status they
+    returned, so an ordinary broken link is never mistaken for an attack.
+
 **Changed**
 - **No mail server is bundled any more.** The `mailpit` service has been removed from
   `docker-compose.yml.example`. It published an **unauthenticated** web inbox on port `8025`,
