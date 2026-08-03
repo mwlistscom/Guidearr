@@ -1,102 +1,89 @@
-# Guidearr v1.23.7 — Security hardening
+# Guidearr v1.23.8 — Branding overhaul, and uploads that no longer time out
 
-This release closes two ways a Guidearr install could expose itself, adds rate limits to every
-public sign-in and sign-up route, and gives your firewall a list of the scanners hammering you.
+Everything about brand images: uploading them, storing them, serving them, and what ships by
+default. Plus the reason a logo upload could sit for five minutes and then fail.
 
-> **⚠️ Two of these need a change to your own `docker-compose.yml` — see *Upgrading* below.**
-> The compose file in this repo is an *example*; updating Guidearr does not touch yours.
+> **⚠️ This release changes the `Dockerfile`.** A plain `git pull` is not enough — you need
+> `docker compose up -d --build` or the upload fixes won't take effect. See *Upgrading* below.
 
 ---
 
-## Your mail server, not ours
+## Uploading a logo could hang and end in a 504
 
-**The bundled `mailpit` service has been removed.** It published an **unauthenticated web inbox on
-port `8025`, bound to every interface** — so on any install that followed the shipped compose file,
-anyone who could reach the host could read every message Guidearr sent, **including password-reset
-and email-verification links**. It was a development mail catcher that shipped to production.
+The official PHP image ships **no `php.ini` at all** — only the inactive `-development` and
+`-production` templates — so PHP ran on its compiled-in defaults. Four layers disagreed about how
+big an upload may be:
 
-Guidearr now relays through **your** SMTP server. `setup.sh` asks for the relay host, port and
-optional credentials, choosing implicit TLS automatically for port 465. Leave the host blank and
-mail is written to the Laravel log instead of being delivered — you can fill it in later under
-**Admin → Environment**.
-
-## The database is no longer on your LAN
-
-The example compose file published MySQL on `0.0.0.0:33060`, putting the database on the local
-network of every install that used it. It is now bound to `127.0.0.1`. Guidearr itself is
-unaffected — it reaches MySQL over the Compose network, and the published port only ever served
-local tooling. Use an SSH tunnel for remote access.
-
-## A threat feed your firewall can block from
-
-Any Guidearr on the public internet gets probed constantly for `/.env`, `/wp-login.php`,
-`/.ssh/id_rsa` and the rest. Guidearr refuses all of it, but the noise is real — on one install
-those probes were **74% of all requests**.
-
-**Admin → Config → Threat feed** publishes the offending addresses as a plain-text list, one per
-line, for **pfBlockerNG** (or anything that polls a URL) to block at the edge. Tick *Serve the
-feed*, press **Copy**, and add it as a custom IPv4 source.
-
-- **Nothing to run.** The secret URL is generated for you, the list builds itself on the first
-  fetch and refreshes hourly. No command after an install or an upgrade.
-- **Nothing is banned permanently.** The list is rebuilt from scratch every time and no address is
-  ever stored, so a scanner that goes quiet drops off by itself and the list can't grow unbounded.
-- **It will not list your users.** Any host that has successfully pulled a playlist is excluded
-  outright — a customer's player can share an address with a scanner. Private and reserved
-  addresses are never listed either, so your reverse proxy and health checks are safe.
-
-*Worth knowing:* scanners rent cloud hosts and rotate them within a day or two, so a list of past
-offenders blocks tomorrow's traffic only sometimes. Its dependable benefit is cutting log noise and
-bandwidth. Use it alongside a curated blocklist, not instead of one.
-
-## Rate limits on every public auth route
-
-Registration, password-reset requests and reset submissions had **no limit at all** — one host hit
-the sign-up form 21 times in 60 seconds, and only the optional CAPTCHA stopped it.
-
-| Route | Limit |
+| Layer | Limit |
 |---|---|
-| Sign-up | 5/min and 15/hour per address |
-| Reset-link request | 5/min per address, 5/hour per target account |
-| Reset submission | 10/min per address |
-| Sign-in | 20/min per address, alongside the existing 5/min per account |
-| Social sign-up | 10 new accounts/hour per address |
+| nginx `client_max_body_size` | 20 MB |
+| **PHP `post_max_size`** | **8 MB** |
+| **PHP `upload_max_filesize`** | **2 MB** |
+| Laravel validation | 10 MB |
 
-Two are worth calling out. **Sign-in was already limited, but per account** — which does nothing
-about one host trying a common password against *many* accounts, since every address got its own
-budget. And the **reset-link route mails an address the requester supplies**, so leaving it open was
-a way to flood a third party's inbox from your server; it is now capped per target account as well
-as per host.
+Over 8 MB, nginx accepted the body and PHP abandoned it without reading — so nginx waited out its
+upstream timeout and the browser showed **504 Gateway Time-out after five minutes**. Between 2 MB
+and 8 MB the file was silently discarded and the upload simply bounced back with no explanation.
 
-**Signing up with Google or Facebook** is the one path with no CAPTCHA — a redirect back from the
-provider has no form to solve a challenge in — so new-account creation there is capped per address.
-**Signing in to an existing account is never counted**, so returning users are unaffected however
-many people share an office or carrier address.
+Guidearr now ships a `php.ini` with the layers nesting properly — **20 MB ≥ 16 MB ≥ 12 MB ≥ 10 MB**
+— with the app's own rule the tightest, so an oversized file produces a clear message at the one
+layer that can explain it.
 
-Every limit is tunable with `AUTH_LIMIT_*` in `.env`. Raise them if many genuine users share one
-public IP.
+## Brand images are resized on upload
 
-## Also
+The app image now includes GD, and an uploaded icon or logo is capped at the largest size it is ever
+displayed: **512 px for the icon, 1200 px for the logo**. A full-resolution export no longer becomes
+a multi-megabyte download for every visitor.
 
-- The sign-in, sign-up and password-reset screens now show **your** brand mark from
-  **Admin → Branding**, instead of the framework's stock logo.
+It only ever shrinks. Aspect ratio and transparency are preserved, anything already within the cap
+is stored byte-for-byte untouched, and animated GIFs are skipped because GD would keep only the
+first frame. If the resize can't run — no GD, an unreadable file, an image too large to decode
+within the memory limit — **the upload is kept exactly as it arrived rather than lost**.
+
+## Brand assets stopped being re-downloaded on every page view
+
+The icon and logo are served with `no-cache` so a fresh upload appears immediately — but nothing
+ever compared the validator, so a browser's conditional request was answered with the entire image
+every single time. They now carry an **ETag** and honour `If-None-Match` / `If-Modified-Since`, so
+revalidating costs a **304 with an empty body**.
+
+On one install those two files accounted for **792 MB in six days**, with not a single 304.
+
+## The default logo had a checkerboard baked into it
+
+The shipped `logo-default.png` had an image editor's transparency checkerboard **flattened into it
+as real pixels** — every pixel fully opaque, 86% of them the alternating light greys that are only
+meant to *represent* transparency. On the landing page that rendered as a grey checked slab behind
+the wordmark.
+
+The background is now genuinely transparent, the artwork is byte-for-byte identical, and the file is
+67% smaller.
+
+## New defaults, and a mark you can actually see
+
+- **A new default logo and icon**, both properly transparent.
+- **The brand mark is bigger and consistent.** It was 32 px in the app chrome and 30 px in the admin
+  sidebar — of which padding and a border left only ~24 px of actual mark — so it was hard to make
+  out *and* visibly different between the two pages. Both now render the icon on its own at
+  **63 px**, with no tile, border or padding.
+- **The Branding page tells you what size to upload**: a recommended size per asset, where and how
+  large it is actually drawn, and the dimensions and weight of the file currently in use — with a
+  warning when it is far bigger than it needs to be.
 
 ---
 
 ## Upgrading
 
-Guidearr updates do not touch your `docker-compose.yml`. To pick up the two hardening changes:
-
 ```bash
-# In docker-compose.yml:
-#   1. db ports  ->  "127.0.0.1:33060:3306"
-#   2. delete the whole `mailpit:` service block
-
-docker compose up -d db
-docker compose rm -sf mailpit          # if the container is still running
+cd Guidearr
+git pull
+docker compose up -d --build      # required: the Dockerfile changed
+docker compose exec app php artisan migrate --force
+docker compose exec app php artisan optimize:clear
+docker compose restart worker scheduler
 ```
 
-**Point `MAIL_*` at a real SMTP relay first** (or set `MAIL_MAILER=log`), otherwise password resets
-and email verification stop working the moment Mailpit goes away.
+Without `--build` you keep the old image, and the upload-size fix and image resizing will not be
+active — uploads stay capped at 2 MB and large ones still 504.
 
-Nothing else needs running — the threat feed and the rate limits are live as soon as you update.
+There are no migrations specific to this release and no configuration to change.
