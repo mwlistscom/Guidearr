@@ -10,6 +10,11 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 ## Unreleased
 
 **Changed**
+- **The threat feed is now bare addresses only** — no header, no `#` comments, one IP per line.
+  pfBlockerNG's parser strips comments, but plenty of tools that read a URL list do not, and a
+  stray comment is the difference between a working source and a silently empty one. The criteria,
+  entry count and last-built time are on the **Admin → Config** page, where they can actually be
+  read. An empty feed is now an empty document rather than a lone header.
 - **Frontend assets are now built into the image.** They were compiled by hand and committed
   nowhere — `public/build` is gitignored, and neither the `Dockerfile` nor the documented upgrade
   path ran `npm run build`. An upgraded install therefore kept whatever stylesheet it already had,

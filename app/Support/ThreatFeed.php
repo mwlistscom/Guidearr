@@ -277,7 +277,7 @@ final class ThreatFeed
 
         $path = self::path();
         @mkdir(dirname($path), 0775, true);
-        file_put_contents($path, self::render($ips, $windowDays, $minHits));
+        file_put_contents($path, self::render($ips));
 
         return [
             'listed' => count($ips),
@@ -343,29 +343,22 @@ final class ThreatFeed
     }
 
     /**
-     * Render the firewall-facing document: text/plain, one address per line.
-     * pfBlockerNG ignores `#` comments, so the header is safe to include.
+     * Render the firewall-facing document: one bare IP address per line, nothing else.
+     *
+     * No header, no comments. pfBlockerNG's parser strips `#` lines, but plenty of tools
+     * that consume a URL list do not, and a stray comment is the difference between a
+     * working source and a silently empty one. Everything the header used to carry — the
+     * criteria, the entry count, when it was last built — is on the Admin -> Config page,
+     * where an operator can actually read it.
      *
      * @param  array<string, int>  $ips  ip => hits
      */
-    public static function render(array $ips, int $windowDays, int $minHits, ?DateTimeInterface $generatedAt = null): string
+    public static function render(array $ips): string
     {
-        $generatedAt ??= new DateTimeImmutable;
-
-        $lines = [
-            '# Guidearr threat feed',
-            '# Addresses seen probing this install for vulnerabilities.',
-            '# Criteria: >= '.$minHits.' hostile requests in the last '.$windowDays.' day(s).',
-            '# Hosts that successfully pulled a playlist are excluded.',
-            '# Generated: '.$generatedAt->format(DATE_ATOM),
-            '# Entries: '.count($ips),
-            '#',
-        ];
-
-        foreach (array_keys($ips) as $ip) {
-            $lines[] = (string) $ip;
+        if ($ips === []) {
+            return '';
         }
 
-        return implode("\n", $lines)."\n";
+        return implode("\n", array_map('strval', array_keys($ips)))."\n";
     }
 }
