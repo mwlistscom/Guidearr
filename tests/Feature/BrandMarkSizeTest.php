@@ -157,4 +157,24 @@ class BrandMarkSizeTest extends TestCase
         $this->assertMatchesRegularExpression('/letter-spacing:\s*normal/', $m[1], 'Flux applies no tracking');
         $this->assertDoesNotMatchRegularExpression('/color:\s*#fff\b/', $m[1], 'pure white is brighter than zinc-100');
     }
+
+    public function test_both_brand_rows_have_identical_geometry(): void
+    {
+        // Flux renders the app-chrome brand row as `h-10 flex items-center px-2 gap-2`,
+        // with our inline height:auto override — so: no vertical padding, .5rem sides,
+        // .5rem gap. The admin sidebar carried 1.05rem of vertical padding and a .6rem
+        // gap, which pushed its mark and wordmark ~17px lower than the dashboard's.
+        preg_match('/\.sidebar \.brand \{([^}]*)\}/s', $this->adminCss(), $m);
+        $this->assertNotEmpty($m, 'admin brand rule not found');
+
+        $rule = $m[1];
+
+        $this->assertMatchesRegularExpression('/gap:\s*\.5rem/', $rule, 'gap must match Flux gap-2');
+        $this->assertMatchesRegularExpression('/padding:\s*0 \.5rem/', $rule, 'no vertical padding; .5rem sides, matching px-2');
+        $this->assertMatchesRegularExpression('/height:\s*auto/', $rule, 'the row must grow to the mark, as the dashboard does');
+
+        // The component carries the same height override for the Flux row.
+        $component = file_get_contents(resource_path('views/components/app-logo.blade.php'));
+        $this->assertStringContainsString('height:auto', $component);
+    }
 }

@@ -7,6 +7,16 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **The admin sidebar's brand row sat a few pixels lower than the dashboard's.** It carried
+  1.05 rem of vertical padding, a wider gap and a wider indent than the app chrome, so the mark and
+  wordmark did not line up between the two pages. Both rows now use identical geometry — no
+  vertical padding, 0.5 rem sides, 0.5 rem gap — on top of the type and mark already matched.
+
+---
+
 ## v1.23.9 — Assets built into the image, and a feed pfBlockerNG can read · 2026-08-03
 
 **Changed**
