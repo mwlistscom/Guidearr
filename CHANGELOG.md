@@ -11,8 +11,11 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 **Changed**
 - **A new default logo**, replacing the placeholder — properly transparent (88%), 1200 × 655, 186 KB.
-- **The brand mark in the app chrome is bigger.** It sat at 32 px in the sidebar and header, which
-  left anything with detail in it hard to make out; it is now 40 px.
+- **The brand mark is bigger, and the same everywhere.** It sat at 32 px in the app chrome and
+  30 px in the admin sidebar — of which padding and a border left only ~24 px of actual mark — so
+  it was hard to make out and visibly different between the two pages. Both are now **48 px** with
+  identical framing, and the standalone legal/licence/docs headers moved 30 px → 40 px to match
+  each other.
 
 **Fixed**
 - **Uploading a logo could hang and end in a 504.** The official PHP image ships **no `php.ini`

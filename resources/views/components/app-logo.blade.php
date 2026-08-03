@@ -3,31 +3,34 @@
     'href' => '/',
 ])
 
-@php($brandName = config('app.name', 'Guidearr'))
+@php
+    $brandName = config('app.name', 'Guidearr');
 
-{{--
-    The mark in the top-left of the app chrome, enlarged from size-8 (32px) to size-10
-    (40px) — 32px left anything with detail in it barely legible.
+    // The brand mark must look identical here and in the admin sidebar, which is a
+    // separate layout styled with plain CSS (.sidebar .brand .logo). Both carry these
+    // exact values — change them together or the two chromes drift apart again.
+    //
+    // Explicit CSS rather than a Tailwind size utility on purpose: public/build is
+    // gitignored and the documented upgrade path never runs `npm run build`, so an
+    // upgraded install keeps its old stylesheet. A utility it has never compiled would
+    // silently do nothing and leave the image unconstrained. Inline styles always apply.
+    $frame = 'width:48px;height:48px;border-radius:9px;background:#0e0f13;'.
+        'border:1px solid rgba(255,255,255,.10);padding:2px;flex-shrink:0;'.
+        'display:flex;align-items:center;justify-content:center;overflow:hidden';
 
-    Only utilities ALREADY in the compiled CSS may be used here. public/build is
-    gitignored and the documented upgrade path (git pull; docker compose up -d --build)
-    does not run `npm run build`, so an upgraded install keeps its old stylesheet. A class
-    it has never compiled would silently have no effect — leaving the image unconstrained
-    and blowing out the sidebar. size-10 is present; size-11/12 are not.
+    $mark = 'width:100%;height:100%;object-fit:contain';
+@endphp
 
-    object-contain, so a non-square icon is letterboxed rather than distorted.
---}}
-
-@if($sidebar)
+@if ($sidebar)
     <flux:sidebar.brand :name="$brandName" :href="$href" {{ $attributes }}>
-        <x-slot name="logo" class="flex aspect-square size-10 items-center justify-center overflow-hidden rounded-md">
-            <img src="{{ route('branding.icon') }}" alt="{{ $brandName }}" class="size-10 object-contain" />
+        <x-slot name="logo" style="{{ $frame }}">
+            <img src="{{ route('branding.icon') }}" alt="{{ $brandName }}" style="{{ $mark }}" />
         </x-slot>
     </flux:sidebar.brand>
 @else
     <flux:brand :name="$brandName" :href="$href" {{ $attributes }}>
-        <x-slot name="logo" class="flex aspect-square size-10 items-center justify-center overflow-hidden rounded-md">
-            <img src="{{ route('branding.icon') }}" alt="{{ $brandName }}" class="size-10 object-contain" />
+        <x-slot name="logo" style="{{ $frame }}">
+            <img src="{{ route('branding.icon') }}" alt="{{ $brandName }}" style="{{ $mark }}" />
         </x-slot>
     </flux:brand>
 @endif

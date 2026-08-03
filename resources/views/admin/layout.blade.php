@@ -23,8 +23,11 @@
             font-weight:800; letter-spacing:-.02em; color:#fff; border-bottom:1px solid var(--border);
             text-decoration:none; }
         a.sidebar-brand:hover { background:rgba(255,255,255,.03); }
-        .sidebar .brand .logo { width:30px; height:30px; border-radius:7px; object-fit:contain;
-            background:#0e0f13; padding:2px; border:1px solid var(--border); flex-shrink:0; }
+        /* Must match the app chrome exactly — see resources/views/components/app-logo.blade.php,
+           which carries the same values. Change both together or the two chromes drift apart.
+           (Was 30px, of which padding and border left only ~24px of actual mark.) */
+        .sidebar .brand .logo { width:48px; height:48px; border-radius:9px; object-fit:contain;
+            background:#0e0f13; padding:2px; border:1px solid rgba(255,255,255,.10); flex-shrink:0; }
         .sidebar nav { padding:.5rem 0; display:flex; flex-direction:column; }
         .sidebar nav a, .sidebar nav .disabled { display:flex; align-items:center; gap:.7rem;
             padding:.62rem 1.25rem; font-size:.92rem; color:var(--muted); border-left:3px solid transparent; }
