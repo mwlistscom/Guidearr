@@ -27,10 +27,10 @@
            same place on both pages. Flux renders that row as:
                h-10 flex items-center px-2 gap-2   (we override h-10 -> height:auto)
                text: text-sm font-medium ... text-zinc-100
-           i.e. NO vertical padding, .5rem sides, .5rem gap, 0.875rem / weight 500.
-           This carried 1.05rem of vertical padding, which pushed the whole row ~17px
-           lower than the dashboard's. Change both together. */
-        .sidebar .brand { display:flex; align-items:center; gap:.5rem; padding:0 .5rem;
+           i.e. .5rem gap, 0.875rem / weight 500. Flux's own px-2 and h-10 are overridden
+           inline in the component so BOTH rows carry the padding below — dropping it from
+           this one alone is what made the two sit differently. Change both together. */
+        .sidebar .brand { display:flex; align-items:center; gap:.5rem; padding:1.05rem 1.25rem;
             height:auto; min-height:0;
             font-size:.875rem; font-weight:500; letter-spacing:normal; color:#f4f4f5;
             border-bottom:1px solid var(--border); text-decoration:none; }

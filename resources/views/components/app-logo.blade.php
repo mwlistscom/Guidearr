@@ -18,7 +18,8 @@
     // Explicit CSS rather than Tailwind utilities for the usual reason too: public/build
     // is gitignored, so an install that upgrades without rebuilding assets would silently
     // ignore a class it has never compiled.
-    $row = 'height:auto;min-height:0';
+    // Same padding as the admin sidebar's .brand rule — keep the two in step.
+    $row = 'height:auto;min-height:0;padding:1.05rem 1.25rem';
     $frame = 'width:63px;height:63px;overflow:visible;flex-shrink:0;'.
         'display:flex;align-items:center;justify-content:center';
     $mark = 'width:63px;height:63px;object-fit:contain;flex-shrink:0';
