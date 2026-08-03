@@ -9,6 +9,11 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ## Unreleased
 
+**Fixed**
+- **The brand mark was clipped top and bottom on the dashboard.** Flux wraps the logo in a 24 px
+  box with `overflow-hidden`, inside a fixed-height row, so the larger mark was cut off — while the
+  admin sidebar, which has no fixed row height, showed it whole. Both now render it the same way.
+
 **Changed**
 - **The threat feed is now bare addresses only** — no header, no `#` comments, one IP per line.
   pfBlockerNG's parser strips comments, but plenty of tools that read a URL list do not, and a
