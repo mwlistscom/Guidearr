@@ -176,7 +176,7 @@ class ThreatFeedTest extends TestCase
         $this->assertGreaterThanOrEqual(16, strlen($slug));
         $this->assertMatchesRegularExpression('/^[a-f0-9]+$/', $slug);
         $this->assertSame($slug, Settings::threatFeedSlug(), 'slug must be stable once generated');
-        $this->assertStringEndsWith('/security/threat-feed/'.$slug, Settings::threatFeedUrl());
+        $this->assertStringEndsWith('/security/threat-feed/'.$slug.'.txt', Settings::threatFeedUrl());
     }
 
     public function test_threshold_defaults_and_is_clamped(): void
@@ -189,6 +189,36 @@ class ThreatFeedTest extends TestCase
 
         Settings::set('threat_feed_min_hits', 999999);
         $this->assertSame(10000, Settings::threatFeedMinHits());
+    }
+
+    public function test_the_feed_url_carries_a_txt_extension_for_pfblockerng(): void
+    {
+        Settings::set('threat_feed_slug', 'slug-for-the-url');
+
+        $this->assertStringEndsWith('/security/threat-feed/slug-for-the-url.txt', Settings::threatFeedUrl());
+    }
+
+    public function test_the_endpoint_answers_with_or_without_the_extension(): void
+    {
+        Settings::set('threat_feed_enabled', true);
+        Settings::set('threat_feed_slug', 'secret-token-value');
+
+        @mkdir(dirname(ThreatFeed::path()), 0775, true);
+        file_put_contents(ThreatFeed::path(), "# Guidearr threat feed\n203.0.113.9\n");
+
+        // What pfBlockerNG is pointed at...
+        $this->get('/security/threat-feed/secret-token-value.txt')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'text/plain; charset=utf-8')
+            ->assertSee('203.0.113.9');
+
+        // ...and the bare form, so installs configured before this keep working.
+        $this->get('/security/threat-feed/secret-token-value')->assertOk();
+
+        // A wrong token is still 404 either way — the extension is not a bypass.
+        $this->get('/security/threat-feed/wrong-token-value.txt')->assertNotFound();
+
+        @unlink(ThreatFeed::path());
     }
 
     public function test_endpoint_404s_when_disabled_or_token_is_wrong(): void

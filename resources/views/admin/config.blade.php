@@ -66,6 +66,9 @@
                 <span class="urlbuild">
                     <span class="prefix">{{ $threatFeedBase }}/security/threat-feed/</span>
                     <input type="text" name="threat_feed_slug" value="{{ old('threat_feed_slug', $threatFeedSlug) }}" class="fld mono" spellcheck="false">
+                    {{-- pfBlockerNG infers a list's format from the URL and wants an extension.
+                         The route ignores it, so the address works with or without. --}}
+                    <span class="prefix">.txt</span>
                 </span>
             </label>
             <label>List after N attacks
@@ -80,7 +83,9 @@
             <button type="button" class="copybtn" data-copy="tfUrl" aria-label="Copy the feed URL">Copy</button>
         </p>
         <p class="muted small">
-            Only the last part is editable &mdash; it's the secret, and one was generated for you. Change it to anything you like (letters, numbers, dot, dash, underscore or tilde; 8 characters or more). A wrong one returns 404, so the address can't be found by guessing.
+            Only the middle part is editable &mdash; it's the secret, and one was generated for you.
+            The <code>.txt</code> is there because <strong>pfBlockerNG</strong> wants a file
+            extension; the address works with or without it. Change it to anything you like (letters, numbers, dot, dash, underscore or tilde; 8 characters or more). A wrong one returns 404, so the address can't be found by guessing.
             <strong>List after N attacks</strong> is how many hostile requests one address must make before it appears &mdash; lower lists more, sooner.
             @if ($threatFeedGeneratedAt)
                 Currently listing <strong>{{ $threatFeedCount }}</strong> address(es); rebuilt {{ $threatFeedGeneratedAt }}.
