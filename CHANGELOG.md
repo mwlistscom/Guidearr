@@ -10,6 +10,20 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 ## v1.23.7 — Mail goes through your own relay; database no longer exposed to the LAN
 
 **Added**
+- **Rate limits on the public auth endpoints.** Registration, password-reset requests and reset
+  submissions had **no limit at all** — the sign-up form took 21 attempts in 60 seconds from a
+  single host, and only the (optional) CAPTCHA stopped them. Sign-up is now capped at **5/minute
+  and 15/hour** per address, reset submissions at **10/minute**, and reset-link requests at
+  **5/minute** per address plus **5/hour per target account** — the last one matters because that
+  endpoint mails an address the *requester* supplies, so leaving it open was a way to flood
+  somebody else's inbox from your server.
+- **Sign-in is now limited per address, not just per account.** The existing limit was keyed on
+  email + address, which slows guessing at one person's password but does nothing about a host
+  trying one common password against *many* accounts — every new address got its own budget.
+  A **20/minute per address** limit runs alongside the original **5/minute per account**.
+  Mistyping your own password a few times is unaffected.
+- Every limit is tunable via `AUTH_LIMIT_*` in `.env` — raise them if your users share one
+  corporate NAT address.
 - **A threat feed your firewall can block from.** Guidearr can publish a plain-text list of the IP
   addresses caught probing it — the scanners constantly asking for `/.env`, `/wp-login.php`,
   `/.ssh/id_rsa` and the like — for **pfBlockerNG** (or anything that polls a URL list) to consume
