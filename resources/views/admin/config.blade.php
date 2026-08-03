@@ -61,9 +61,12 @@
         </label>
 
         <div class="row" style="margin-top:.8rem">
-            <label style="flex:1 1 22rem">Feed URL
+            <label style="flex:1 1 26rem">Feed URL &mdash; give this address to pfBlockerNG
                 @error('threat_feed_slug')<span class="err">{{ $message }}</span>@enderror
-                <input type="text" name="threat_feed_slug" value="{{ old('threat_feed_slug', $threatFeedSlug) }}" class="fld mono" spellcheck="false">
+                <span class="urlbuild">
+                    <span class="prefix">{{ $threatFeedBase }}/security/threat-feed/</span>
+                    <input type="text" name="threat_feed_slug" value="{{ old('threat_feed_slug', $threatFeedSlug) }}" class="fld mono" spellcheck="false">
+                </span>
             </label>
             <label>List after N attacks
                 @error('threat_feed_min_hits')<span class="err">{{ $message }}</span>@enderror
@@ -71,9 +74,10 @@
             </label>
         </div>
 
-        <p class="muted small">Full URL: <code>{{ $threatFeedUrl }}</code></p>
+        <p class="muted small">Copy: <code>{{ $threatFeedUrl }}</code></p>
         <p class="muted small">
-            The URL segment is secret and generated for you &mdash; change it to anything you like. A wrong one returns 404, so the endpoint can't be discovered by guessing.
+            Only the last part is editable &mdash; it's the secret, and one was generated for you. Change it to anything you like (letters, numbers, dot, dash, underscore or tilde; 8 characters or more). A wrong one returns 404, so the address can't be found by guessing.
+            <strong>List after N attacks</strong> is how many hostile requests one address must make before it appears &mdash; lower lists more, sooner.
             @if ($threatFeedGeneratedAt)
                 Currently listing <strong>{{ $threatFeedCount }}</strong> address(es); rebuilt {{ $threatFeedGeneratedAt }}.
             @else
@@ -97,6 +101,10 @@
     .row label { display:flex; flex-direction:column; font-size:.85rem; color:#cdd2da; }
     .check { display:flex; align-items:center; gap:.5rem; font-size:.9rem; color:#cdd2da; cursor:pointer; }
     .check input { width:auto; margin:0; }
+    /* Reads as one address: fixed origin, editable secret. */
+    .urlbuild { display:flex; align-items:center; flex-wrap:wrap; gap:.15rem; margin-top:.4rem; }
+    .urlbuild .prefix { font-family:ui-monospace,monospace; font-size:.8rem; color:var(--muted); white-space:nowrap; }
+    .urlbuild .fld { margin:0; flex:1 1 12rem; min-width:10rem; }
     .row .fld { width:11rem; }
     .err { color:#f87171; font-size:.82rem; display:block; margin:.2rem 0; }
     .save { background:var(--accent); color:#1a1205; border:none; font-weight:700; border-radius:.5rem; padding:.55rem 1.1rem; cursor:pointer; }

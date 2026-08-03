@@ -94,6 +94,7 @@ class AdminController extends Controller
             'threatFeedSlug'        => Settings::threatFeedSlug(),
             'threatFeedMinHits'     => Settings::threatFeedMinHits(),
             'threatFeedUrl'         => Settings::threatFeedUrl(),
+            'threatFeedBase'        => Settings::linksBaseUrl() ?: rtrim((string) config('app.url'), '/'),
             'threatFeedCount'       => ThreatFeed::entryCount(),
             'threatFeedGeneratedAt' => $generatedAt?->format('Y-m-d H:i T'),
         ]);

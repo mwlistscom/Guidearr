@@ -237,6 +237,24 @@ class ThreatFeedTest extends TestCase
         $this->assertSame(5, Settings::threatFeedMinHits());
     }
 
+    public function test_config_page_renders_both_controls(): void
+    {
+        Settings::set('threat_feed_slug', 'visible-slug-value');
+        Settings::set('threat_feed_min_hits', 33);
+
+        $this->actingAs($this->admin())
+            ->get(route('admin.config'))
+            ->assertOk()
+            ->assertSee('Threat feed')
+            // The editable URL secret, and the origin it hangs off.
+            ->assertSee('name="threat_feed_slug"', false)
+            ->assertSee('visible-slug-value', false)
+            ->assertSee('/security/threat-feed/', false)
+            // The failure threshold.
+            ->assertSee('name="threat_feed_min_hits"', false)
+            ->assertSee('value="33"', false);
+    }
+
     public function test_a_settings_post_without_the_threat_feed_section_is_unaffected(): void
     {
         // The pane predates this feature; an older or partial submission must still save
