@@ -19,7 +19,7 @@ class BrandMarkSizeTest extends TestCase
     use RefreshDatabase;
 
     /** App chrome (dashboard + admin sidebar) — these two must match exactly. */
-    private const CHROME = 56;
+    private const CHROME = 84;
 
     /** Standalone public pages (legal/license/docs) carry a smaller header mark. */
     private const PAGE = 40;
@@ -73,7 +73,7 @@ class BrandMarkSizeTest extends TestCase
             ->get(route('admin.dashboard'))
             ->assertOk()
             ->assertSee(route('branding.icon'), false)
-            ->assertSee('width:56px', false);
+            ->assertSee('width:84px', false);
     }
 
     public function test_the_two_app_chromes_use_identical_values(): void

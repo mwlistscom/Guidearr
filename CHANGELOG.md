@@ -14,7 +14,7 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 - **The brand mark is bigger, and the same everywhere.** It sat at 32 px in the app chrome and
   30 px in the admin sidebar — of which padding and a border left only ~24 px of actual mark — so
   it was hard to make out and visibly different between the two pages. Both now render the icon on
-  its own at **56 px** — no tile, no border, no padding — so what you see is the mark itself rather
+  its own at **84 px** — no tile, no border, no padding — so what you see is the mark itself rather
   than a box around it. The standalone legal/licence/docs headers moved 30 px → 40 px to match
   each other.
 
