@@ -37,12 +37,14 @@ class BrandingGuidanceTest extends TestCase
 
     public function test_page_reports_the_current_asset_dimensions_and_weight(): void
     {
-        // The bundled defaults are 512x512 (icon) and 512x279 (logo).
-        $this->actingAs($this->admin())
-            ->get(route('admin.branding'))
-            ->assertOk()
-            ->assertSee('512 × 512', false)
-            ->assertSee('512 × 279', false);
+        // Derived from the shipped assets rather than hardcoded, so replacing a default
+        // image does not falsely fail this.
+        $response = $this->actingAs($this->admin())->get(route('admin.branding'))->assertOk();
+
+        foreach (['icon-default.png', 'logo-default.png'] as $file) {
+            [$w, $h] = getimagesize(public_path('branding/'.$file));
+            $response->assertSee("{$w} × {$h}", false);
+        }
     }
 
     public function test_page_explains_that_assets_are_not_resized_server_side(): void

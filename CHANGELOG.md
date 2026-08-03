@@ -9,6 +9,11 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ## Unreleased
 
+**Changed**
+- **A new default logo**, replacing the placeholder — properly transparent (88%), 1200 × 655, 186 KB.
+- **The brand mark in the app chrome is bigger.** It sat at 32 px in the sidebar and header, which
+  left anything with detail in it hard to make out; it is now 40 px.
+
 **Fixed**
 - **The default logo showed a grey checkerboard on the landing page.** The shipped
   `logo-default.png` had an image editor's transparency checkerboard **flattened into it as real
