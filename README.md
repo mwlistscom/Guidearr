@@ -83,7 +83,7 @@ It gives you a clean web UI for importing, editing, reordering and exporting M3U
 | Web server   | nginx (TLS, HTTP/2)                                   |
 | Database     | MySQL 8                                               |
 | Background   | `feed:supervise` worker pool + Laravel `scheduler`    |
-| Mail (dev)   | Mailpit                                               |
+| Mail         | Your SMTP relay (no mail server bundled)              |
 | Orchestration| Docker Compose                                        |
 
 ---
@@ -142,7 +142,7 @@ Guidearr ships a generator (`setup.sh`) instead of a committed example file, so 
 ./setup.sh --force    # overwrite an existing .env (keeps a timestamped backup)
 ```
 
-It prompts for the hostname, HTTPS port, admin email, admin password (blank → generates a strong one) and admin URL path, then writes a complete `.env` — including a freshly generated `APP_KEY`, database credentials that match the `db` service, and Mailpit as the default mail catcher (UI on port `8025`). If it generates an admin password it prints it once, so note it down.
+It prompts for the hostname, HTTPS port, admin email, admin password (blank → generates a strong one) and admin URL path, then writes a complete `.env` — including a freshly generated `APP_KEY`, database credentials that match the `db` service, and your outgoing mail settings. It asks for an SMTP relay host: leave it blank and mail is written to the Laravel log instead of being delivered, which you can change later. If it generates an admin password it prints it once, so note it down.
 
 From then on you can edit most values from the browser — see [The admin panel → Environment](#the-admin-panel) — instead of touching the file by hand.
 
@@ -265,7 +265,7 @@ Using Cloudflare's demo keys shows a "For testing only" banner on the widget —
 ## Background feeds, scheduling & health
 
 Guidearr imports and refreshes playlist/EPG data in the background using two
-long‑running containers alongside `app`, `web`, `db` and `mailpit`:
+long‑running containers alongside `app`, `web` and `db`:
 
 | Service | Command | Role |
 |---|---|---|

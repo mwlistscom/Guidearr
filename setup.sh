@@ -32,12 +32,46 @@ ask() {
     if [ -n "$def" ]; then read -r -p "$prompt [$def]: " ans || true; echo "${ans:-$def}"
     else read -r -p "$prompt: " ans || true; echo "$ans"; fi
 }
+# Same as ask(), but doesn't echo what's typed — for secrets.
+ask_secret() {
+    local prompt="$1" ans=""
+    read -r -s -p "$prompt: " ans || true; echo >&2; echo "$ans"
+}
 
 echo "=== Guidearr setup ==="
 HOST=$(ask "Hostname the app is served from" "localhost")
 PORT=$(ask "HTTPS port" "7979")
 
 ADMIN_PATH=$(ask "Admin URL path segment" "admin")
+
+# --- outgoing mail --------------------------------------------------------
+# Guidearr relays through YOUR mail server. Nothing is bundled: a built-in mail
+# catcher would hold password-reset and verification links in an unauthenticated
+# inbox, which is a liability on any install that isn't a laptop.
+echo
+echo "--- Outgoing mail (password resets, email verification) ---"
+echo "Guidearr sends through your own SMTP relay. Leave the host blank to skip:"
+echo "mail is then written to the Laravel log and NOT delivered — you can set it"
+echo "up later under Admin -> Environment."
+MAIL_HOST=$(ask "SMTP relay host (blank = log only)" "")
+if [ -n "$MAIL_HOST" ]; then
+    MAIL_MAILER="smtp"
+    MAIL_PORT=$(ask "SMTP port (465 = implicit TLS, 587 = STARTTLS)" "587")
+    MAIL_USERNAME=$(ask "SMTP username (blank = none)" "")
+    if [ -n "$MAIL_USERNAME" ]; then
+        MAIL_PASSWORD=$(ask_secret "SMTP password")
+    else
+        MAIL_USERNAME="null"; MAIL_PASSWORD="null"
+    fi
+    # 465 is implicit TLS (smtps); 587/25 negotiate STARTTLS, which Laravel does
+    # automatically when the scheme is left unset.
+    if [ "$MAIL_PORT" = "465" ]; then MAIL_SCHEME="smtps"; else MAIL_SCHEME="null"; fi
+else
+    MAIL_MAILER="log"
+    MAIL_HOST="127.0.0.1"; MAIL_PORT="587"; MAIL_SCHEME="null"
+    MAIL_USERNAME="null"; MAIL_PASSWORD="null"
+fi
+MAIL_FROM_ADDRESS=$(ask "From address" "guidearr@${HOST}")
 
 APP_URL="https://${HOST}:${PORT}"
 APP_KEY=$(gen_appkey)
@@ -84,15 +118,15 @@ FILESYSTEM_DISK=local
 QUEUE_CONNECTION=database
 CACHE_STORE=database
 
-# Dev mail capture via the bundled Mailpit service (UI at http://${HOST}:8025).
-# For real delivery, change these here or later via Admin -> Environment.
-MAIL_MAILER=smtp
-MAIL_HOST=mailpit
-MAIL_PORT=1025
-MAIL_SCHEME=null
-MAIL_USERNAME=null
-MAIL_PASSWORD=null
-MAIL_FROM_ADDRESS=guidearr@${HOST}
+# Outgoing mail relays through your own SMTP server. MAIL_MAILER=log writes mail
+# to storage/logs instead of delivering it. Change these here or via Admin -> Environment.
+MAIL_MAILER=${MAIL_MAILER}
+MAIL_HOST=${MAIL_HOST}
+MAIL_PORT=${MAIL_PORT}
+MAIL_SCHEME=${MAIL_SCHEME}
+MAIL_USERNAME="${MAIL_USERNAME}"
+MAIL_PASSWORD="${MAIL_PASSWORD}"
+MAIL_FROM_ADDRESS=${MAIL_FROM_ADDRESS}
 MAIL_FROM_NAME=Guidearr
 
 # Admin panel URL segment (pick a hard-to-guess value to reduce probing).
@@ -111,6 +145,12 @@ echo
 echo "Wrote $ENV_FILE"
 echo "  App URL    : ${APP_URL}"
 echo "  Admin path : ${APP_URL}/${ADMIN_PATH}"
+if [ "$MAIL_MAILER" = "log" ]; then
+    echo "  Mail       : LOG ONLY — password-reset and verification emails will NOT be"
+    echo "               delivered. Set MAIL_* under Admin -> Environment when ready."
+else
+    echo "  Mail       : relay via ${MAIL_HOST}:${MAIL_PORT}"
+fi
 echo
 echo "Next:"
 echo "  1) put TLS certs in ./certs (fullchain.pem + privkey.pem)"
