@@ -147,9 +147,48 @@ class FortifyServiceProvider extends ServiceProvider
         });
 
         RateLimiter::for('login', function (Request $request) {
+            $cfg = config('guidearr.auth_limits');
             $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
 
-            return Limit::perMinute(5)->by($throttleKey);
+            return [
+                // Per account: slows guessing at one person's password.
+                Limit::perMinute($cfg['login_per_account'])->by($throttleKey),
+                // Per address: the per-account key alone lets one host spray an unlimited
+                // number of DIFFERENT addresses — every attempt gets its own bucket. This
+                // is the limit that actually costs a credential-stuffing run something.
+                Limit::perMinute($cfg['login_per_ip'])->by('login-ip|'.$request->ip()),
+            ];
+        });
+
+        // Registration is rare for a real person and automated in bulk by everyone else —
+        // the sign-up form took 21 hits in 60 seconds from one host on 2026-08-01.
+        RateLimiter::for('register', function (Request $request) {
+            $cfg = config('guidearr.auth_limits');
+
+            return [
+                Limit::perMinute($cfg['register_per_minute'])->by('register|'.$request->ip()),
+                Limit::perHour($cfg['register_per_hour'])->by('register|'.$request->ip()),
+            ];
+        });
+
+        // Reset-link requests send mail to an address the requester supplies, so an
+        // unlimited endpoint is a way to flood somebody else's inbox from here. Limited
+        // per address as well as per host so one target can't be hit from many hosts.
+        RateLimiter::for('password-email', function (Request $request) {
+            $cfg = config('guidearr.auth_limits');
+            $email = Str::transliterate(Str::lower((string) $request->input('email')));
+
+            return [
+                Limit::perMinute($cfg['password_email_per_ip'])->by('pwmail-ip|'.$request->ip()),
+                Limit::perHour($cfg['password_email_per_account'])->by('pwmail-acct|'.$email),
+            ];
+        });
+
+        // Guessing a reset token.
+        RateLimiter::for('password-update', function (Request $request) {
+            $cfg = config('guidearr.auth_limits');
+
+            return Limit::perMinute($cfg['password_update_per_ip'])->by('pwreset|'.$request->ip());
         });
 
         /* @chisel-passkeys */

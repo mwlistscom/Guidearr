@@ -165,6 +165,7 @@ These are the variables Guidearr cares about most. (Standard Laravel variables �
 | `ADMIN_PATH` | URL segment for the admin panel (`admin` → `/admin`). Use a hard‑to‑guess value to reduce probing. |
 | `REGISTRATION_REQUIRES_APPROVAL` | When `true`, new sign‑ups are held `pending` until an admin enables them. |
 | `MAIL_*` | Outgoing mail (SMTP) settings. `MAIL_SCHEME=smtps` for port 465, `tls`/null for 587. |
+| `AUTH_LIMIT_*` | Rate limits on the public auth endpoints (sign-in, sign-up, password reset). Sensible defaults ship built in — raise them only if many genuine users share one public IP, e.g. behind a corporate NAT. See `config/guidearr.php` for the full list. |
 | `TURNSTILE_SITE_KEY` | Public Cloudflare Turnstile key for the widget. Blank = CAPTCHA off. |
 | `TURNSTILE_SECRET_KEY` | Private Turnstile key for server‑side verification. Blank = CAPTCHA off. |
 | `FEED_CONNECT_TIMEOUT` / `FEED_TIMEOUT` | cURL connect timeout (30s) and overall cap for a *progressing* download (1200s). |

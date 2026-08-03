@@ -18,6 +18,20 @@ return [
     'update_check' => (bool) env('GUIDEARR_UPDATE_CHECK', true),
     'github_repo'  => env('GUIDEARR_GITHUB_REPO', 'mwlistscom/Guidearr'),
 
+    // Rate limits on the public auth endpoints, in attempts per window per key.
+    // Deliberately generous for a human and hostile to a script: a real person signs up
+    // once and mistypes a password a handful of times. Raise them if you front the app
+    // with a shared corporate NAT where many genuine users share one address.
+    'auth_limits' => [
+        'login_per_account' => (int) env('AUTH_LIMIT_LOGIN_PER_ACCOUNT', 5),   // per minute, per email+ip
+        'login_per_ip' => (int) env('AUTH_LIMIT_LOGIN_PER_IP', 20),            // per minute, per ip
+        'register_per_minute' => (int) env('AUTH_LIMIT_REGISTER_PER_MINUTE', 5),
+        'register_per_hour' => (int) env('AUTH_LIMIT_REGISTER_PER_HOUR', 15),
+        'password_email_per_ip' => (int) env('AUTH_LIMIT_PASSWORD_EMAIL_PER_IP', 5),      // per minute
+        'password_email_per_account' => (int) env('AUTH_LIMIT_PASSWORD_EMAIL_PER_ACCOUNT', 5), // per hour
+        'password_update_per_ip' => (int) env('AUTH_LIMIT_PASSWORD_UPDATE_PER_IP', 10),   // per minute
+    ],
+
     // Threat feed: a plain-text list of IPs caught probing this install, shaped for a
     // firewall (pfBlockerNG and friends) to poll as a custom IPv4/IPv6 list.
     //
