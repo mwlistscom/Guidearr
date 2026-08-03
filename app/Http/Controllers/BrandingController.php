@@ -19,8 +19,21 @@ class BrandingController extends Controller
         'logo' => 'branding/logo-default.png',   // wide wordmark (landing hero)
     ];
 
-    /** Serve a brand asset (uploaded override, else the bundled default). Public. */
-    public function show(string $kind = 'icon')
+    /**
+     * Serve a brand asset (uploaded override, else the bundled default). Public.
+     *
+     * These are the heaviest things the app serves — a brand icon is typically a
+     * multi-hundred-KB PNG rendered at 36px — and the header, sidebar, favicon and
+     * every auth screen ask for one on each page view. `no-cache` is deliberate so a
+     * freshly uploaded asset appears without a hard refresh, but on its own it means
+     * every revalidation re-sends the whole file: Laravel sets Last-Modified and then
+     * nothing ever compares it, so a browser's If-Modified-Since was answered with a
+     * full 200. On this install that was 792 MB in six days and not one 304.
+     *
+     * Attaching an ETag and honouring the conditional turns each of those into a
+     * ~200-byte 304 while keeping the revalidate-always behaviour intact.
+     */
+    public function show(Request $request, string $kind = 'icon')
     {
         $kind = $this->normalizeKind($kind);
 
@@ -30,21 +43,29 @@ class BrandingController extends Controller
             abort(404);
         }
 
-        $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
         $mime = match ($ext) {
-            'png'         => 'image/png',
+            'png' => 'image/png',
             'jpg', 'jpeg' => 'image/jpeg',
-            'webp'        => 'image/webp',
-            'gif'         => 'image/gif',
-            'svg'         => 'image/svg+xml',
-            default       => 'application/octet-stream',
+            'webp' => 'image/webp',
+            'gif' => 'image/gif',
+            'svg' => 'image/svg+xml',
+            default => 'application/octet-stream',
         };
 
-        return response()->file($path, [
-            'Content-Type'  => $mime,
+        $response = response()->file($path, [
+            'Content-Type' => $mime,
             // revalidate so a freshly uploaded asset shows up without a hard refresh
             'Cache-Control' => 'no-cache, must-revalidate',
         ]);
+
+        // Cheap, stable validator: an upload rewrites the file, changing both.
+        $response->setEtag(md5((string) @filemtime($path).'-'.(string) @filesize($path)));
+
+        // Answer If-None-Match / If-Modified-Since with a 304 instead of the whole file.
+        $response->isNotModified($request);
+
+        return $response;
     }
 
     public function edit()
@@ -52,8 +73,8 @@ class BrandingController extends Controller
         return view('admin.branding', [
             'hasCustomIcon' => (bool) $this->overridePath('icon'),
             'hasCustomLogo' => (bool) $this->overridePath('logo'),
-            'copyright'     => self::copyright(),
-            'license'       => self::LICENSE_SUMMARY,
+            'copyright' => self::copyright(),
+            'license' => self::LICENSE_SUMMARY,
         ]);
     }
 
@@ -68,26 +89,26 @@ class BrandingController extends Controller
 
         $dir = $this->storageDir();
 
-        foreach (glob($dir . '/' . $kind . '.*') ?: [] as $old) {
+        foreach (glob($dir.'/'.$kind.'.*') ?: [] as $old) {
             @unlink($old);
         }
 
         $file = $request->file($kind);
-        $ext  = strtolower($file->getClientOriginalExtension() ?: $file->extension());
-        $file->move($dir, $kind . '.' . $ext);
+        $ext = strtolower($file->getClientOriginalExtension() ?: $file->extension());
+        $file->move($dir, $kind.'.'.$ext);
 
-        return back()->with('status', ucfirst($kind) . ' updated.');
+        return back()->with('status', ucfirst($kind).' updated.');
     }
 
     public function reset(string $kind)
     {
         $kind = $this->normalizeKind($kind);
 
-        foreach (glob($this->storageDir() . '/' . $kind . '.*') ?: [] as $f) {
+        foreach (glob($this->storageDir().'/'.$kind.'.*') ?: [] as $f) {
             @unlink($f);
         }
 
-        return back()->with('status', ucfirst($kind) . ' reset to the default.');
+        return back()->with('status', ucfirst($kind).' reset to the default.');
     }
 
     /** Footer copyright holder. Fixed — the project is owned by its author and licensed non-commercially. */
@@ -115,7 +136,7 @@ class BrandingController extends Controller
 
     private function overridePath(string $kind): ?string
     {
-        $matches = glob(storage_path('app/branding') . '/' . $kind . '.*') ?: [];
+        $matches = glob(storage_path('app/branding').'/'.$kind.'.*') ?: [];
 
         return $matches[0] ?? null;
     }
