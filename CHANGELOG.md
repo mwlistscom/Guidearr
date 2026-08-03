@@ -7,6 +7,18 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **Brand assets are no longer re-downloaded on every page view.** The icon and logo are served
+  with `no-cache` so a fresh upload appears immediately — but nothing compared the validator, so a
+  browser's conditional request was answered with the whole image every time. They now carry an
+  **ETag** and honour `If-None-Match` / `If-Modified-Since`, so a revalidation costs a **304 with an
+  empty body** instead of the full file. Uploads still appear instantly. On one install these two
+  files accounted for **792 MB in six days**, with not a single 304.
+
+---
+
 ## v1.23.7 — Security hardening: mail relay, threat feed, auth rate limits · 2026-08-03
 
 **Added**
