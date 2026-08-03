@@ -2,12 +2,12 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5 and v1.23.6.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6 and v1.23.7.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
 
 ---
 
-## v1.23.7 — Mail goes through your own relay; database no longer exposed to the LAN
+## v1.23.7 — Security hardening: mail relay, threat feed, auth rate limits · 2026-08-03
 
 **Added**
 - **Rate limits on the public auth endpoints.** Registration, password-reset requests and reset
@@ -45,6 +45,11 @@ All notable changes to **Guidearr** since v1.18. Newest first.
     proxy and health checks can't be blocked by accident.
   - Only requests the app answered with a refusal count, matched against the exact status they
     returned, so an ordinary broken link is never mistaken for an attack.
+  - **Nothing is banned permanently.** The list is rebuilt from scratch each time — no address is
+    ever stored — so an address that stops probing drops off on the next rebuild and the list
+    cannot grow without bound. The window is **14 days**, though log retention is usually the
+    real limit: the access log is trimmed by size, so a busy install ages addresses out in days.
+    Your firewall removes its rule on the next refresh of the list.
 
 **Changed**
 - **No mail server is bundled any more.** The `mailpit` service has been removed from
