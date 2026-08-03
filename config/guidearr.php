@@ -30,6 +30,14 @@ return [
         'password_email_per_ip' => (int) env('AUTH_LIMIT_PASSWORD_EMAIL_PER_IP', 5),      // per minute
         'password_email_per_account' => (int) env('AUTH_LIMIT_PASSWORD_EMAIL_PER_ACCOUNT', 5), // per hour
         'password_update_per_ip' => (int) env('AUTH_LIMIT_PASSWORD_UPDATE_PER_IP', 10),   // per minute
+        // Social sign-in. The provider callback handles SIGN-IN as well as sign-up, so this
+        // one has to stay loose — several people behind one office or carrier NAT all signing
+        // in with Google must not lock each other out. It only stops hammering.
+        'oauth_callback_per_ip' => (int) env('AUTH_LIMIT_OAUTH_CALLBACK_PER_IP', 30),     // per minute
+        // The control that actually matters: how many NEW accounts one address may
+        // auto-provision through a provider in an hour. Signing in to an existing account is
+        // never counted, so this is invisible to returning users.
+        'oauth_new_accounts_per_ip' => (int) env('AUTH_LIMIT_OAUTH_NEW_ACCOUNTS_PER_IP', 10), // per hour
     ],
 
     // Threat feed: a plain-text list of IPs caught probing this install, shaped for a

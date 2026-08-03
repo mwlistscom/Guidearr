@@ -22,6 +22,12 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   trying one common password against *many* accounts — every new address got its own budget.
   A **20/minute per address** limit runs alongside the original **5/minute per account**.
   Mistyping your own password a few times is unaffected.
+- **Social sign-up is capped too.** Signing up with Google or Facebook is the one registration
+  path with **no CAPTCHA** — a redirect back from the provider has no form for a human to solve a
+  challenge in — and it had no limit either. One address may now auto-provision **10 new accounts
+  per hour**, and the callback itself is capped at 30/minute against hammering. **Signing in to an
+  existing account is never counted**, so returning users are unaffected no matter how many people
+  share an office or carrier address.
 - Every limit is tunable via `AUTH_LIMIT_*` in `.env` — raise them if your users share one
   corporate NAT address.
 - **A threat feed your firewall can block from.** Guidearr can publish a plain-text list of the IP

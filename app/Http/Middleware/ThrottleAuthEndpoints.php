@@ -26,6 +26,8 @@ class ThrottleAuthEndpoints
         'register.store' => 'register',
         'password.email' => 'password-email',
         'password.update' => 'password-update',
+        'oauth.redirect' => 'oauth',
+        'oauth.callback' => 'oauth',
     ];
 
     public function __construct(private readonly ThrottleRequests $throttle) {}
