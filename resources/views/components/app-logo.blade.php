@@ -12,7 +12,7 @@
     // Explicit CSS rather than a Tailwind size utility: public/build is gitignored and the
     // documented upgrade path never runs `npm run build`, so an upgraded install keeps its
     // old stylesheet and a class it never compiled would silently do nothing.
-    $mark = 'width:84px;height:84px;object-fit:contain;flex-shrink:0';
+    $mark = 'width:63px;height:63px;object-fit:contain;flex-shrink:0';
 @endphp
 
 @if ($sidebar)

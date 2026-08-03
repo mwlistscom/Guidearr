@@ -25,7 +25,7 @@
         a.sidebar-brand:hover { background:rgba(255,255,255,.03); }
         /* Just the icon: no tile, no border, no padding. Must match the app chrome —
            see resources/views/components/app-logo.blade.php. Change both together. */
-        .sidebar .brand .logo { width:84px; height:84px; object-fit:contain; flex-shrink:0; }
+        .sidebar .brand .logo { width:63px; height:63px; object-fit:contain; flex-shrink:0; }
         .sidebar nav { padding:.5rem 0; display:flex; flex-direction:column; }
         .sidebar nav a, .sidebar nav .disabled { display:flex; align-items:center; gap:.7rem;
             padding:.62rem 1.25rem; font-size:.92rem; color:var(--muted); border-left:3px solid transparent; }

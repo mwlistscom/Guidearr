@@ -10,11 +10,11 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 ## Unreleased
 
 **Changed**
-- **A new default logo**, replacing the placeholder — properly transparent (88%), 1200 × 655, 186 KB.
+- **New default logo and icon**, replacing the placeholders — both properly transparent (logo 88%, icon 70%), 1200 × 655 / 186 KB and 512 × 510 / 264 KB.
 - **The brand mark is bigger, and the same everywhere.** It sat at 32 px in the app chrome and
   30 px in the admin sidebar — of which padding and a border left only ~24 px of actual mark — so
   it was hard to make out and visibly different between the two pages. Both now render the icon on
-  its own at **84 px** — no tile, no border, no padding — so what you see is the mark itself rather
+  its own at **63 px** — no tile, no border, no padding — so what you see is the mark itself rather
   than a box around it. The standalone legal/licence/docs headers moved 30 px → 40 px to match
   each other.
 
