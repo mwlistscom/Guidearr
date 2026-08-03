@@ -218,6 +218,31 @@ Visit `https://<your-host>:7979/<ADMIN_PATH>` (default `/admin`) and sign in wit
 
 The admin account is created **email‑verified and active**, so it never hits the verification screen.
 
+### Threat feed (blocking scanners at your firewall)
+
+Any Guidearr on the public internet gets probed constantly for `/.env`, `/wp-login.php`,
+`/.ssh/id_rsa` and similar. Guidearr refuses all of it, but the noise is real — on one install
+those probes were **74% of all requests**.
+
+**Admin → Config → Threat feed** publishes the offending addresses as a plain‑text list, one per
+line, for **pfBlockerNG** (or any tool that polls a URL) to block at the edge. Tick *Serve the
+feed*, copy the URL shown, and add it as a **custom IPv4 source**. Set *List after N attacks* to
+control how aggressive it is (default `20`).
+
+There is **nothing to run** after an install or upgrade: the secret URL is generated for you, the
+list builds itself on the first fetch and refreshes hourly. The URL segment is yours to change; a
+wrong one returns `404`, so the endpoint can't be discovered by guessing.
+
+Two things are **never** listed, so the feed can't take down your own service:
+
+- any host that has successfully pulled a playlist (a customer's player may share an address with
+  a scanner), and
+- private/reserved addresses, where your reverse proxy and health checks live.
+
+> **Worth knowing:** scanners rent cloud hosts and rotate them within a day or two, so a list of
+> past offenders blocks tomorrow's traffic only sometimes. Its dependable benefit is cutting log
+> noise and bandwidth. Treat it as a complement to a curated blocklist, not a replacement.
+
 ---
 
 ## Resetting or creating the admin account

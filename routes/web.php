@@ -7,6 +7,8 @@ use App\Http\Controllers\LegalController;
 use App\Http\Controllers\PlaylistController;
 use App\Http\Controllers\PlaylistServeController;
 use App\Http\Controllers\ProviderController;
+use App\Support\Settings;
+use App\Support\ThreatFeed;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -43,6 +45,23 @@ Route::get('data-deletion/facebook/status', [OAuthController::class, 'facebookDa
 Route::get('m3u', [PlaylistServeController::class, 'm3u'])->name('serve.m3u');
 Route::get('epg', [PlaylistServeController::class, 'epg'])->name('serve.epg');
 Route::get('strm', [PlaylistServeController::class, 'strm'])->name('serve.strm');
+
+// Firewall-facing blocklist of IPs caught probing this install (pfBlockerNG custom list).
+// text/plain, one address per line. Off until switched on under Admin -> Configuration;
+// a wrong token 404s rather than 403s, so probing cannot confirm the endpoint exists.
+Route::get('security/threat-feed/{token}', function (string $token) {
+    abort_unless(Settings::threatFeedEnabled() && hash_equals(Settings::threatFeedSlug(), $token), 404);
+
+    // Build on demand when the cached file is missing or stale, so the first fetch after
+    // an install or upgrade returns real data without anyone running a command.
+    ThreatFeed::ensureFresh();
+
+    $path = ThreatFeed::path();
+
+    return response(is_file($path) ? (string) file_get_contents($path) : "# feed not generated yet\n", 200)
+        ->header('Content-Type', 'text/plain; charset=utf-8')
+        ->header('Cache-Control', 'no-store');
+})->name('security.threat-feed');
 
 Route::post('email/verify-code', [VerifyEmailCodeController::class, 'store'])
     ->middleware(['auth', 'throttle:10,1'])

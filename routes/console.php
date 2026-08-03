@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\Settings;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -30,3 +31,10 @@ Schedule::command('maintenance:run reap')->daily();
 // Daily maintenance: delete accounts that never verified their email within 14 days of registering
 // (admins are always protected). Cascades their providers/playlists and queues store cleanup.
 Schedule::command('maintenance:run prune-unverified')->daily();
+
+// Rebuild the firewall-facing blocklist of hostile IPs, so the HTTP route only ever reads a
+// static file. Skipped entirely unless the feed is switched on.
+Schedule::command('security:threat-feed')
+    ->hourly()
+    ->withoutOverlapping()
+    ->when(fn () => Settings::threatFeedEnabled());
