@@ -10,6 +10,16 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 ## Unreleased
 
 **Fixed**
+- **Uploading a logo could hang and end in a 504.** The official PHP image ships **no `php.ini`
+  at all**, so PHP ran on its compiled-in defaults: **2 MB** for a file and **8 MB** for a whole
+  request, while nginx accepted 20 MB and the app's own validation advertised 10 MB. A body over
+  8 MB made PHP abort without reading it, nginx sat waiting on the dead upstream, and the browser
+  showed **504 Gateway Time-out after five minutes**. Between 2 MB and 8 MB the file was silently
+  discarded instead, so the upload just bounced back. Guidearr now ships a `php.ini` with the
+  layers in agreement — nginx 20 MB ≥ post 16 MB ≥ upload 12 MB ≥ the app's 10 MB rule — so an
+  oversized file gets a clear validation message rather than a timeout. `memory_limit` is raised
+  to 256 MB so the new upload resizing can actually run on a full-sized image.
+
 - **The default logo showed a grey checkerboard on the landing page.** The shipped
   `logo-default.png` had an image editor's transparency checkerboard **flattened into it as real
   pixels** — every pixel was fully opaque, and 86% of them were the alternating light greys that
