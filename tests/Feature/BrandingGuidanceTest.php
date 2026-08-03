@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Support\ImageDownscaler;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 
 /**
@@ -58,5 +60,60 @@ class BrandingGuidanceTest extends TestCase
             ->get(route('admin.branding'))
             ->assertOk()
             ->assertDontSee('larger than it needs to be', false);
+    }
+
+    public function test_an_oversized_upload_is_downscaled_on_the_way_in(): void
+    {
+        if (! ImageDownscaler::available()) {
+            $this->markTestSkipped('gd is not installed in this environment');
+        }
+
+        // A full-resolution export, the kind an operator actually uploads.
+        // (1600px rather than 3000px so the test itself stays inside PHP's memory limit.)
+        $src = sys_get_temp_dir().'/guidearr-upload-'.getmypid().'.png';
+        $im = imagecreatetruecolor(1600, 1600);
+        imagefilledrectangle($im, 0, 0, 1599, 1599, imagecolorallocate($im, 20, 120, 220));
+        imagepng($im, $src);
+        imagedestroy($im);
+
+        $this->actingAs($this->admin())
+            ->post(route('admin.branding.update', 'icon'), [
+                'icon' => new UploadedFile($src, 'icon.png', 'image/png', null, true),
+            ])
+            ->assertRedirect();
+
+        $stored = glob(storage_path('app/branding').'/icon.*')[0] ?? null;
+        $this->assertNotNull($stored, 'the upload should have been stored');
+
+        [$w, $h] = getimagesize($stored);
+        $this->assertSame(512, $w, 'icon should be capped at its 512px maxEdge');
+        $this->assertSame(512, $h);
+
+        @unlink($src);
+        @unlink($stored);
+    }
+
+    public function test_a_reasonably_sized_upload_is_stored_untouched(): void
+    {
+        if (! ImageDownscaler::available()) {
+            $this->markTestSkipped('gd is not installed in this environment');
+        }
+
+        $src = sys_get_temp_dir().'/guidearr-small-'.getmypid().'.png';
+        $im = imagecreatetruecolor(256, 256);
+        imagepng($im, $src);
+        imagedestroy($im);
+        $before = md5_file($src);
+
+        $this->actingAs($this->admin())
+            ->post(route('admin.branding.update', 'icon'), [
+                'icon' => new UploadedFile($src, 'icon.png', 'image/png', null, true),
+            ])
+            ->assertRedirect();
+
+        $stored = glob(storage_path('app/branding').'/icon.*')[0] ?? null;
+        $this->assertSame($before, md5_file($stored), 'an in-spec upload must be byte-identical');
+
+        @unlink($stored);
     }
 }

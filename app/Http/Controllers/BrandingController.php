@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\ImageDownscaler;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\View;
 
@@ -81,8 +82,8 @@ class BrandingController extends Controller
         // which a file is excessive enough to say so. They are deliberately not the same
         // number — nagging about an asset that is merely a little over ideal (the bundled
         // defaults are 512px / ~190 KB) would train admins to ignore the warning.
-        'icon' => ['recommended' => '256 × 256', 'warnBytes' => 400_000, 'warnEdge' => 1024],
-        'logo' => ['recommended' => '600 × 300', 'warnBytes' => 500_000, 'warnEdge' => 1600],
+        'icon' => ['recommended' => '256 × 256', 'warnBytes' => 400_000, 'warnEdge' => 1024, 'maxEdge' => 512],
+        'logo' => ['recommended' => '600 × 300', 'warnBytes' => 500_000, 'warnEdge' => 1600, 'maxEdge' => 1200],
     ];
 
     public function edit()
@@ -145,9 +146,15 @@ class BrandingController extends Controller
 
         $file = $request->file($kind);
         $ext = strtolower($file->getClientOriginalExtension() ?: $file->extension());
-        $file->move($dir, $kind.'.'.$ext);
+        $stored = $file->move($dir, $kind.'.'.$ext)->getPathname();
 
-        return back()->with('status', ucfirst($kind).' updated.');
+        // Cap the stored image at the largest size it is ever displayed at. These files are
+        // sent to every visitor, so an operator's full-resolution export would otherwise be
+        // downloaded in full and scaled down by each browser. Shrinking only; on any failure
+        // the upload is kept exactly as it arrived.
+        $shrunk = ImageDownscaler::fit($stored, self::GUIDANCE[$kind]['maxEdge']);
+
+        return back()->with('status', ucfirst($kind).' updated.'.($shrunk ? ' Resized for the web.' : ''));
     }
 
     public function reset(string $kind)
