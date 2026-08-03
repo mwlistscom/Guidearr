@@ -19,7 +19,7 @@ class BrandMarkSizeTest extends TestCase
     use RefreshDatabase;
 
     /** App chrome (dashboard + admin sidebar) — these two must match exactly. */
-    private const CHROME = 48;
+    private const CHROME = 56;
 
     /** Standalone public pages (legal/license/docs) carry a smaller header mark. */
     private const PAGE = 40;
@@ -65,7 +65,7 @@ class BrandMarkSizeTest extends TestCase
             ->get(route('admin.dashboard'))
             ->assertOk()
             ->assertSee(route('branding.icon'), false)
-            ->assertSee('width:48px', false);
+            ->assertSee('width:56px', false);
     }
 
     public function test_the_two_app_chromes_use_identical_values(): void
@@ -82,5 +82,22 @@ class BrandMarkSizeTest extends TestCase
         $this->assertSame($a[1], $c[1], 'admin and dashboard mark widths differ');
         $this->assertSame($a[2], $c[2], 'admin and dashboard mark heights differ');
         $this->assertSame((string) self::CHROME, $c[1]);
+    }
+
+    public function test_nothing_shrinks_the_mark_inside_its_frame(): void
+    {
+        // The frame is decoration. Padding or a border inside it eats the mark: at 48px
+        // with 2px padding and a 1px border, object-fit:contain rendered only 42px — the
+        // box looked bigger while the logo barely moved.
+        $adminCss = file_get_contents(resource_path('views/admin/layout.blade.php'));
+        preg_match('/\.sidebar \.brand \.logo \{([^}]*)\}/s', $adminCss, $m);
+
+        $this->assertNotEmpty($m, 'admin sidebar mark rule not found');
+        $this->assertMatchesRegularExpression('/padding:\s*0/', $m[1], 'padding shrinks the admin mark');
+        $this->assertMatchesRegularExpression('/border:\s*0/', $m[1], 'a border shrinks the admin mark');
+
+        $component = file_get_contents(resource_path('views/components/app-logo.blade.php'));
+        $this->assertStringNotContainsString('padding:2px', $component, 'padding shrinks the app chrome mark');
+        $this->assertDoesNotMatchRegularExpression('/border:1px[^;]*;padding/', $component);
     }
 }

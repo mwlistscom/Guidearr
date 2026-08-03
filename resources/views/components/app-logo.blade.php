@@ -14,9 +14,12 @@
     // gitignored and the documented upgrade path never runs `npm run build`, so an
     // upgraded install keeps its old stylesheet. A utility it has never compiled would
     // silently do nothing and leave the image unconstrained. Inline styles always apply.
-    $frame = 'width:48px;height:48px;border-radius:9px;background:#0e0f13;'.
-        'border:1px solid rgba(255,255,255,.10);padding:2px;flex-shrink:0;'.
-        'display:flex;align-items:center;justify-content:center;overflow:hidden';
+    // 56px, and the mark FILLS it. The previous 48px frame kept 2px of padding and a 1px
+    // border, so with object-fit:contain the mark itself only rendered at 42px — the box
+    // grew, the logo barely did. The tile is decoration; the mark is the point, so the
+    // padding and border are gone and the background only shows through a transparent icon.
+    $frame = 'width:56px;height:56px;border-radius:10px;background:#0e0f13;'.
+        'flex-shrink:0;display:flex;align-items:center;justify-content:center;overflow:hidden';
 
     $mark = 'width:100%;height:100%;object-fit:contain';
 @endphp
