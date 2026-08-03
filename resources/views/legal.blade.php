@@ -11,7 +11,7 @@
         body { margin:0; background:#0e0f13; color:#e6e7ea; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; line-height:1.65; }
         .wrap { max-width:46rem; margin:0 auto; padding:2.5rem 1.3rem 4rem; }
         .brand { display:flex; align-items:center; gap:.6rem; margin-bottom:1.4rem; }
-        .brand img { height:30px; }
+        .brand img { height:40px; }  /* matches docs + the app chrome */
         .brand span { font-weight:700; font-size:1.05rem; }
         .doc h1 { font-size:1.55rem; margin:0 0 .4rem; }
         .doc h2 { font-size:1.12rem; margin:1.9rem 0 .5rem; color:#fff; }
