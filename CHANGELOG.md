@@ -7,6 +7,16 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Changed**
+- **The threat feed URL now ends in `.txt`.** pfBlockerNG works out a list's format from the URL
+  and rejects one without a file extension. The address shown in **Admin → Config** carries the
+  extension; the route ignores it, so the bare form still resolves and any install already
+  configured against the old URL keeps working.
+
+---
+
 ## v1.23.8 — Branding overhaul, and uploads that no longer time out · 2026-08-03
 
 **Added**
