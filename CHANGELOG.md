@@ -9,6 +9,14 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ## Unreleased
 
+**Changed**
+- **The Branding page now tells you what size to upload.** Neither image is resized on the server,
+  so an oversized file is downloaded in full by every visitor and then scaled down and discarded by
+  their browser. Each asset now shows a **recommended size** (icon **256 × 256**, logo **600 × 300**),
+  says where and how large it is actually drawn, and reports the **dimensions and weight of the file
+  currently in use** — with a warning when it is far bigger than it needs to be. The description of
+  where the icon appears has also been corrected.
+
 **Fixed**
 - **Brand assets are no longer re-downloaded on every page view.** The icon and logo are served
   with `no-cache` so a fresh upload appears immediately — but nothing compared the validator, so a
