@@ -19,9 +19,13 @@
         .app { display:flex; min-height:100svh; }
         .sidebar { width:232px; flex-shrink:0; background:#101216; border-right:1px solid var(--border);
             display:flex; flex-direction:column; position:sticky; top:0; height:100svh; }
+        /* Wordmark matched to the app chrome, which Flux renders as
+           `text-sm font-medium ... dark:text-zinc-100` — 0.875rem / weight 500 / #f4f4f5.
+           This was 800 with tight tracking in pure white, so it read far bolder than the
+           dashboard. Change both together. */
         .sidebar .brand { display:flex; align-items:center; gap:.6rem; padding:1.05rem 1.25rem;
-            font-weight:800; letter-spacing:-.02em; color:#fff; border-bottom:1px solid var(--border);
-            text-decoration:none; }
+            font-size:.875rem; font-weight:500; letter-spacing:normal; color:#f4f4f5;
+            border-bottom:1px solid var(--border); text-decoration:none; }
         a.sidebar-brand:hover { background:rgba(255,255,255,.03); }
         /* Just the icon: no tile, no border, no padding. Must match the app chrome —
            see resources/views/components/app-logo.blade.php. Change both together. */
@@ -82,7 +86,7 @@
 
         .stats { display:flex; gap:1rem; margin-bottom:1.75rem; flex-wrap:wrap; }
         .stat { background:var(--panel); border:1px solid var(--border); border-radius:.8rem; padding:1rem 1.4rem; min-width:7rem; }
-        .stat .n { display:block; font-size:1.8rem; font-weight:800; color:#fff; }
+        .stat .n { display:block; font-size:1.8rem; font-weight:500; color:#fff; }
         .stat .l { font-size:.8rem; color:var(--muted); }
         .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(14rem,1fr)); gap:1rem; }
         .tile { display:block; background:var(--panel); border:1px solid var(--border); border-radius:.8rem; padding:1.2rem; }

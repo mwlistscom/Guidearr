@@ -139,4 +139,22 @@ class BrandMarkSizeTest extends TestCase
             'the logo wrapper must override Flux h-6 + overflow-hidden, or the mark is clipped',
         );
     }
+
+    public function test_the_admin_wordmark_matches_the_dashboard(): void
+    {
+        // Flux renders the app-chrome wordmark as `text-sm font-medium ... text-zinc-100`,
+        // i.e. 0.875rem at weight 500. The admin sidebar was 800 with tight tracking in pure
+        // white, which read far bolder than the dashboard beside the same mark.
+        $css = $this->adminCss();
+
+        preg_match('/\.sidebar \.brand \{([^}]*)\}/s', $css, $m);
+        $this->assertNotEmpty($m, 'admin brand rule not found');
+
+        preg_match('/font-weight:\s*(\d+)/', $m[1], $w);
+        $this->assertSame('500', $w[1] ?? '', 'admin wordmark must be weight 500, matching font-medium');
+
+        $this->assertMatchesRegularExpression('/font-size:\s*\.875rem/', $m[1], 'must match text-sm');
+        $this->assertMatchesRegularExpression('/letter-spacing:\s*normal/', $m[1], 'Flux applies no tracking');
+        $this->assertDoesNotMatchRegularExpression('/color:\s*#fff\b/', $m[1], 'pure white is brighter than zinc-100');
+    }
 }
