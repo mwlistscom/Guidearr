@@ -184,6 +184,16 @@ class FortifyServiceProvider extends ServiceProvider
             ];
         });
 
+        // Social sign-in callback. Deliberately loose: this endpoint signs EXISTING users in
+        // as well as provisioning new ones, so a shared office/carrier address must not lock
+        // its users out of signing in. Bulk account creation is capped separately, inside
+        // OAuthController, on the new-account branch only.
+        RateLimiter::for('oauth', function (Request $request) {
+            $cfg = config('guidearr.auth_limits');
+
+            return Limit::perMinute($cfg['oauth_callback_per_ip'])->by('oauth|'.$request->ip());
+        });
+
         // Guessing a reset token.
         RateLimiter::for('password-update', function (Request $request) {
             $cfg = config('guidearr.auth_limits');

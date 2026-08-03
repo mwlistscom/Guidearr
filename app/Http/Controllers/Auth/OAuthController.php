@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\SocialLogin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Laravel\Socialite\Contracts\User as SocialiteUser;
 use Laravel\Socialite\Facades\Socialite;
@@ -51,7 +52,14 @@ class OAuthController extends Controller
             return redirect()->route('login')->withErrors(['email' => 'This account is not permitted to sign in.']);
         }
 
-        $user = $this->resolveUser($provider, $oauthUser);
+        $user = $this->resolveUser($provider, $oauthUser, (string) $request->ip());
+
+        // Provisioning was rate limited — see resolveUser(). Nothing was created.
+        if ($user === null) {
+            return redirect()->route('login')->withErrors([
+                'email' => 'Too many new accounts have been created from your network recently. Please try again later.',
+            ]);
+        }
 
         // Auth::login() bypasses Fortify's login pipeline, so re-apply its guards here.
         if ($user->status !== 'active') {
@@ -67,8 +75,17 @@ class OAuthController extends Controller
         return redirect()->intended(route('dashboard'));
     }
 
-    /** Find the linked account, else link to a same-email user, else create a verified user. */
-    private function resolveUser(string $provider, SocialiteUser $oauthUser): User
+    /**
+     * Find the linked account, else link to a same-email user, else create a verified user.
+     *
+     * Returns null only when creating a NEW account would exceed the per-address hourly
+     * provisioning cap. Social sign-up is the one registration path with no CAPTCHA — there
+     * is no form for a human to solve a challenge in on a redirect back from the provider —
+     * so this cap is what stops somebody with a pool of provider accounts auto-provisioning
+     * in bulk. It is charged only on the create branch, so signing in to an existing account
+     * (the overwhelmingly common case) never counts against it.
+     */
+    private function resolveUser(string $provider, SocialiteUser $oauthUser, string $ip): ?User
     {
         $providerId = (string) $oauthUser->getId();
 
@@ -83,6 +100,15 @@ class OAuthController extends Controller
         $user = User::where('email', $email)->first();
 
         if (! $user) {
+            $key = 'oauth-provision|'.$ip;
+            $max = (int) config('guidearr.auth_limits.oauth_new_accounts_per_ip');
+
+            if (RateLimiter::tooManyAttempts($key, $max)) {
+                return null;
+            }
+
+            RateLimiter::hit($key, 3600);
+
             $user = new User;
             $user->name = $oauthUser->getName() ?: Str::before($email, '@');
             $user->email = $email;
