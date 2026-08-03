@@ -68,14 +68,64 @@ class BrandingController extends Controller
         return $response;
     }
 
+    /**
+     * Largest size each asset is ever displayed at, and the recommended upload — 2x that
+     * for high-DPI screens, rounded to something memorable. Anything beyond this is
+     * downloaded in full and thrown away by the browser's scaler.
+     *
+     * icon: 76px in the preview below, 32-36px in the sidebar/header/auth screens.
+     * logo: 300px wide at most on the landing page (clamp(180px, 36vw, 300px)).
+     */
+    private const GUIDANCE = [
+        // `recommended` is the ideal; `warnBytes`/`warnEdge` are the far looser point at
+        // which a file is excessive enough to say so. They are deliberately not the same
+        // number — nagging about an asset that is merely a little over ideal (the bundled
+        // defaults are 512px / ~190 KB) would train admins to ignore the warning.
+        'icon' => ['recommended' => '256 × 256', 'warnBytes' => 400_000, 'warnEdge' => 1024],
+        'logo' => ['recommended' => '600 × 300', 'warnBytes' => 500_000, 'warnEdge' => 1600],
+    ];
+
     public function edit()
     {
         return view('admin.branding', [
             'hasCustomIcon' => (bool) $this->overridePath('icon'),
             'hasCustomLogo' => (bool) $this->overridePath('logo'),
+            'assets' => [
+                'icon' => $this->assetInfo('icon'),
+                'logo' => $this->assetInfo('logo'),
+            ],
             'copyright' => self::copyright(),
             'license' => self::LICENSE_SUMMARY,
         ]);
+    }
+
+    /**
+     * Describe the asset currently being served, so an admin can see at a glance that
+     * the file they uploaded is far larger than anything it is displayed at.
+     *
+     * getimagesize() is part of ext-standard, so this works without GD or Imagick
+     * (neither of which is installed) — it only reads the image header.
+     *
+     * @return array{width: int|null, height: int|null, bytes: int, recommended: string, oversized: bool}
+     */
+    private function assetInfo(string $kind): array
+    {
+        $kind = $this->normalizeKind($kind);
+        $path = $this->overridePath($kind) ?: public_path(self::KINDS[$kind]);
+        $guide = self::GUIDANCE[$kind];
+
+        $bytes = is_file($path) ? (int) @filesize($path) : 0;
+        $size = is_file($path) ? @getimagesize($path) : false;
+        $width = $size[0] ?? null;
+        $height = $size[1] ?? null;
+
+        return [
+            'width' => $width,
+            'height' => $height,
+            'bytes' => $bytes,
+            'recommended' => $guide['recommended'],
+            'oversized' => $bytes > $guide['warnBytes'] || max((int) $width, (int) $height) > $guide['warnEdge'],
+        ];
     }
 
     public function update(Request $request, string $kind)
