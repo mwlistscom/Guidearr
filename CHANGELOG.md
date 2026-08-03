@@ -9,6 +9,16 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ## Unreleased
 
+**Fixed**
+- **The default logo showed a grey checkerboard on the landing page.** The shipped
+  `logo-default.png` had an image editor's transparency checkerboard **flattened into it as real
+  pixels** — every pixel was fully opaque, and 86% of them were the alternating light greys that
+  are supposed to *represent* transparency. On the landing page that rendered as an ugly checked
+  slab behind the wordmark. The background is now genuinely transparent; the artwork itself is
+  byte-for-byte the same (15,276 mark pixels before and after), and the file is 67% smaller
+  (156 KB → 51 KB). The unused duplicate `default.png` was carrying the same fault and has been
+  replaced too.
+
 **Added**
 - **Brand images are now resized on upload.** The app image ships with GD, and an uploaded icon or
   logo is capped at the largest size it is ever displayed (icon 512 px, logo 1200 px on the longest
