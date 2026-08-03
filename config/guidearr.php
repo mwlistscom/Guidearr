@@ -47,9 +47,16 @@ return [
     // are edited under Admin -> Configuration — they are NOT here, so a fresh install or an
     // upgrade needs nothing run by hand. These are the advanced knobs only.
     'threat_feed' => [
-        // How far back to look. Scanners rotate hosts within a day or two, so a long
-        // window is what gives the list any depth at all.
-        'window_days' => (int) env('THREAT_FEED_WINDOW_DAYS', 30),
+        // How far back to look. An address is listed only while it has recent hostile
+        // hits in this window and drops off on the next rebuild once it goes quiet —
+        // nothing is ever banned permanently, and nothing accumulates between rebuilds.
+        //
+        // The REAL bound is usually log retention, not this number: docker/nginx-logrotate.sh
+        // trims the access log by SIZE (15 MB -> keep 5 MB), so a busy install may only hold
+        // a few days of history and addresses age out sooner than the value here. Raising
+        // this past what the logs keep buys nothing; raise NGINX_LOG_MAX_BYTES too if you
+        // genuinely want a longer memory.
+        'window_days' => (int) env('THREAT_FEED_WINDOW_DAYS', 14),
         // Hard cap, so a log flood cannot turn into a firewall rule explosion.
         'max_entries' => (int) env('THREAT_FEED_MAX_ENTRIES', 5000),
         // Rebuild at most this often when a request finds the cached file stale. The
