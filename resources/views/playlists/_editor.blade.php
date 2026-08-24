@@ -444,10 +444,16 @@ window.GXPLE = (function () {
             else if (a === 'del') J('/playlists/' + plId + '/channels/' + d.id, 'DELETE', d.deleted ? { restore: true } : null).then(softReload);
         });
         chTable.on('rowMoved', (row) => {
-            const page = chTable.getPage() || 1;
-            const size = chTable.getPageSize() || SIZE;
-            const globalRow = (page - 1) * size + row.getPosition(true);
-            J('/playlists/' + plId + '/channels/' + row.getData().id + '/move', 'POST', { row: globalRow }).then(softReload);
+            // Anchor on the neighbouring VISIBLE row, never on a row number: while the grid is
+            // filtered the '#' column counts matches, not the playlist, so sending that number
+            // would drop the channel somewhere else entirely. Landing after the row above is what
+            // puts it between the two rows it was dropped between.
+            const rows = chTable.getRows();
+            const id = row.getData().id;
+            const i = rows.findIndex(r => r.getData().id === id);
+            if (i < 0 || rows.length < 2) return;
+            const body = i > 0 ? { after_id: rows[i - 1].getData().id } : { before_id: rows[1].getData().id };
+            J('/playlists/' + plId + '/channels/' + id + '/move', 'POST', body).then(softReload);
         });
     }
 
@@ -532,8 +538,16 @@ window.GXPLE = (function () {
             J('/playlists/' + plId + '/channels/move-bulk', 'POST', { ids, row }).then(() => { closeMove(); clearSelection(); softReload(); });
             return;
         }
-        const url = moveKind === 'group' ? '/playlists/' + plId + '/groups/' + moveId + '/move' : '/playlists/' + plId + '/channels/' + moveId + '/move';
-        J(url, 'POST', { row }).then(() => { closeMove(); if (moveKind === 'group') { loadGroups(); reloadChannels(); } else { softReload(); } });
+        if (moveKind === 'group') {
+            J('/playlists/' + plId + '/groups/' + moveId + '/move', 'POST', { row })
+                .then(() => { closeMove(); loadGroups(); reloadChannels(); });
+            return;
+        }
+        // Send the active filter with the number: the '#' column counts the filtered view, so the
+        // server has to resolve the target against the same list the user read it off.
+        J('/playlists/' + plId + '/channels/' + moveId + '/move', 'POST',
+          { row, search: $('ple-search').value || '', group: groupFilter || '', deleted: showDeleted ? 'all' : '' })
+            .then(() => { closeMove(); softReload(); });
     }
 
     // edit / add modal (shared)

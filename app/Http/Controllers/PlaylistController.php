@@ -267,7 +267,36 @@ class PlaylistController extends Controller
     public function moveChannel(Request $request, Playlist $playlist, int $cid)
     {
         $this->authorizeOwner($playlist);
-        (new PlaylistStore($playlist->id))->moveChannelToRow($cid, max(1, (int) $request->input('row', 1)));
+        $store = new PlaylistStore($playlist->id);
+
+        // Drag-and-drop anchors on the neighbouring row it was dropped against, so it lands there
+        // whatever the grid is filtered to, paged at, or sorted by.
+        $after = (int) $request->input('after_id', 0);
+        $before = (int) $request->input('before_id', 0);
+        if ($after > 0 || $before > 0) {
+            return response()->json(['ok' => $store->moveChannelRelative($cid, $after ?: null, $before ?: null)]);
+        }
+
+        // "Move to row #". While a filter is active the number means the position in the FILTERED
+        // view — what the "#" column shows — so resolve it against that list rather than treating
+        // it as a global row, which would fling the channel to a different part of the playlist.
+        $row = max(1, (int) $request->input('row', 1));
+        $search = trim((string) $request->input('search', ''));
+        $group = trim((string) $request->input('group', ''));
+        $mode = $request->input('deleted') === 'all' ? 'all' : 'hide';
+
+        if ($search !== '' || $group !== '') {
+            $ids = $store->filteredChannelIds($search ?: null, $group ?: null, $mode, $cid);
+            if ($ids) {
+                $ok = $row <= 1
+                    ? $store->moveChannelRelative($cid, null, $ids[0])
+                    : $store->moveChannelRelative($cid, $ids[min($row - 2, count($ids) - 1)], null);
+
+                return response()->json(['ok' => $ok]);
+            }
+        }
+
+        $store->moveChannelToRow($cid, $row);
 
         return response()->json(['ok' => true]);
     }
