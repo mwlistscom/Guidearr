@@ -83,6 +83,13 @@ return [
         'low_speed_time'   => (int) env('FEED_LOW_SPEED_TIME', 60),    // seconds below the limit before aborting
         'verify_tls'       => (bool) env('FEED_VERIFY_TLS', false),    // many IPTV servers have bad/no TLS
         'max_errors'       => (int) env('FEED_MAX_ERRORS', 4),         // at this error count: delete job + disable provider
+        // Wait before each retry, indexed from the first failure (the last step repeats past the
+        // end). Without this a failed job was re-claimed instantly and one dead upstream spent the
+        // whole max_errors budget in about a second. Set empty to retry with no delay.
+        'retry_backoff' => array_values(array_filter(array_map(
+            'intval',
+            explode(',', (string) env('FEED_RETRY_BACKOFF', '60,300,900'))
+        ), fn ($n) => $n > 0)),
         'orphan_minutes'   => (int) env('FEED_ORPHAN_MINUTES', 60),    // running longer than this = orphan -> requeue + error++
         'user_agent'       => env('FEED_USER_AGENT', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'),
     ],

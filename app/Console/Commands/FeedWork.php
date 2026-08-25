@@ -370,8 +370,20 @@ class FeedWork extends Command
             $provider->forceFill(['enabled' => false, 'last_status' => 'failed'])->save();
             $job->delete();
         } else {
+            // Wait before the next attempt. Requeueing with no delay let the drain loop re-claim
+            // the job immediately, so a dead upstream produced max_errors failures in about a
+            // second and disabled the provider — the budget is meant to span separate attempts.
+            $wait = FeedQueue::backoffSeconds($job->error);
             $provider->forceFill(['last_status' => 'failed'])->save();
-            $job->forceFill(['state' => 'queued', 'processor' => null])->save();
+            $job->forceFill([
+                'state' => 'queued',
+                'processor' => null,
+                'retry_after' => $wait > 0 ? now()->addSeconds($wait) : null,
+            ])->save();
+            if ($wait > 0) {
+                $job->log('info', "Next attempt in {$wait}s.");
+                Log::channel('worker')->info("#{$provider->id} '{$provider->name}' — retry #".($job->error + 1)." in {$wait}s.");
+            }
         }
     }
 }

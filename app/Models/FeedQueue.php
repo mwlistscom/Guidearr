@@ -15,13 +15,14 @@ class FeedQueue extends Model
 
     protected $fillable = [
         'msgid', 'user_id', 'provider_id', 'type', 'state', 'processor',
-        'dstart', 'dstop', 'elapsed', 'hour', 'error', 'attempts',
+        'dstart', 'dstop', 'elapsed', 'hour', 'error', 'attempts', 'retry_after',
     ];
 
     protected function casts(): array
     {
         return [
             'dstart'   => 'datetime',
+            'retry_after' => 'datetime',
             'dstop'    => 'datetime',
             'elapsed'  => 'integer',
             'hour'     => 'integer',
@@ -71,6 +72,9 @@ class FeedQueue extends Model
                 'hour'      => $provider->refresh_hour ?? 0,
                 'error'     => 0,
                 'attempts'  => 0,
+                // An explicit enqueue — the scheduler's turn, or an operator pressing Run — is a
+                // fresh start, so it clears any backoff a previous failure left behind.
+                'retry_after' => null,
             ]
         );
 
@@ -102,6 +106,7 @@ class FeedQueue extends Model
                 'hour'      => $provider->refresh_hour ?? 0,
                 'error'     => 0,
                 'attempts'  => 0,
+                'retry_after' => null,
             ]
         );
     }
@@ -116,11 +121,52 @@ class FeedQueue extends Model
             ->get();
 
         foreach ($orphans as $o) {
-            $o->forceFill(['state' => 'queued', 'error' => $o->error + 1, 'processor' => null])->save();
-            $o->log('warn', "Job ran past {$minutes}m and was reset to queued; error #{$o->error}.");
+            // Back off here too. A job that hung once will likely hang again, and re-claiming it
+            // the instant it is reset is what turns one wedged provider into a retry storm.
+            $wait = static::backoffSeconds($o->error + 1);
+            $o->forceFill([
+                'state'       => 'queued',
+                'error'       => $o->error + 1,
+                'processor'   => null,
+                'retry_after' => $wait > 0 ? now()->addSeconds($wait) : null,
+            ])->save();
+            $o->log('warn', "Job ran past {$minutes}m and was reset to queued; error #{$o->error}."
+                .($wait > 0 ? " Next attempt in {$wait}s." : ''));
         }
 
         return $orphans->count();
+    }
+
+    /**
+     * Seconds to wait before attempt N+1, given the error count that has just been recorded.
+     *
+     * Indexed from the first failure; past the end of the ladder the last step repeats. Returning
+     * 0 means "claimable immediately", which is what an empty config restores.
+     */
+    public static function backoffSeconds(int $errorCount): int
+    {
+        $ladder = config('guidearr.feed.retry_backoff', []);
+        if (! is_array($ladder) || $ladder === []) {
+            return 0;
+        }
+        $ladder = array_values(array_map('intval', $ladder));
+        $step = $ladder[min(max($errorCount, 1), count($ladder)) - 1];
+
+        return max(0, $step);
+    }
+
+    /**
+     * Queued AND past any retry backoff — the jobs a worker may actually take right now.
+     *
+     * The supervisor sizes its worker pool off the same scope. Counting a backed-off job as
+     * backlog would have it spawn children that find nothing to claim and exit, every tick.
+     */
+    public function scopeClaimable($query)
+    {
+        return $query->where('state', 'queued')
+            ->where(function ($w) {
+                $w->whereNull('retry_after')->orWhere('retry_after', '<=', now());
+            });
     }
 
     /** Atomically claim the next queued job. Uses SKIP LOCKED on MySQL for true 2–3 worker parallelism. */
@@ -129,7 +175,7 @@ class FeedQueue extends Model
         static::reclaimOrphans();
 
         return DB::transaction(function () use ($processor) {
-            $q = static::where('state', 'queued')->orderBy('id');
+            $q = static::claimable()->orderBy('id');
             if (in_array($q->getConnection()->getDriverName(), ['mysql', 'mariadb'], true)) {
                 $q->lock('FOR UPDATE SKIP LOCKED');
             } else {

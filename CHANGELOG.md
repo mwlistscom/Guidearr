@@ -31,6 +31,20 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   character in half** — they trimmed by bytes, which could leave two thirds of a dash behind.
   Existing installs are repaired **on read**, so an affected playlist opens again immediately
   without waiting for the next provider refresh.
+- **A brief upstream hiccup no longer disables a provider.** A failed refresh went straight back on
+  the queue with no delay, so the worker picked it up again within milliseconds — and a provider
+  that was briefly unreachable burned its entire error budget, **four failures in about one
+  second**, and was switched off. That is one failure counted four times, not four attempts. Retries
+  now wait **1 minute, then 5, then 15**, so the budget spans about twenty minutes of genuinely
+  separate attempts and a provider that returns in that window is never disabled at all. The
+  provider log shows when the next attempt is due. Pressing **Run** or the scheduled refresh still
+  starts immediately — neither waits behind a backoff — and the delays are tunable with
+  `FEED_RETRY_BACKOFF` (set it empty for the old immediate retries).
+
+**Upgrading**
+- Run `php artisan migrate` after pulling — the retry backoff adds a `retry_after` column to the
+  feed queue. Then recreate the worker so the supervisor picks up the new scheduling
+  (`docker compose up -d worker`). No image rebuild and no frontend build are required.
 
 ---
 
