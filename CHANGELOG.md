@@ -7,6 +7,23 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **Dragging a channel while the editor is filtered now drops it where you let go.** The `#` column
+  counts the *filtered* list — filter on `ESPN` and the matches are numbered 1, 2, 3 no matter where
+  they actually sit — but the drag sent that number to the server as a position in the **whole**
+  playlist. Dropping a channel into the third visible slot moved it to row 3 of the entire list
+  instead of in between the two channels it was dropped between. A move is now anchored on the
+  **row it was dropped against**, not on a row number, so it lands immediately after that channel
+  wherever it lives in the playlist — and the same drag is now correct across pages and on a grid
+  sorted by a column, which had the same flaw.
+- **"Move to row #" means the row you can see.** With a filter active the number is now read against
+  the filtered list, matching the `#` column the dialog prefills from. With no filter it still means
+  a position in the whole playlist, exactly as before.
+
+---
+
 ## v1.23.10 — Brand row alignment · 2026-08-03
 
 **Fixed**

@@ -660,6 +660,113 @@ class PlaylistStore
     }
 
     /**
+     * Place a channel immediately after $afterId — or, when only $beforeId is given, immediately
+     * before it — in the flat order. Group is left untouched, as with every other channel move.
+     *
+     * Anchoring on a neighbouring ROW rather than a row NUMBER is what makes a drag land where it
+     * was dropped while the editor is filtered: the "#" column counts the *filtered* set, so row 3
+     * of a search for "ESPN" is nowhere near global row 3. The same is true across pages and of a
+     * grid the user has sorted by a column. Deleted rows are part of the sequence here because the
+     * editor can show them, so one can legitimately be the row that was dropped onto.
+     *
+     * Returns false and changes nothing when the anchor no longer exists (a stale grid).
+     */
+    public function moveChannelRelative(int $id, ?int $afterId, ?int $beforeId): bool
+    {
+        $anchorId = $afterId ?: $beforeId;
+        if (! $anchorId || $anchorId === $id) {
+            return false;
+        }
+        $exists = $this->db->prepare('SELECT 1 FROM playlist_channels WHERE id = ?');
+        $exists->execute([$id]);
+        if ($exists->fetchColumn() === false) {
+            return false;
+        }
+
+        // The sequence WITHOUT the moving row, so the neighbour maths never sees its old slot.
+        $others = $this->db->prepare('SELECT id, position_order po FROM playlist_channels WHERE id != ? ORDER BY position_order, id');
+        $others->execute([$id]);
+        $rows = $others->fetchAll(PDO::FETCH_ASSOC);
+
+        $at = null;
+        foreach ($rows as $i => $r) {
+            if ((int) $r['id'] === $anchorId) {
+                $at = $i;
+                break;
+            }
+        }
+        if ($at === null) {
+            return false;
+        }
+
+        $slot = $afterId ? $at + 1 : $at;                       // index the moving row must occupy
+        $prev = $slot > 0 ? (float) $rows[$slot - 1]['po'] : null;
+        $next = isset($rows[$slot]) ? (float) $rows[$slot]['po'] : null;
+
+        if ($prev === null) {
+            $newPos = $next - self::STEP;
+        } elseif ($next === null) {
+            $newPos = $prev + self::STEP;
+        } else {
+            $newPos = ($prev + $next) / 2.0;
+            // Neighbours that are equal — or so close together that the midpoint rounds onto one of
+            // them — leave the tie to be broken by id, which is not the order that was dropped.
+            // Renumber the whole sequence instead; that cannot be ambiguous.
+            if (! ($newPos > $prev && $newPos < $next)) {
+                $this->renumberChannelsWith($rows, $id, $slot);
+
+                return true;
+            }
+        }
+
+        $this->db->prepare('UPDATE playlist_channels SET position_order = :p WHERE id = :id')
+            ->execute([':p' => $newPos, ':id' => $id]);
+
+        return true;
+    }
+
+    /** Renumber the flat order 10/20/30…, with $id spliced into $rows at index $slot. */
+    private function renumberChannelsWith(array $rows, int $id, int $slot): void
+    {
+        $ids = array_map(static fn ($r) => (int) $r['id'], $rows);
+        array_splice($ids, $slot, 0, [$id]);
+
+        $this->begin();
+        try {
+            $upd = $this->db->prepare('UPDATE playlist_channels SET position_order = :p WHERE id = :id');
+            $pos = self::STEP;
+            foreach ($ids as $cid) {
+                $upd->execute([':p' => $pos, ':id' => $cid]);
+                $pos += self::STEP;
+            }
+            $this->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Ordered channel ids of the editor's current filtered view — exactly what its "#" column
+     * counts. $exclude drops one row (the one being moved) so an "N-th position" target resolves
+     * against the list as it will look once that row has been lifted out of it.
+     */
+    public function filteredChannelIds(?string $search, ?string $group, string $mode, int $exclude = 0): array
+    {
+        $ids = [];
+        foreach ($this->effectiveChannelPage($search, $group, $mode, 1, 1000000)['rows'] as $r) {
+            $id = (int) $r['id'];
+            if ($id !== $exclude) {
+                $ids[] = $id;
+            }
+        }
+
+        return $ids;
+    }
+
+    /**
      * Move a set of channels so the block begins at global row N (1-based) in the flat order,
      * preserving the block's relative order. Group is left untouched (it is just an attribute).
      * The whole playlist is renumbered step-of-10 in one transaction so the block lands exactly
