@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Utf8;
 use PDO;
 
 /**
@@ -588,7 +589,11 @@ class PlaylistStore
 
                 return ($v !== '' && $v !== null) ? $v : ($src[$k] ?? '');
             };
-            $name = (string) $pick('name');
+            // Repair on read. Provider text is not reliably UTF-8, and a single bad byte makes
+            // response()->json() throw — so one broken channel would 500 the entire editor grid
+            // and the playlist could not be opened. Stores written before the parsers were fixed
+            // still hold such bytes, so cleaning here is what makes them loadable today.
+            $name = Utf8::clean((string) $pick('name'));
             $out[] = [
                 'id' => (int) $r['id'],
                 'row' => $base + $i + 1,
@@ -597,11 +602,11 @@ class PlaylistStore
                 'manual' => $pid === 0,
                 'missing' => $pid > 0 && $src === null,
                 'name' => $name !== '' ? $name : ($pid > 0 && $src === null ? '(missing channel)' : ''),
-                'tvg_name' => (string) $pick('tvg_name'),
-                'tvg_id' => (string) $pick('tvg_id'),
-                'tvg_logo' => (string) $pick('tvg_logo'),
-                'url' => (string) $pick('url'),
-                'group_title' => (string) ($r['group_title'] ?? ''),
+                'tvg_name' => Utf8::clean((string) $pick('tvg_name')),
+                'tvg_id' => Utf8::clean((string) $pick('tvg_id')),
+                'tvg_logo' => Utf8::clean((string) $pick('tvg_logo')),
+                'url' => Utf8::clean((string) $pick('url')),
+                'group_title' => Utf8::clean((string) ($r['group_title'] ?? '')),
                 'enabled' => (bool) $r['enabled'],
                 'deleted' => (bool) $r['deleted'],
             ];

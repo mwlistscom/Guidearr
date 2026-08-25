@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\Utf8;
+
 use DOMDocument;
 use XMLReader;
 
@@ -118,8 +120,8 @@ class XmltvParser
         }
 
         return [
-            'tvg_id'       => substr($tvg, 0, 125),
-            'display_name' => substr($name, 0, 256),
+            'tvg_id'       => Utf8::cut($tvg, 125),
+            'display_name' => Utf8::cut($name, 256),
             'icon'         => $icon,
         ];
     }
