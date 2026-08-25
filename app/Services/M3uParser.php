@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\Utf8;
+
 /**
  * Streaming M3U parser. Reads line-by-line (no full-file buffering), extracts
  * EXTINF attributes safely (truncated, UTF-8 coerced), classifies Live/VOD.
@@ -25,11 +27,11 @@ class M3uParser
         $group = $get('group-title');
 
         return [
-            'tvg_id'   => substr($get('tvg-id'), 0, 255),
-            'tvg_name' => substr($get('tvg-name'), 0, 254),
-            'tvg_logo' => substr($get('tvg-logo'), 0, 1024),
-            'group'    => $group !== '' ? self::utf8(substr($group, 0, 255)) : '[Dummy]',
-            'name'     => self::utf8(substr($name, 0, 255)),
+            'tvg_id'   => Utf8::cut($get('tvg-id'), 255),
+            'tvg_name' => Utf8::cut($get('tvg-name'), 254),
+            'tvg_logo' => Utf8::cut($get('tvg-logo'), 1024),
+            'group'    => $group !== '' ? Utf8::cut($group, 255) : '[Dummy]',
+            'name'     => Utf8::cut($name, 255),
         ];
     }
 
@@ -51,10 +53,7 @@ class M3uParser
 
     public static function utf8(?string $s): string
     {
-        if (! $s) {
-            return '';
-        }
-        return mb_convert_encoding($s, 'UTF-8', 'UTF-8, ISO-8859-1');
+        return Utf8::clean($s);
     }
 
     /**
@@ -83,10 +82,10 @@ class M3uParser
                 $cls  = self::classify($line);
 
                 if ($meta['tvg_name'] === '') {
-                    $meta['tvg_name'] = $meta['tvg_id'] !== '' ? $meta['tvg_id'] : substr($meta['name'], 0, 254);
+                    $meta['tvg_name'] = $meta['tvg_id'] !== '' ? $meta['tvg_id'] : Utf8::cut($meta['name'], 254);
                 }
                 $channel = $meta + [
-                    'url'  => substr($line, 0, 2042),
+                    'url'  => Utf8::cut($line, 2042),
                     'type' => $cls['type'],
                     'ext'  => $cls['ext'],
                 ];

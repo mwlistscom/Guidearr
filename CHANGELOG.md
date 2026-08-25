@@ -21,6 +21,16 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 - **"Move to row #" means the row you can see.** With a filter active the number is now read against
   the filtered list, matching the `#` column the dialog prefills from. With no filter it still means
   a position in the whole playlist, exactly as before.
+- **A playlist could fail to open at all if one channel name held a stray byte.** Provider feeds are
+  not reliably UTF-8, and the editor's channel grid is delivered as JSON — which refuses to encode
+  invalid text. A single bad byte in a single channel therefore returned a **500 for the entire
+  grid**, so the playlist showed nothing rather than one damaged name. Two things caused those
+  bytes, and both are fixed: feeds published in **Windows-1252** are now decoded properly, so
+  `AMC en Español`, `Pokémon` and `America's Funniest Home Videos` read correctly instead of
+  breaking the page; and Guidearr's own length caps on `tvg-id` and channel names **no longer cut a
+  character in half** — they trimmed by bytes, which could leave two thirds of a dash behind.
+  Existing installs are repaired **on read**, so an affected playlist opens again immediately
+  without waiting for the next provider refresh.
 
 ---
 

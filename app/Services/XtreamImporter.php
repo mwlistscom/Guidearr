@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\Utf8;
+
 use App\Models\Provider;
 
 /**
@@ -79,7 +81,7 @@ class XtreamImporter
         return [
             'name'     => $name,
             'tvg_name' => $name,
-            'tvg_id'   => substr($epg, 0, 125),
+            'tvg_id'   => Utf8::cut($epg, 125),
             'tvg_logo' => (string) ($s['stream_icon'] ?? ''),
             'group'    => $group,
             'type'     => (string) ($s['stream_type'] ?? 'Live'),
