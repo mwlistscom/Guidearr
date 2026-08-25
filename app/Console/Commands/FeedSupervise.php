@@ -52,7 +52,7 @@ class FeedSupervise extends Command
 
                 $limit = Settings::workerLimit();
                 $active = count($this->pool);
-                $queued = FeedQueue::where('state', 'queued')->count();
+                $queued = self::backlogCount();
 
                 $spawn = self::slotsToSpawn($limit, $active, $queued);
                 if ($spawn > 0) {
@@ -77,6 +77,18 @@ class FeedSupervise extends Command
         $this->drain();
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Jobs a worker could claim right now.
+     *
+     * Deliberately NOT a plain count of 'queued': a job waiting out a retry backoff is queued but
+     * unclaimable, and counting it would have the pool spawn children that find nothing and exit
+     * on every tick. Extracted so the distinction is testable.
+     */
+    public static function backlogCount(): int
+    {
+        return FeedQueue::claimable()->count();
     }
 
     /**
