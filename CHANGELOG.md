@@ -2,8 +2,65 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10 and v1.23.11.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10, v1.23.11 and v1.23.12.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.23.12 — Security updates, and the fix that makes them arrive · 2026-09-04
+
+**Security**
+- **Four dependencies with published advisories updated** — `composer audit` flagged **22
+  advisories** across all four, every one of them installed: `guzzlehttp/guzzle` 7.11.0 → 7.15.5
+  (9 advisories up to high, including a noncanonical-host check bypass), `guzzlehttp/psr7` 2.11.0 →
+  2.13.1 (CRLF injection when serializing an HTTP start line), `league/commonmark` 2.8.2 → 2.10.0
+  (10 advisories — several high-severity denial of service via crafted Markdown, plus a link-filter
+  bypass) and `livewire/livewire` v4.3.1 → v4.4.3 (DOM-based XSS in client-side state handling).
+  Guzzle fetches every provider playlist and guide, so it handles remote input on each refresh.
+  `laravel/framework` was not flagged and is deliberately left alone — this is a narrow security
+  update, not a framework bump.
+
+**Fixed**
+- **A dependency update now actually reaches an install.** `vendor/` is not in git and the image
+  never ran `composer` at all — it only copied the composer *binary* in. So the documented upgrade
+  (`git pull` then `docker compose up -d --build`) pulled a **new `composer.lock`** and left the
+  **old packages** on disk: every dependency security fix in every release so far shipped to GitHub
+  and changed nothing on any running install, and the four above would have done the same. The
+  image installs them during the build now. They cannot be left at `vendor/` inside the image —
+  compose bind-mounts `./` over `/var/www/html` and hides anything the image put there, the same
+  trap the frontend assets hit in v1.23.9 — so they are staged at `/opt/guidearr/vendor` and copied
+  into place by the entrypoint. The install is **keyed on `composer.lock`**: it runs when the lock
+  on disk differs from the one already installed and does nothing when they match, so a normal
+  restart costs nothing and a local development install (dev dependencies and all) is left alone.
+  A `git pull` without `--build` now **says so** — the container logs that `composer.lock` does not
+  match the image and keeps the packages it has, rather than silently pinning the old versions.
+- **A fresh clone can be built again.** Quick start said to clone and run
+  `docker compose up -d --build`, which could not work: the build copied
+  `vendor/livewire/flux/dist/flux.css` out of the build context, and `vendor/` is gitignored, so a
+  clean checkout failed on that line with a `not found` error naming a file the user had no obvious
+  way to produce. The build takes its own copy from the dependency stage now.
+- **Duplicate `Cache-Control` header on dynamic responses.** A blanket
+  `add_header Cache-Control "no-transform" always;` sat at server level in `docker/nginx.conf`, and
+  `add_header` can only ever *append* — it cannot replace a header the application already set. So
+  every session-authenticated response carried `Cache-Control` twice: harmless to browsers, but it
+  trips intrusion-detection heuristics for repeated response headers on essentially every request.
+  It moved into `location /`, where it still covers static assets (which set no `Cache-Control` of
+  their own) without touching PHP responses.
+- **Legacy `/m3u/m3u.php` flood dropped at the proxy.** An endpoint that has not existed for
+  several major versions still attracts continuous automated requests; nginx now closes those
+  connections without a response instead of passing each one to PHP.
+
+**Upgrading**
+- **`--build` is not optional in this release** — it is what installs the patched dependencies, and
+  `git pull` on its own leaves you on the vulnerable versions. That is the bug being fixed, and it
+  applies to the upgrade *into* this release as much as to every one after it:
+  `git pull && docker compose up -d --build`, then `php artisan optimize:clear` and
+  `docker compose restart worker scheduler`.
+- Confirm it landed: `docker compose logs app | grep guidearr:` prints
+  `guidearr: installed PHP dependencies into vendor/`.
+- If you have edited `docker/nginx.conf` (Quick start step 4 tells you to, for `server_name`),
+  `git pull` may report a conflict on it — keep your `server_name` line and take the incoming
+  `Cache-Control` and `/m3u/m3u.php` changes.
 
 ---
 
