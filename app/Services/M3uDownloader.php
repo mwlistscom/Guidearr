@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\OutboundUrl;
+
 /**
  * Streaming downloader: writes to disk chunk-by-chunk (never buffers the whole
  * file in memory), enforces a hard byte cap mid-stream, emulates a browser, and
@@ -15,6 +17,12 @@ class M3uDownloader
         $cfg = config('guidearr.feed');
         $out = (object) ['ok' => false, 'bytes' => 0, 'error' => null, 'file' => $dest];
 
+        // This URL came from a user, and we are the ones fetching it. See App\Support\OutboundUrl.
+        if ($reason = OutboundUrl::reason($url)) {
+            $out->error = $reason;
+            return $out;
+        }
+
         $fo = @fopen($dest, 'wb');
         if (! $fo) {
             $out->error = 'Cannot open destination file for writing.';
@@ -24,8 +32,12 @@ class M3uDownloader
         $maxBytes = (int) $cfg['max_bytes'];
         $ch = curl_init();
 
+        // A 3xx body is discarded rather than written, so a redirect never lands in the file.
         $callback = function ($ch, $data) use (&$out, $fo, $maxBytes) {
             $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if ($code >= 300 && $code < 400) {
+                return strlen($data);
+            }
             if ($code >= 400) {
                 $out->error = "HTTP {$code}";
                 return -1;
@@ -46,8 +58,6 @@ class M3uDownloader
         curl_setopt_array($ch, [
             CURLOPT_URL            => $url,
             CURLOPT_WRITEFUNCTION  => $callback,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS      => 5,
             CURLOPT_ENCODING       => 'gzip,deflate',
             CURLOPT_CONNECTTIMEOUT => (int) $cfg['connect_timeout'],
             CURLOPT_TIMEOUT        => (int) $cfg['timeout'],
@@ -64,9 +74,24 @@ class M3uDownloader
                 'Upgrade-Insecure-Requests: 1',
             ],
             CURLOPT_USERAGENT      => $cfg['user_agent'],
-        ]);
+        ] + OutboundUrl::curlOptions());
 
-        curl_exec($ch);
+        // Redirects are followed by hand, checking each hop — letting curl follow them would
+        // put the request on the wire before anything could object, and an attacker controls
+        // their own server, so "302 to 169.254.169.254" is the obvious way around a check
+        // that only ever looks at the URL that was typed in.
+        try {
+            OutboundUrl::execFollowing($ch, $url, function () use (&$out, $fo) {
+                // A 3xx body is discarded by the write callback, but reset anyway so a
+                // partial write on one hop cannot bleed into the next.
+                $out->bytes = 0;
+                ftruncate($fo, 0);
+                rewind($fo);
+            });
+        } catch (\RuntimeException $e) {
+            $out->error = $e->getMessage();
+        }
+
         if ($out->error === null && curl_errno($ch)) {
             $out->error = curl_error($ch);
         }

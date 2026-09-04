@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\OutboundUrl;
+
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -64,8 +66,17 @@ class ProviderValidator
         if (! $this->isHttpUrl($url)) {
             return $this->result(false, 'A valid http(s) URL is required.');
         }
+        if ($reason = OutboundUrl::reason($url)) {
+            return $this->result(false, $reason);
+        }
 
-        $head = $this->fetchHead($url);
+        try {
+            $head = $this->fetchHead($url);
+        } catch (\RuntimeException $e) {
+            // A redirect pointed somewhere it may not go — say so rather than "could not fetch".
+            return $this->result(false, $e->getMessage());
+        }
+
         if ($head === null) {
             return $this->result(false, 'Could not fetch the URL (timeout, DNS, or connection refused).');
         }
@@ -82,6 +93,9 @@ class ProviderValidator
         if (! $this->isHttpUrl($url)) {
             return $this->result(false, 'A valid http(s) server URL is required for Xtream.');
         }
+        if ($reason = OutboundUrl::reason($url)) {
+            return $this->result(false, $reason);
+        }
         if (! $username || ! $password) {
             return $this->result(false, 'Xtream providers require a username and password.');
         }
@@ -91,6 +105,18 @@ class ProviderValidator
 
         $resp = Http::timeout(15)
             ->withHeaders(['User-Agent' => 'Guidearr/1.0'])
+            // Guzzle follows redirects itself, so the hop check rides on its callback: an
+            // Xtream server answering with "302 http://127.0.0.1/" is otherwise a way past
+            // the check above, which only ever sees the URL that was typed in.
+            ->withOptions(['allow_redirects' => [
+                'max' => OutboundUrl::maxRedirects(),
+                'strict' => true,
+                'referer' => false,
+                'protocols' => ['http', 'https'],
+                'on_redirect' => function ($request, $response, $uri) {
+                    OutboundUrl::assertAllowed((string) $uri);
+                },
+            ]])
             ->get($api, ['username' => $username, 'password' => $password]);
 
         $parsed = self::parseXtream($resp->body());
@@ -104,7 +130,15 @@ class ProviderValidator
         return $this->result(true, $msg, $parsed['timeshift'], strlen($resp->body()));
     }
 
-    /** Fetch only the head of a (potentially huge) file without downloading it all. */
+    /**
+     * Fetch only the head of a (potentially huge) file without downloading it all.
+     *
+     * Redirects are followed here rather than by PHP's http wrapper, so each hop can be
+     * checked first — plenty of legitimate playlists redirect to a CDN, but so would an
+     * attacker's server pointing the second hop at loopback.
+     *
+     * @throws \RuntimeException when a redirect leads somewhere it may not go
+     */
     private function fetchHead(?string $url): ?string
     {
         $ctx = stream_context_create([
@@ -112,19 +146,47 @@ class ProviderValidator
                 'method'        => 'GET',
                 'timeout'       => 15,
                 'ignore_errors' => true,
+                'follow_location' => 0,
+                'max_redirects'   => 1,
                 'header'        => "Range: bytes=0-" . (self::SNIFF_BYTES - 1) . "\r\nUser-Agent: Guidearr/1.0\r\n",
             ],
             'ssl' => ['verify_peer' => true, 'verify_peer_name' => true],
         ]);
 
-        $fh = @fopen($url, 'rb', false, $ctx);
-        if ($fh === false) {
-            return null;
-        }
-        $head = @stream_get_contents($fh, self::SNIFF_BYTES);
-        @fclose($fh);
+        for ($hop = 0, $max = OutboundUrl::maxRedirects(); ; $hop++) {
+            $fh = @fopen($url, 'rb', false, $ctx);
+            if ($fh === false) {
+                return null;
+            }
 
-        return $head === false ? null : $head;
+            // Set by the http wrapper in this scope for the request just made.
+            $headers = $http_response_header ?? [];
+            $head = @stream_get_contents($fh, self::SNIFF_BYTES);
+            @fclose($fh);
+
+            $status = 0;
+            $location = null;
+            foreach ($headers as $h) {
+                if (preg_match('#^HTTP/\S+\s+(\d{3})#i', $h, $m)) {
+                    $status = (int) $m[1];      // last status line wins
+                    $location = null;
+                } elseif (stripos($h, 'location:') === 0) {
+                    $location = trim(substr($h, 9));
+                }
+            }
+
+            if ($status >= 300 && $status < 400 && $location !== null && $hop < $max) {
+                $next = OutboundUrl::nextHop($location, $url);   // throws if disallowed
+                if ($next === null) {
+                    return $head === false ? null : $head;
+                }
+                $url = $next;
+
+                continue;
+            }
+
+            return $head === false ? null : $head;
+        }
     }
 
     private function isHttpUrl(?string $url): bool

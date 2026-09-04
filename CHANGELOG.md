@@ -7,6 +7,34 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Security**
+- **Provider URLs can no longer be used to reach the internal network (SSRF).** Guidearr fetches
+  the URL you give a provider, and nothing checked where it pointed — only that it was `http(s)`.
+  Any account could therefore add a provider at `http://127.0.0.1:9000/`, `http://db:3306/`,
+  `http://169.254.169.254/` or a LAN address and have the server reach it. Registration is open by
+  default, so "an account" is not much of a barrier. It was not blind, either: the validator
+  distinguishes *"connection refused"* from *"fetched, but did not look like an M3U"* and reports
+  the **byte count**, which is a working internal port scanner — and anything whose first bytes
+  resemble a playlist or XMLTV guide was imported and displayed back.
+  Every outbound fetch — the M3U/XMLTV signature sniff, the Xtream login, the playlist download and
+  the guide download — now resolves the host first and refuses private or reserved space, checking
+  **every** address a name resolves to (one public and one loopback record is otherwise a bypass)
+  and re-checking **each redirect hop** (an attacker owns the first hop, so answering `302
+  http://169.254.169.254/` would otherwise walk straight past a check on the typed URL). curl no
+  longer follows redirects itself, and is pinned to HTTP/HTTPS rather than relying on libcurl's
+  defaults. Operators who really do run a provider on their LAN can allow it back with
+  `OUTBOUND_ALLOW_HOSTS=nas.lan,10.0.0.5` (per host) or `OUTBOUND_ALLOW_PRIVATE=true` (drops the
+  range check entirely); `OUTBOUND_MAX_REDIRECTS` caps the chain, default 5.
+
+**Upgrading**
+- Nothing to run. If a provider of yours points at a hostname on your own network, it will start
+  failing with *"Refusing to fetch a private or reserved address"* — add that host to
+  `OUTBOUND_ALLOW_HOSTS` in `.env` and it works exactly as before.
+
+---
+
 ## v1.23.14 — One compose file, and an upgrade that can change it · 2026-09-04
 
 **Changed**
