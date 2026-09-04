@@ -175,6 +175,9 @@ These are the variables Guidearr cares about most. (Standard Laravel variables �
 | `FEED_CONNECT_TIMEOUT` / `FEED_TIMEOUT` | cURL connect timeout (30s) and overall cap for a *progressing* download (1200s). |
 | `FEED_LOW_SPEED_LIMIT` / `FEED_LOW_SPEED_TIME` | Stall‑abort: if throughput stays below the limit (1024 B/s) for this long (60s), the transfer is aborted — stops a hung upstream from holding a worker for the full timeout. |
 | `FEED_MAX_BYTES` | Hard size cap per download (~1.2 GB). |
+| `OUTBOUND_ALLOW_HOSTS` | Comma‑separated hosts a provider may point at even though they resolve into private space — e.g. `nas.lan,10.0.0.5`. Provider URLs are fetched **by the server**, so by default anything resolving to loopback, link‑local, private or reserved space is refused; this is the narrow way to allow a genuine LAN provider back. |
+| `OUTBOUND_ALLOW_PRIVATE` | `true` drops that range check entirely (default `false`). Only sensible where every account is trusted. |
+| `OUTBOUND_MAX_REDIRECTS` | Redirect hops followed while fetching a provider URL (5). Each hop is re‑checked against the rules above. |
 | `FEED_MAX_ERRORS` | Errors before a job is dropped and its provider disabled (4). |
 | `FEED_ORPHAN_MINUTES` | A job `running` longer than this is treated as orphaned and requeued (60). |
 | `HEALTH_WORKER_STALE` | Seconds before the worker heartbeat is considered stale / wedged (180). |

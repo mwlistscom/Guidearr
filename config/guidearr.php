@@ -70,6 +70,26 @@ return [
         ), static fn ($v) => $v !== '')),
     ],
 
+    // Guard on URLs the SERVER fetches for a user (provider playlists, guides, Xtream APIs).
+    // Those URLs are user-supplied, so without a range check they are an SSRF: a signed-up
+    // user could point a provider at loopback, the container network or the LAN and have this
+    // host reach it for them. See App\Support\OutboundUrl.
+    'outbound' => [
+        // Drops the range check entirely. Only sensible on an install where every account is
+        // trusted AND you deliberately run a provider on the local network.
+        'allow_private' => (bool) env('OUTBOUND_ALLOW_PRIVATE', false),
+
+        // Named hosts allowed through regardless — the narrower way to permit a LAN provider.
+        // Comma-separated, matched on the URL's host exactly (e.g. "nas.lan,10.0.0.5").
+        'allow_hosts' => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) env('OUTBOUND_ALLOW_HOSTS', ''))
+        ), static fn ($v) => $v !== '')),
+
+        // Redirects are followed by hand so each hop can be re-checked; this caps the chain.
+        'max_redirects' => (int) env('OUTBOUND_MAX_REDIRECTS', 5),
+    ],
+
     // Background feed downloader limits (all overridable via .env).
     'feed' => [
         'max_bytes'        => (int) env('FEED_MAX_BYTES', 1288490188), // ~1.2 GB hard cap

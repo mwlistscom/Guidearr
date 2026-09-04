@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Support\OutboundUrl;
+
 use App\Support\Utf8;
 
 use App\Models\Provider;
@@ -216,13 +218,14 @@ class XtreamImporter
     /** GET an Xtream JSON endpoint (gzip, lax TLS, size-capped) and decode it. */
     private function fetchJson(string $url): mixed
     {
+        OutboundUrl::assertAllowed($url);
+
         $ch = curl_init();
         $bytes = 0;
         $buf = '';
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_ENCODING => 'gzip,deflate',
-            CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_CONNECTTIMEOUT => (int) config('guidearr.feed.connect_timeout', 30),
@@ -239,10 +242,14 @@ class XtreamImporter
 
                 return strlen($data);
             },
-        ]);
-        curl_exec($ch);
+        ] + OutboundUrl::curlOptions());
+
+        // Each redirect hop is re-checked; the buffer resets so a 3xx body never merges in.
+        $http = OutboundUrl::execFollowing($ch, $url, function () use (&$bytes, &$buf) {
+            $bytes = 0;
+            $buf = '';
+        });
         $err  = curl_errno($ch);
-        $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         if ($err && $err !== CURLE_WRITE_ERROR) {
@@ -258,6 +265,8 @@ class XtreamImporter
     /** Stream the XMLTV guide straight to disk (gzip-decoded, size-capped). Returns bytes written. */
     private function downloadXmltv(string $url, string $path): int
     {
+        OutboundUrl::assertAllowed($url);
+
         @mkdir(dirname($path), 0777, true);
         $fo = @fopen($path, 'wb');
         if (! $fo) {
@@ -269,7 +278,6 @@ class XtreamImporter
         curl_setopt_array($ch, [
             CURLOPT_URL => $url,
             CURLOPT_ENCODING => 'gzip',
-            CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_SSL_VERIFYHOST => false,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_CONNECTTIMEOUT => (int) config('guidearr.feed.connect_timeout', 30),
@@ -278,6 +286,11 @@ class XtreamImporter
             CURLOPT_LOW_SPEED_TIME => (int) config('guidearr.feed.low_speed_time', 60),
             CURLOPT_HTTPHEADER => ['Accept: application/xml, text/xml, */*;q=0.8', 'User-Agent: Guidearr/1.x'],
             CURLOPT_WRITEFUNCTION => function ($c, $data) use (&$bytes, $fo) {
+                // A redirect body is discarded rather than written into the guide file.
+                $code = (int) curl_getinfo($c, CURLINFO_HTTP_CODE);
+                if ($code >= 300 && $code < 400) {
+                    return strlen($data);
+                }
                 $len = strlen($data);
                 $bytes += $len;
                 if ($bytes > self::SIZE_CAP) {
@@ -286,11 +299,16 @@ class XtreamImporter
 
                 return fwrite($fo, $data) === false ? 0 : $len;
             },
-        ]);
-        curl_exec($ch);
+        ] + OutboundUrl::curlOptions());
+
+        // Each redirect hop is re-checked before it is followed.
+        $http = OutboundUrl::execFollowing($ch, $url, function () use (&$bytes, $fo) {
+            $bytes = 0;
+            ftruncate($fo, 0);
+            rewind($fo);
+        });
         $err = curl_errno($ch);
         fclose($fo);
-        $http = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
         if ($err && $err !== CURLE_WRITE_ERROR) {
