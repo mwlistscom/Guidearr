@@ -1,58 +1,74 @@
-# v1.23.16 — A Secure session cookie, and what trusting a proxy costs
+# v1.23.17 — Playlists that only contain what you put in them
 
-Two loose ends from the same security review that produced v1.23.15. One is a real fix that
-needs nothing from you; the other is guidance, because the right answer depends on how your
-install is wired and no default can know that.
+A security fix for the served playlist, and two new maintenance tasks for clearing out accounts
+and content nobody uses.
 
-> **Nothing to configure.** Pull, rebuild, and log in once to confirm — see **Upgrading**.
+> **The weekly reaper starts running on its own after this upgrade.** It deletes permanently.
+> Read **Upgrading** before the first Sunday.
 
 ---
 
 ## Security
 
-### The session cookie is now marked `Secure` on an HTTPS install
+### A hostile provider could add channels to your playlist
 
-Laravel leaves this off unless `SESSION_SECURE_COOKIE` is set by hand, and almost every
-Guidearr install terminates TLS at a proxy in front — HAProxy, Caddy, nginx, a tunnel. The app
-itself therefore only ever sees plain HTTP arriving over the internal network, and has no way
-to work out that the browser at the other end is on HTTPS.
+The m3u Guidearr serves is a line-based format, and three of the fields written into it — the
+channel's display name, its group and its stream URL — were written with no sanitising at all.
+Only the five quoted `#EXTINF` attributes were cleaned, and even those only had `"` removed.
 
-The result: unless you had set that variable yourself, your session cookie went out **without
-a `Secure` flag**, and a single stray `http://` request would put it on the wire in clear text.
+So a channel named:
 
-It is derived from `APP_URL` now. If yours starts with `https://` — which it does if `setup.sh`
-wrote it — the flag is set, with nothing for you to change.
+```
+Sky Sports
+#EXTINF:-1,Free Movies
+http://attacker.example/evil.ts
+```
 
-**An install genuinely served over plain `http://` keeps working.** Forcing the flag there
-would stop anyone logging in at all, which is a worse failure than the one being fixed.
-`SESSION_SECURE_COOKIE` still overrides the default in either direction if you want to be
-explicit.
+did not show up as an oddly-named channel. It **added a channel** to the playlist, pointing
+wherever the attacker chose — and it survived your curation, because you never chose it in the
+first place and so never disabled it.
+
+**This was reachable from your provider, not just from your own account.** Xtream channel names
+arrive as JSON, where a newline is perfectly legal, so a hostile or compromised provider could put
+entries into a subscriber's playlist. (An M3U source could not — that parser is line-based and
+cannot carry a newline through in the first place.)
+
+Every field is now forced onto a single line before it is written. The channel itself is kept
+rather than thrown away: the name is cosmetic, and one oddly-named channel is a better outcome
+than one that silently disappears.
+
+**The EPG output was never affected.** It is written with `XMLWriter`, which escapes its own text.
+
+**How much did this matter?** It needed a provider you subscribe to, and anyone who controls that
+already controls what the channels you *did* add actually play. What it added was entries you
+never picked. It was never a way into the site, or into anyone else's account.
 
 ---
 
-## Changed
+## Added
 
-### `docker/nginx.conf` now says what trusting a proxy range actually costs
+### Two new maintenance tasks
 
-The proxy trust list covers the private ranges, and that is what makes the real client IP work
-when Guidearr sits behind something. The part worth knowing: **anything that can open a
-connection from inside a trusted range can send its own `X-Forwarded-For` and be believed.**
-That decides what the playlist IP-lock sees, and which addresses the threat feed treats as a
-customer rather than a scanner.
+Both appear on **Admin → Maintenance**, and both are destructive, so they get the same treatment as
+the existing ones: preview first, then an explicit **Apply for real**.
 
-The right value is specific to your network, so this release does not change the default —
-narrowing it centrally would break `real_ip` for anyone whose proxy sits on a range that got
-removed. Instead the config now states the trade-off and gives you the two levers:
+**Prune idle accounts** — deletes accounts that registered, never set anything up, and have sat
+that way for 30 days. "Never set anything up" means **no providers and no playlist with any
+channels in it**. One provider, or one playlist with channels, protects the account. Admins are
+never touched. Manual only — nothing happens until you run it.
 
-1. **Keep `HTTP_BIND` no wider than your proxy can reach.** The default, `127.0.0.1`, means
-   nothing else can connect at all and the ranges cost you nothing. Widening it to a LAN
-   address is what puts every other machine on that network inside the trusted set.
-2. **If you have widened it, narrow the trust to the proxy itself** — `set_real_ip_from
-   192.168.1.2;` — and drop the ranges you do not use.
+**Reap stale playlists & providers** — permanently deletes playlists and providers nothing has
+accessed for 60 days, and their stored data. **Runs weekly, on its own.**
 
-`docker/nginx.conf` is tracked in git, so carry that change in a `docker-compose.override.yml`
-that mounts your own copy over `/etc/nginx/conf.d/default.conf`, rather than editing the
-tracked file and conflicting on the next `git pull`.
+This is the stage after the existing daily reaper, which only *disables* a provider after 14 days
+and brings it straight back the moment anything uses it. Here the playlist or provider is gone.
+
+Two things it will not do:
+
+- **A provider still attached to a playlist you use is never deleted**, even if the provider itself
+  looks idle. Your channels are pointers into that provider's data, so removing it would leave the
+  playlist full of "(missing channel)" rows serving nothing.
+- **A playlist created recently is never reaped**, even if nobody has opened it yet.
 
 ---
 
@@ -68,9 +84,18 @@ docker compose restart worker scheduler
 
 No migration and no configuration change.
 
-**Log in once afterwards.** The cookie change is the kind that is obvious in hindsight if it
-goes wrong: if your `APP_URL` says `https://` but you actually reach Guidearr over plain
-`http://`, the browser will now refuse to send the session cookie back and you will not be able
-to log in. The fix in that case is to correct `APP_URL` to match how you really browse to it —
-or set `SESSION_SECURE_COOKIE=false` in `.env` if you mean to stay on http — then
-`docker compose restart app`.
+### Before the first Sunday
+
+The weekly reaper deletes permanently, and a deleted playlist takes its ordering, group choices and
+renames with it. None of that comes back.
+
+Activity means *human* activity — opening the editor, or a player fetching the playlist — so
+anything genuinely in use keeps itself alive without you doing anything. But it is worth one look:
+
+```bash
+docker compose exec app php artisan maintenance:reap-stale --dry-run
+```
+
+That changes nothing and prints exactly what a real run would remove, with the age of each item.
+If 60 days is tighter than suits you, change `--days` on the schedule line in `routes/console.php`,
+or remove the line to keep the task manual-only like the account prune.
