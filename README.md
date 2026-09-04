@@ -454,6 +454,20 @@ docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler   # reload importer/worker code held in memory
 ```
 
+> **Upgrading from before v1.23.14?** `docker-compose.yml` used to be gitignored, and **`git pull`
+> overwrites an ignored file without warning** — git protects untracked files, not ignored ones. So
+> copy yours aside *first*, then move its values into `.env`:
+>
+> ```bash
+> cp docker-compose.yml docker-compose.yml.backup
+> git pull
+> ./docker/migrate-compose.sh docker-compose.yml.backup
+> docker compose config          # check before starting anything
+> ```
+>
+> Already pulled without a copy? Nothing is lost while the containers are still up — they carry the
+> values they were created with: `./docker/migrate-compose.sh --from-running`.
+
 > `--build` is not optional. **PHP dependencies and frontend assets are both produced inside
 > the image** and copied into place when a container starts, so skipping the rebuild leaves you
 > on the previous packages *and* the previous stylesheet — a release that patches a dependency
