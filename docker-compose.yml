@@ -1,0 +1,82 @@
+# This file IS tracked in git, which is what lets an upgrade actually deliver a change to
+# it — a proxy security bump, a corrected default, a new service. It used to be ignored,
+# so `git pull` could never touch it and every such change had to be made by hand on each
+# install, or silently was not made at all.
+#
+# Nothing install-specific lives here. Values come from .env (not tracked), and anything
+# else you want to change belongs in docker-compose.override.yml (also not tracked), which
+# Compose merges on top of this automatically. Editing this file directly works, but the
+# next `git pull` will conflict with you — the override file is the seam meant for you.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    volumes: [ "./:/var/www/html" ]
+    depends_on:
+      db:
+        condition: service_healthy
+  web:
+    image: nginx:1.30-alpine
+    restart: unless-stopped
+    ports:
+      # Host side only. nginx listens on 7979 and 8080 *inside* the container; changing
+      # those needs docker/nginx.conf as well, so they are fixed here.
+      - "${TLS_PORT:-7979}:7979"
+      # Plain HTTP, for a reverse proxy in front. Bind it no wider than that proxy can
+      # reach — the default keeps it on loopback.
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./:/var/www/html
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx-logrotate.sh:/docker-entrypoint.d/99-nginx-logrotate.sh:ro
+      - ./certs:/etc/ssl/tunarr:ro
+    depends_on: [app]
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-tunarr}
+      MYSQL_USER: ${DB_USERNAME:-tunarr}
+      # Both come from .env, and `:?` makes Compose refuse to start when one is missing —
+      # "required variable DB_PASSWORD is missing a value" — rather than initialising a
+      # database with a blank password, or bringing up an app that cannot log in to the
+      # volume it already has. setup.sh writes both; docker/migrate-compose.sh carries
+      # them over from a pre-1.23.14 install.
+      #
+      # Leave `:?` empty. A custom message after it reads as a hardcoded value to secret
+      # scanners — GitGuardian flagged exactly that on PR #100 — and Compose's own message
+      # already names the missing variable.
+      MYSQL_PASSWORD: ${DB_PASSWORD:?}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?}
+    volumes: [ "dbdata:/var/lib/mysql" ]
+    # Bound to loopback: the app reaches MySQL over the compose network (DB_HOST=db),
+    # so this mapping is only for local tooling. Publishing it on 0.0.0.0 would expose
+    # the database to your whole LAN. Use an SSH tunnel for remote access.
+    ports: [ "${DB_LOCAL_BIND:-127.0.0.1}:${DB_LOCAL_PORT:-33060}:3306" ]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+  worker:
+    build: .
+    restart: unless-stopped
+    user: www-data
+    working_dir: /var/www/html
+    command: php artisan feed:supervise --sleep=15
+    volumes: [ "./:/var/www/html" ]
+    depends_on:
+      db:
+        condition: service_healthy
+  scheduler:
+    build: .
+    restart: unless-stopped
+    user: www-data
+    working_dir: /var/www/html
+    command: php artisan schedule:work
+    volumes: [ "./:/var/www/html" ]
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  dbdata:

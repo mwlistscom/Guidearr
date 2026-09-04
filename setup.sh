@@ -42,6 +42,12 @@ echo "=== Guidearr setup ==="
 HOST=$(ask "Hostname the app is served from" "localhost")
 PORT=$(ask "HTTPS port" "7979")
 
+# docker-compose.yml interpolates these, so what is answered here is what actually gets
+# published — the HTTPS port above included. It used to only reach APP_URL, which meant
+# answering anything but 7979 produced a URL the stack did not listen on.
+HTTP_BIND=$(ask "Bind address for the plain-HTTP port (for a reverse proxy in front)" "127.0.0.1")
+HTTP_PORT=$(ask "Plain-HTTP port" "8080")
+
 ADMIN_PATH=$(ask "Admin URL path segment" "admin")
 
 # --- outgoing mail --------------------------------------------------------
@@ -76,12 +82,34 @@ MAIL_FROM_ADDRESS=$(ask "From address" "guidearr@${HOST}")
 APP_URL="https://${HOST}:${PORT}"
 APP_KEY=$(gen_appkey)
 
-# DB credentials are FIXED here to match docker-compose.yml (the mysql service
-# is initialised with database/user/password = tunarr / tunarr / secret).
-# Change them in BOTH places if you want different values on a fresh volume.
+# docker-compose.yml reads all of these from this .env, so they no longer have to be kept
+# in step by hand — and the passwords can be generated rather than being the word "secret"
+# on every install in existence.
 DB_DATABASE="tunarr"
 DB_USERNAME="tunarr"
-DB_PASSWORD="secret"
+
+# A database volume is initialised ONCE, with whatever password it saw at the time. So on
+# a --force rerun, carry the existing values over: generating new ones would leave the app
+# unable to log in to the database it already has.
+carry_over() {
+    local key="$1" from="$2"
+    [ -f "$from" ] || return 1
+    sed -n "s/^${key}=//p" "$from" | head -n1 | tr -d '"'"'"'\r'
+}
+PRIOR_ENV=$(ls -1t "$ENV_FILE".bak.* 2>/dev/null | head -n1 || true)
+
+DB_PASSWORD=$(carry_over DB_PASSWORD "$PRIOR_ENV" || true)
+DB_ROOT_PASSWORD=$(carry_over DB_ROOT_PASSWORD "$PRIOR_ENV" || true)
+[ -n "$DB_PASSWORD" ] || DB_PASSWORD=$(gen_secret 32)
+# Never used by the app — it connects as DB_USERNAME. It exists because the MySQL image
+# refuses to initialise without one, which is what used to stop a fresh install dead.
+[ -n "$DB_ROOT_PASSWORD" ] || DB_ROOT_PASSWORD=$(gen_secret 32)
+
+if [ -n "$PRIOR_ENV" ]; then
+    echo "Carried the existing database passwords over from $PRIOR_ENV (the dbdata volume still expects them)." >&2
+fi
+
+TLS_PORT="${PORT}"
 
 cat > "$ENV_FILE" <<EOF
 APP_NAME=Guidearr
@@ -106,6 +134,18 @@ DB_PORT=3306
 DB_DATABASE=${DB_DATABASE}
 DB_USERNAME=${DB_USERNAME}
 DB_PASSWORD=${DB_PASSWORD}
+# Used only to initialise the MySQL container — the app never connects as root. Changing
+# it after the dbdata volume exists has no effect on the volume.
+DB_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+
+# --- how the stack publishes itself --------------------------------------------
+# docker-compose.yml interpolates these, so a port change here is a port change there.
+# Keep TLS_PORT in step with the port in APP_URL above.
+TLS_PORT=${TLS_PORT}
+HTTP_BIND=${HTTP_BIND}
+HTTP_PORT=${HTTP_PORT}
+DB_LOCAL_BIND=127.0.0.1
+DB_LOCAL_PORT=33060
 
 SESSION_DRIVER=database
 SESSION_LIFETIME=120
