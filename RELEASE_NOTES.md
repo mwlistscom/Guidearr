@@ -4,9 +4,10 @@ The last release moved the bundled proxy off an nginx carrying 18 open advisorie
 not deliver it. This release fixes the reason why, and three bugs that were hiding behind the
 same arrangement.
 
-> **⚠️ This upgrade needs three commands before the usual `git pull`.** Skipping them leaves
-> your stack unable to reach its own database. See **Upgrading** — it is short, and there is a
-> script that does the work.
+> **🛑 Copy `docker-compose.yml` aside BEFORE you pull — the pull overwrites it without warning.**
+> Git refuses to clobber untracked files, but yours is *ignored*, and git treats ignored files as
+> expendable. See **Upgrading**; if you have already pulled, nothing is lost while your containers
+> are still running, and there is a one-command recovery.
 
 ---
 
@@ -85,14 +86,15 @@ initialised with, and new values would just lock the app out.
 
 ## Upgrading
 
-Your `docker-compose.yml` is untracked, so `git pull` will **refuse** to overwrite it. That refusal
-is git protecting you; work with it rather than around it.
+**Copy your compose file aside first.** Git refuses to clobber an *untracked* file — but yours is
+*ignored*, because your `.gitignore` lists it, and git treats ignored files as expendable. The pull
+replaces it silently, taking your ports, bind addresses and database passwords with it. There is no
+prompt and no error.
 
 ```bash
 cd Guidearr
 
-cp docker-compose.yml docker-compose.yml.backup   # keep your settings
-rm docker-compose.yml
+cp docker-compose.yml docker-compose.yml.backup   # do this FIRST
 git pull
 
 ./docker/migrate-compose.sh docker-compose.yml.backup   # copies your values into .env
@@ -102,6 +104,21 @@ docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler
 ```
 
+### Already pulled without a copy?
+
+Nothing is lost while your containers are still up. They were created from that file and still
+carry its values, so they are a faithful record of it:
+
+```bash
+./docker/migrate-compose.sh --from-running
+docker compose config
+docker compose up -d --build
+```
+
+Do this **before** recreating anything. `docker compose` will refuse to run at all until `.env` is
+complete — that is the missing-variable guard doing its job, not a broken install — and your
+containers keep serving normally in the meantime.
+
 `migrate-compose.sh` reads your old file and writes the ports, binds and credentials into `.env`.
 It prints every change it makes without printing the secrets themselves, keeps a timestamped backup
 of `.env`, and is safe to run twice.
@@ -109,13 +126,6 @@ of `.env`, and is safe to run twice.
 `docker compose config` prints the fully resolved stack and fails loudly if anything required is
 missing. **Compare its published ports against your backup before starting** — that one command is
 what turns this into a safe upgrade.
-
-If you no longer have the old file, you can recover the values from the running containers:
-
-```bash
-docker compose port web 8080
-docker inspect guidearr-db-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL
-```
 
 Keep the backup until you are satisfied. To roll back, restore it over the tracked file — Compose
 uses whatever is on disk.

@@ -36,18 +36,22 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   volume keeps whatever password it was initialised with.
 
 **Upgrading**
-- ⚠️ **This one needs three commands before the usual pull, and skipping them breaks the stack.**
-  Your `docker-compose.yml` is untracked, so `git pull` will refuse to overwrite it, and its values
-  have to reach `.env` or the tracked file will come up with defaults that do not match your
-  database volume:
+- 🛑 **Copy `docker-compose.yml` aside BEFORE you pull. `git pull` will overwrite it without
+  warning.** Git refuses to clobber an *untracked* file, but yours is *ignored* — your `.gitignore`
+  lists it — and git treats ignored files as expendable. So the pull replaces it silently, taking
+  your ports, bind addresses and database passwords with it:
   ```bash
   cp docker-compose.yml docker-compose.yml.backup
-  rm docker-compose.yml
   git pull
   ./docker/migrate-compose.sh docker-compose.yml.backup   # copies your values into .env
   docker compose config                                   # check before starting anything
   docker compose up -d --build
   ```
+- **Already pulled without a copy?** Nothing is lost while the containers are still up — they were
+  started from that file and still carry its values. `./docker/migrate-compose.sh --from-running`
+  reads them straight back out of `guidearr-db-1` and `guidearr-web-1`. Do it before recreating
+  anything: `docker compose` will refuse to run until `.env` is complete, which is the guard doing
+  its job, and the containers keep serving in the meantime.
 - `migrate-compose.sh` is safe to run twice, prints every change it makes without printing the
   secrets, and keeps a backup of `.env`. `docker compose config` prints the fully resolved stack
   and fails loudly if anything required is missing — compare its ports against your backup.

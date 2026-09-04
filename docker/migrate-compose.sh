@@ -15,25 +15,63 @@ set -euo pipefail
 
 OLD="${1:-}"
 ENV_FILE="${ENV_FILE:-.env}"
+FROM_RUNNING=0
+[ "$OLD" = "--from-running" ] && { FROM_RUNNING=1; OLD=""; }
 
-if [ -z "$OLD" ] || [ ! -f "$OLD" ]; then
+if [ "$FROM_RUNNING" -eq 0 ] && { [ -z "$OLD" ] || [ ! -f "$OLD" ]; }; then
     cat >&2 <<USAGE
 usage: $0 <path-to-your-old-docker-compose.yml>
+       $0 --from-running
 
-Before pulling this release you were told to keep a copy, e.g.
+Your old docker-compose.yml was gitignored, and git replaces ignored files without
+warning — so if you pulled before copying it aside, it is simply gone. That is recoverable:
+the containers still running were started from it and still carry the values.
 
-    cp docker-compose.yml docker-compose.yml.backup
+    $0 --from-running
 
-Point this at that copy. If you no longer have one, you can recover the values from the
-running containers instead:
+If you did keep a copy, point this at it instead:
 
-    docker compose port web 8080     # the plain-HTTP bind and port
-    docker inspect guidearr-db-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL
+    $0 docker-compose.yml.backup
 USAGE
     exit 2
 fi
 
 [ -f "$ENV_FILE" ] || { echo "No $ENV_FILE here. Run this from the Guidearr directory." >&2; exit 2; }
+
+# --- recover from the containers themselves ---------------------------------------
+# A running container keeps the environment and port bindings it was created with, so it
+# is a faithful record of the compose file that started it — often the only one left.
+if [ "$FROM_RUNNING" -eq 1 ]; then
+    command -v docker >/dev/null 2>&1 || { echo "docker not found." >&2; exit 2; }
+
+    db=$(docker ps --filter name=guidearr-db --format '{{.Names}}' | head -n1)
+    web=$(docker ps --filter name=guidearr-web --format '{{.Names}}' | head -n1)
+
+    if [ -z "$db" ] && [ -z "$web" ]; then
+        echo "No running guidearr containers to read. Start them, or point this at a copy of the old file." >&2
+        exit 2
+    fi
+
+    OLD=$(mktemp)
+    trap 'rm -f "$OLD"' EXIT
+    chmod 600 "$OLD"
+
+    if [ -n "$db" ]; then
+        docker inspect "$db" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+            | sed -n 's/^\(MYSQL_[A-Z_]*\)=\(.*\)$/      \1: \2/p' >> "$OLD"
+    fi
+
+    # Rendered as compose "bind:host:container" strings so the same parser handles both
+    # sources. HostIp is empty when the mapping was written without a bind address. Both
+    # containers are read: web carries 7979 and 8080, db carries 3306.
+    for c in $web $db; do
+        docker inspect "$c" --format \
+          '{{range $p, $cs := .NetworkSettings.Ports}}{{range $cs}}{{if .HostIp}}      - "{{.HostIp}}:{{.HostPort}}:{{$p}}"{{else}}      - "{{.HostPort}}:{{$p}}"{{end}}{{"\n"}}{{end}}{{end}}' \
+          | sed 's#/tcp"#"#' >> "$OLD"
+    done
+
+    echo "Recovered ${db:+$db }${web:+$web }settings from the running containers."
+fi
 
 # --- read a value out of the old compose file -------------------------------------
 # Literal values only. A ${VAR} reference means it already came from .env, so there is
