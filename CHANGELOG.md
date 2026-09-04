@@ -9,6 +9,19 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ## Unreleased
 
+**Security**
+- **A hostile provider could inject extra channels into a subscriber's playlist.** The served m3u
+  is line-based, and the display name, group title and stream URL were written to it with no
+  sanitising at all (`attr()` existed, but only stripped `"`, and only the five quoted attributes
+  used it). A channel called `Sky Sports\n#EXTINF:-1,Free Movies\nhttp://…` therefore did not
+  render oddly — it **added a channel** to the playlist, pointing wherever the attacker chose, and
+  it survived the subscriber's curation. Reachable from upstream rather than only from the account
+  holder: Xtream channel names arrive as JSON, where a newline is perfectly legal. Every field is
+  now forced onto one line (C0 controls and DEL stripped) before it is written. The channel itself
+  is kept rather than dropped — the name is cosmetic, and one oddly-named channel beats one
+  silently missing. The XMLTV/EPG output was never affected; it is written with `XMLWriter`, which
+  escapes on its own.
+
 **Added**
 - **Two new maintenance tasks, both on the admin Maintenance tab** and both destructive, so they
   follow the existing pattern: preview first, then an explicit "Apply for real".
