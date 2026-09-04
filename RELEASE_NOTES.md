@@ -1,73 +1,114 @@
-# v1.23.11 — Drags that land, playlists that open, providers that stay enabled
+# v1.23.12 — Security updates, and the fix that makes them arrive
 
-Three reliability fixes in the playlist editor and the refresh worker. One of them stopped an
-affected playlist opening at all, so this is worth taking promptly.
+This release patches four dependencies with published advisories — and fixes the reason a
+dependency patch has never actually reached an install before now.
+
+> **This one needs `--build`.** `git pull` alone installs nothing. See **Upgrading**.
+
+---
+
+## Security
+
+### Four dependencies updated
+
+`composer audit` flagged **22 advisories** across four packages, all of them installed:
+
+| Package | Was | Now | Why it matters |
+| --- | --- | --- | --- |
+| `guzzlehttp/guzzle` | 7.11.0 | 7.15.5 | 9 advisories, up to high — includes a noncanonical-host check bypass |
+| `guzzlehttp/psr7` | 2.11.0 | 2.13.1 | CRLF injection when serializing an HTTP start line |
+| `league/commonmark` | 2.8.2 | 2.10.0 | 10 advisories — several high-severity denial of service via crafted Markdown, plus a link-filter bypass |
+| `livewire/livewire` | v4.3.1 | v4.4.3 | DOM-based XSS in client-side state handling |
+
+Guzzle is what fetches every provider playlist and guide, so it handles remote input on every
+refresh. `laravel/framework` itself was not flagged, and is deliberately left where it was — this
+is a narrow security update, not a framework bump.
 
 ---
 
 ## Fixed
 
-### Dragging a channel while the editor is filtered now drops it where you let go
+### A dependency update now actually reaches your install
 
-The **#** column counts the *filtered* list — filter on `ESPN` and the matches are numbered 1, 2, 3
-no matter where they actually sit in the playlist — but the drag sent that number to the server as a
-position in the **whole** playlist. Dropping a channel into the third visible slot moved it to row 3
-of the entire list instead of in between the two channels it was dropped between.
+This is the important part of the release, and it is why the section above is worth anything.
 
-A move is now anchored on the **row it was dropped against** rather than on a row number, so it lands
-immediately after that channel wherever it lives. The same drag is now correct across pages and on a
-grid sorted by a column, which had the same flaw.
+`vendor/` is not in git, and the image never ran `composer` at all — it only copied the composer
+*binary* in. The documented upgrade is:
 
-**"Move to row #" means the row you can see.** With a filter active the number is read against the
-filtered list, matching the **#** column the dialog prefills from. With no filter it still means a
-position in the whole playlist, exactly as before.
+```bash
+git pull
+docker compose up -d --build
+```
 
-### A playlist could fail to open at all if one channel name held a stray byte
+That pulled a **new `composer.lock`** and left the **old packages** sitting on disk, because
+nothing ever installed them. Every security fix in every dependency, in every release so far,
+shipped to GitHub and changed nothing on any running install. The four updates above would have
+done exactly the same.
 
-Provider feeds are not reliably UTF-8, and the editor's channel grid is delivered as JSON — which
-refuses to encode invalid text. A single bad byte in a single channel therefore returned a **500 for
-the entire grid**, so the playlist showed nothing rather than one damaged name.
+The image now installs the dependencies during the build. They cannot simply be left at
+`vendor/` inside the image — compose bind-mounts `./` over `/var/www/html`, which hides
+anything the image put there, the same trap the frontend assets hit in v1.23.9 — so they are
+staged outside that path and copied into place when the container starts.
 
-Two things caused those bytes, and both are fixed:
+Two details worth knowing:
 
-- Feeds published in **Windows-1252** are now decoded properly, so `AMC en Español`, `Pokémon` and
-  `America's Funniest Home Videos` read correctly instead of breaking the page.
-- Guidearr's own length caps on `tvg-id` and channel names **no longer cut a character in half** —
-  they trimmed by bytes, which could leave two thirds of a dash behind.
+- **The install is keyed on `composer.lock`.** It runs when the lock file on disk differs from
+  the one already installed, and does nothing when they match — so it costs nothing on a normal
+  restart, and it leaves a local development install (dev dependencies and all) alone.
+- **A `git pull` without `--build` now says so** instead of failing silently. If the code on
+  disk asks for packages the image was not built with, the container logs
+  `composer.lock does not match this image — run 'docker compose up -d --build'` and keeps the
+  packages it has, rather than quietly pinning the old versions.
 
-Existing installs are repaired **on read**, so an affected playlist opens again immediately after
-upgrading, without waiting for the next provider refresh.
+### A fresh clone can be built again
 
-### A brief upstream hiccup no longer disables a provider
+Quick start said to clone and run `docker compose up -d --build`. That could not work: the build
+copied `vendor/livewire/flux/dist/flux.css` out of the build context, and `vendor/` is gitignored,
+so a clean checkout failed on that line before it reached anything else — with a `not found` error
+that pointed at a file the user had no obvious way to produce. The build takes its own copy now,
+so a clone builds with no manual `composer install` first.
 
-A failed refresh went straight back on the queue with no delay, so the worker picked it up again
-within milliseconds — and a provider that was briefly unreachable burned its entire error budget,
-**four failures in about one second**, and was switched off. That is one failure counted four times,
-not four attempts.
+### Duplicate `Cache-Control` header on dynamic responses
 
-Retries now wait **1 minute, then 5, then 15**, so the budget spans about twenty minutes of genuinely
-separate attempts and a provider that comes back in that window is never disabled at all. The
-provider log shows when the next attempt is due.
+A blanket `add_header Cache-Control "no-transform" always;` sat at server level in
+`docker/nginx.conf`, and `add_header` can only ever *append* — it cannot replace a header the
+application already set. Every session-authenticated response therefore carried `Cache-Control`
+twice. Harmless to browsers, but it trips intrusion-detection heuristics for repeated response
+headers on essentially every request. It has moved into `location /`, where it still covers static
+assets — which set no `Cache-Control` of their own — without touching PHP responses.
 
-Pressing **Run**, and the scheduled refresh, still start immediately — neither waits behind a
-backoff. The delays are tunable with `FEED_RETRY_BACKOFF` (set it empty for the old behaviour).
+### Legacy `/m3u/m3u.php` flood dropped at the proxy
+
+An endpoint that has not existed for several major versions still attracts continuous automated
+requests. nginx now closes those connections without a response instead of passing each one to PHP.
 
 ---
 
 ## Upgrading
 
-> **This release needs a database migration.** The retry backoff adds a `retry_after` column to the
-> feed queue, and the worker queries it — so migrate before the new code handles a job.
+> **`--build` is not optional in this release.** It is what installs the patched dependencies.
+> `git pull` on its own leaves you on the vulnerable versions — that is the bug being fixed here,
+> and it applies to the upgrade *into* this release as much as to the ones after it.
 
 ```bash
+cd Guidearr
 git pull
-docker compose exec app php artisan migrate
-docker compose up -d worker
+docker compose up -d --build
+docker compose exec app php artisan migrate --force
+docker compose exec app php artisan optimize:clear
+docker compose restart worker scheduler
 ```
 
-The worker restart matters: `feed:supervise` is a long-running process and keeps the old scheduling
-until it is recreated. Its `feed:work` children are fresh per job, so the backoff itself applies
-straight away, but the pool sizing does not.
+Confirm the dependencies actually landed — the app container logs a line when it installs them:
 
-**No image rebuild is required** — this release does not change the `Dockerfile`, and there are no
-frontend assets to compile. A plain `git pull` plus the two commands above is enough.
+```bash
+docker compose logs app | grep guidearr:
+# guidearr: installed PHP dependencies into vendor/
+```
+
+If you have edited `docker/nginx.conf` (Quick start step 4 tells you to, for `server_name`),
+`git pull` may report a conflict on it. Keep your `server_name` line and take the incoming
+`Cache-Control` and `/m3u/m3u.php` changes.
+
+**No database migration is strictly required** by this release, but the `migrate` above is
+harmless and keeps an install that skipped v1.23.11 correct.

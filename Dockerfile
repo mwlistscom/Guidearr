@@ -1,3 +1,22 @@
+# ---- php dependencies ------------------------------------------------------------
+# Installed here so `docker compose up -d --build` genuinely refreshes them. Before this
+# the image never ran composer at all: vendor/ is gitignored, so the documented upgrade
+# (git pull + up -d --build) pulled a new composer.lock and left the old packages on disk.
+# A dependency security fix therefore shipped to git and reached nobody.
+#
+# Same trap as public/build below — the bind mount hides anything the image puts at
+# /var/www/html/vendor, so this is staged at /opt/guidearr/vendor and copied into place by
+# the entrypoint.
+#
+# --ignore-platform-reqs: this stage is the composer image, which has no gd/intl/pcntl.
+# Nothing is resolved here — composer.lock pins every version — so the check is noise.
+FROM composer:2 AS deps
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install --no-interaction --prefer-dist --optimize-autoloader \
+      --no-dev --no-scripts --ignore-platform-reqs \
+ && sha256sum composer.lock | cut -d' ' -f1 > vendor/.guidearr-lock
+
 # ---- frontend assets -------------------------------------------------------------
 # Built here so `docker compose up -d --build` genuinely refreshes them. They cannot just
 # be left at public/build in the image: compose bind-mounts ./ over /var/www/html, which
@@ -11,9 +30,9 @@ COPY vite.config.js ./
 COPY resources ./resources
 # Tailwind scans these — see the @source lines in resources/css/app.css. flux.css is
 # imported outright, so a missing copy fails the build rather than silently losing styles.
-COPY vendor/livewire/flux/dist/flux.css ./vendor/livewire/flux/dist/flux.css
-COPY vendor/livewire/flux/stubs ./vendor/livewire/flux/stubs
-COPY vendor/laravel/framework/src/Illuminate/Pagination/resources/views \
+COPY --from=deps /app/vendor/livewire/flux/dist/flux.css ./vendor/livewire/flux/dist/flux.css
+COPY --from=deps /app/vendor/livewire/flux/stubs ./vendor/livewire/flux/stubs
+COPY --from=deps /app/vendor/laravel/framework/src/Illuminate/Pagination/resources/views \
      ./vendor/laravel/framework/src/Illuminate/Pagination/resources/views
 # The bunny() font plugin fetches the webfonts, so this stage needs network access.
 RUN npm run build
@@ -33,6 +52,7 @@ RUN apk add --no-cache git unzip libzip-dev icu-dev oniguruma-dev linux-headers 
 # (2M uploads) that contradict both nginx and the app's own validation.
 COPY docker/php.ini /usr/local/etc/php/conf.d/zz-guidearr.ini
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+COPY --from=deps /app/vendor /opt/guidearr/vendor
 COPY --from=assets /app/public/build /opt/guidearr/build
 COPY docker/entrypoint.sh /usr/local/bin/guidearr-entrypoint
 RUN chmod +x /usr/local/bin/guidearr-entrypoint

@@ -129,7 +129,7 @@ Then browse to `https://<your-host>:7979` and log in with the admin email and pa
 
 > **Note on the default port:** the stack publishes the app on **`7979`** (TLS). Adjust the published port in `docker-compose.yml` and the `listen`/redirect lines in `docker/nginx.conf` if you want a different one, and keep `APP_URL` in sync.
 
-If your image doesn't install PHP dependencies or build front‑end assets at build time, see [Building dependencies with Docker](#building-dependencies-with-docker) in Troubleshooting.
+PHP dependencies and front‑end assets are both installed **during the image build**, so nothing needs PHP, composer or Node on the host — `--build` in step 5 is what produces them. If you want them on the host as well (to run the test suite, say), see [Building dependencies with Docker](#building-dependencies-with-docker) in Troubleshooting.
 
 ---
 
@@ -450,10 +450,22 @@ docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler   # reload importer/worker code held in memory
 ```
 
-> `--build` is not optional. The frontend assets are compiled **inside the image** and
-> published into `public/build` when a container starts, so skipping the rebuild leaves you
-> on the previous stylesheet and any new styling silently has no effect. There is no
-> separate `npm run build` step — Node is not needed on the host.
+> `--build` is not optional. **PHP dependencies and frontend assets are both produced inside
+> the image** and copied into place when a container starts, so skipping the rebuild leaves you
+> on the previous packages *and* the previous stylesheet — a release that patches a dependency
+> would not reach you at all, and any new styling would silently have no effect. There is no
+> separate `composer install` or `npm run build` step; neither PHP nor Node is needed on the host.
+>
+> The dependency install is keyed on `composer.lock`, so it only runs when the packages have
+> actually changed. To confirm it happened:
+>
+> ```bash
+> docker compose logs app | grep guidearr:
+> # guidearr: installed PHP dependencies into vendor/
+> ```
+>
+> If you pull without rebuilding, the app container logs `composer.lock does not match this
+> image` and keeps the packages it has rather than pinning the old versions silently.
 
 ---
 
@@ -484,7 +496,7 @@ docker compose exec app ./vendor/bin/phpunit
 **Class not found after pulling new files.** If your install uses an authoritative classmap, run `docker run --rm -v "$PWD":/app -w /app composer:2 dump-autoload`.
 
 <a name="building-dependencies-with-docker"></a>
-**Building dependencies with Docker (host has no PHP/Node).** If your image doesn't install dependencies at build time:
+**Building dependencies with Docker (host has no PHP/Node).** The image installs both at build time, so this is not needed to run Guidearr. It is here for working on the source on a host with no PHP or Node — to run the test suite, which needs the dev dependencies the image deliberately omits:
 
 ```bash
 # PHP dependencies -> ./vendor
