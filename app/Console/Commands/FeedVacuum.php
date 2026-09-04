@@ -42,13 +42,31 @@ class FeedVacuum extends Command
             return ($i === 0 ? (int) $n : number_format($n, 1)).$u[$i];
         };
 
+        // Elapsed time is what tells the operator a quiet stretch was work, not a hang.
+        $since = function (float $t0): string {
+            $s = microtime(true) - $t0;
+            if ($s < 60) {
+                return number_format($s, 1).'s';
+            }
+
+            return floor($s / 60).'m'.str_pad((string) (int) fmod($s, 60), 2, '0', STR_PAD_LEFT).'s';
+        };
+
         $total = count($files);
         $this->line($total ? "Vacuuming {$total} store(s)…" : 'No store files found to vacuum.');
 
+        $runStart = microtime(true);
         $i = 0;
         foreach ($files as $f) {
             $i++;
             $b = (int) @filesize($f);
+
+            // Announce the store BEFORE working on it. VACUUM on a multi-GB store runs for minutes
+            // with nothing to say, and a log that only speaks after the fact reads as wedged —
+            // naming the file and its size up front makes the silence self-explanatory.
+            $this->line(sprintf('[%d/%d] %s: vacuuming %s…', $i, $total, basename($f), $human($b)));
+
+            $t0 = microtime(true);
             try {
                 $db = new PDO('sqlite:'.$f);
                 $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -62,20 +80,21 @@ class FeedVacuum extends Command
                 $done++;
                 // One line per store so a long run streams visible progress (not just a final total).
                 $this->line(sprintf(
-                    '[%d/%d] %s: %s -> %s (reclaimed %s)',
-                    $i, $total, basename($f), $human($b), $human($a), $human(max(0, $b - $a))
+                    '[%d/%d] %s: done %s -> %s (reclaimed %s in %s)',
+                    $i, $total, basename($f), $human($b), $human($a), $human(max(0, $b - $a)), $since($t0)
                 ));
             } catch (Throwable $e) {
                 $failed++;
-                $this->warn(sprintf('[%d/%d] %s: %s', $i, $total, basename($f), $e->getMessage()));
+                $this->warn(sprintf('[%d/%d] %s: FAILED after %s — %s', $i, $total, basename($f), $since($t0), $e->getMessage()));
             }
         }
 
         $summary = sprintf(
-            'feed:vacuum reclaimed %.0fMB across %d store(s)%s.',
+            'feed:vacuum reclaimed %.0fMB across %d store(s)%s in %s.',
             ($before - $after) / 1048576,
             $done,
-            $failed ? " ({$failed} failed)" : ''
+            $failed ? " ({$failed} failed)" : '',
+            $since($runStart)
         );
         $this->info($summary);
         Log::channel('worker')->info($summary);
