@@ -1,125 +1,132 @@
-# v1.23.13 — A patched proxy, and a vacuum that says what it is doing
+# v1.23.14 — One compose file, and an upgrade that can change it
 
-A security update for the bundled nginx, and a fix for a maintenance job whose log made a
-healthy run look like a hung one.
+The last release moved the bundled proxy off an nginx carrying 18 open advisories — and could
+not deliver it. This release fixes the reason why, and three bugs that were hiding behind the
+same arrangement.
 
-> **⚠️ The nginx update needs a one-line edit you have to make yourself.** `docker-compose.yml`
-> is gitignored — it holds your ports, passwords and bind addresses — so `git pull` **cannot**
-> update it. See **Upgrading**; without that edit you stay on the old proxy.
-
----
-
-## Security
-
-### The bundled proxy moves to nginx 1.30
-
-`docker-compose.yml.example` pinned `nginx:1.27-alpine`, an image **16 months old** on a branch
-that stopped receiving fixes. 1.27.5 falls inside the vulnerable range of **18 nginx advisories**;
-**1.30.4 clears all of them.**
-
-Most of those need modules this configuration does not use — slice, ssi, dav, mp4, mail, stream,
-scgi/uwsgi, HTTP/3 — and the one rated *major* (a `map` + regex overflow) does not apply either,
-since `docker/nginx.conf` has no `map`. **Two are reachable from the config Guidearr ships:**
-
-- **CVE-2026-9256** and **CVE-2026-42945**, buffer overflows in `ngx_http_rewrite_module`.
-  `docker/nginx.conf` runs nine regex `if ($query_string ~ …)` tests — that is this module —
-  against an attacker-controlled query string on **every request**.
-
-The old image also carried 16 months of unpatched Alpine 3.21: openssl 3.3.3, curl 8.12.1,
-libxml2, expat, zlib and nghttp2 among them. `1.30-alpine` is Alpine 3.24, with two pending
-package upgrades instead of twenty-two.
-
-Stable (1.30.x) rather than mainline (1.31.x), which is the conventional choice for a production
-reverse proxy; both clear every current advisory.
+> **⚠️ This upgrade needs three commands before the usual `git pull`.** Skipping them leaves
+> your stack unable to reach its own database. See **Upgrading** — it is short, and there is a
+> script that does the work.
 
 ---
 
-## Fixed
+## Why this release exists
 
-### `feed:vacuum` now tells you which store it is working on
+`docker-compose.yml` was gitignored. That was reasonable on the face of it: the file held your
+ports, bind addresses and database passwords. The tracked copy was `docker-compose.yml.example`,
+which an install copies **once**, at setup, and never looks at again.
 
-It logged one line per store *after* finishing it, so while it worked it said nothing. `VACUUM`
-on a multi-gigabyte provider store runs for minutes, and a log that only speaks after the fact
-reads as a wedged job. From a real run:
+The consequence only became obvious last release. v1.23.13 moved the proxy from `nginx:1.27-alpine`
+— 16 months old, on a branch that had stopped receiving fixes, inside the vulnerable range of
+**18 advisories** — to 1.30.4, which clears all of them. And the only thing the release could do
+was *ask each operator to edit their own file by hand*.
 
-```
-[10:59:15] [2/36] provider_12.sqlite: 88.0KB -> 76.0KB (reclaimed 12.0KB)
-[11:00:04] === BEGIN scheduled — Purge deleted-account stores ===
-[11:04:08] [3/36] provider_13.sqlite: 1.5GB -> 828.7MB (reclaimed 740.0MB)
-```
-
-Nearly five minutes of silence, with an unrelated hourly task interleaved into the middle of it.
-That run was healthy — it finished cleanly and reclaimed 970MB — but nothing in the log said so,
-and confirming it meant inspecting the process directly.
-
-Each store now announces itself, with its size, **before** the work starts, and reports how long
-it took afterwards:
-
-```
-[3/36] provider_13.sqlite: vacuuming 1.5GB…
-[3/36] provider_13.sqlite: done 1.5GB -> 828.7MB (reclaimed 740.0MB in 4m53s)
-```
-
-Failures say how long they ran before giving up, and the run summary carries a total elapsed time.
-Nothing about what the command does to a store has changed — this is log output only.
+That is not a delivery mechanism. It is the same shape of problem v1.23.12 fixed for PHP
+dependencies: a change that ships to GitHub and reaches nobody.
 
 ---
 
 ## Changed
 
-### Builds no longer ship the whole install to Docker
+### `docker-compose.yml` is tracked, and holds nothing that is yours
 
-There was no `.dockerignore`, so every build sent the entire directory to the Docker daemon —
-**2.4GB** on a normal install, of which **2.2GB was the provider and playlist stores** under
-`storage/`, plus a `vendor/` the build stopped reading in v1.23.12. Your `.env` and TLS keys went
-along with it.
+Everything install-specific now comes from `.env`, which Compose reads automatically and which
+stays untracked:
 
-None of that ever reached an image layer — the build copies only six paths — but there was no
-reason to hand it over. The context is now a few kilobytes, and the image it produces is
-identical. Rebuilds are noticeably quicker, particularly on an install with large feeds.
+| Variable | Default | What it was |
+| --- | --- | --- |
+| `TLS_PORT` | `7979` | hardcoded `7979:7979` |
+| `HTTP_BIND` | `127.0.0.1` | hardcoded in the ports list |
+| `HTTP_PORT` | `8080` | hardcoded in the ports list |
+| `DB_LOCAL_BIND` / `DB_LOCAL_PORT` | `127.0.0.1` / `33060` | hardcoded |
+| `DB_DATABASE` / `DB_USERNAME` | `tunarr` / `tunarr` | kept in step by hand, in two files |
+| `DB_PASSWORD` / `DB_ROOT_PASSWORD` | *required* | kept in step by hand, in two files |
+
+For anything else, create a **`docker-compose.override.yml`**. Compose merges it on top
+automatically and it is never committed, so you never have to edit the tracked file and collide
+with the next `git pull`. `docker-compose.yml.example` is gone — two sources of truth is precisely
+what caused this.
+
+**A missing `DB_PASSWORD` or `DB_ROOT_PASSWORD` now stops Compose**, naming the variable, instead
+of quietly initialising a database with a blank password or starting an app that cannot log in to
+the volume it already has.
+
+---
+
+## Fixed
+
+### A fresh install could not start its database at all
+
+`docker-compose.yml.example` referenced `${DB_ROOT_PASSWORD}`, and `setup.sh` never wrote it. So
+`MYSQL_ROOT_PASSWORD` interpolated to an empty string and the MySQL image refused to start:
+
+```
+[ERROR] [Entrypoint]: Database is uninitialized and password option is not specified
+    You need to specify one of the following as an environment variable:
+    - MYSQL_ROOT_PASSWORD
+```
+
+Anyone following Quick start hit this at step 5. `setup.sh` generates one now.
+
+### The HTTPS port you are asked for is now the port that gets published
+
+`setup.sh` asks for an HTTPS port and used it only to build `APP_URL`, while the compose file
+hardcoded `7979:7979`. Answering anything other than 7979 produced an install whose own URL
+pointed at a port nothing was listening on.
+
+### Database passwords are generated, not the word `secret`
+
+They had to be hardcoded so the two files matched. Now that the compose file reads them from
+`.env`, `setup.sh` generates 32 characters for each. Re-running `setup.sh --force` carries the
+existing passwords over rather than generating new ones — a database volume keeps whatever it was
+initialised with, and new values would just lock the app out.
 
 ---
 
 ## Upgrading
 
-**1. Update the code:**
+Your `docker-compose.yml` is untracked, so `git pull` will **refuse** to overwrite it. That refusal
+is git protecting you; work with it rather than around it.
 
 ```bash
 cd Guidearr
+
+cp docker-compose.yml docker-compose.yml.backup   # keep your settings
+rm docker-compose.yml
 git pull
-```
 
-**2. Move your proxy to the patched nginx — this is the manual bit.**
-
-`docker-compose.yml` is yours and is not tracked in git, so the pull above cannot change it. Open
-it, find the `web` service, and change one line:
-
-```yaml
-  web:
-    image: nginx:1.27-alpine     # <- change this
-    image: nginx:1.30-alpine     # <- to this
-```
-
-**3. Rebuild and restart:**
-
-```bash
+./docker/migrate-compose.sh docker-compose.yml.backup   # copies your values into .env
+docker compose config                                   # check BEFORE starting anything
 docker compose up -d --build
 docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler
 ```
 
-Confirm the proxy actually moved:
+`migrate-compose.sh` reads your old file and writes the ports, binds and credentials into `.env`.
+It prints every change it makes without printing the secrets themselves, keeps a timestamped backup
+of `.env`, and is safe to run twice.
+
+`docker compose config` prints the fully resolved stack and fails loudly if anything required is
+missing. **Compare its published ports against your backup before starting** — that one command is
+what turns this into a safe upgrade.
+
+If you no longer have the old file, you can recover the values from the running containers:
 
 ```bash
-docker compose exec web nginx -v
-# nginx version: nginx/1.30.4
+docker compose port web 8080
+docker inspect guidearr-db-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep MYSQL
 ```
 
-Recreating `web` interrupts serving for a few seconds — it is the front door, so there is no way
-around a brief gap. Everything else is untouched: `docker/nginx.conf` needs no changes, and the
-config passes `nginx -t` on 1.30 exactly as it stands.
+Keep the backup until you are satisfied. To roll back, restore it over the tracked file — Compose
+uses whatever is on disk.
 
-> `--build` remains non-optional, as of v1.23.12 — it is what installs PHP dependencies and
-> compiles the frontend. `git pull` alone leaves both on their previous versions.
+**No database migration is required.** `--build` remains non-optional as of v1.23.12: it is what
+installs the PHP dependencies and compiles the frontend.
 
-**No database migration is required** by this release.
+---
+
+## After this
+
+Changes to the stack can finally be shipped. A future proxy bump, a new service or a corrected
+default arrives with `git pull` like everything else, instead of being a paragraph in a release
+note asking you to go and edit a file.
