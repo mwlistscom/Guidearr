@@ -1,114 +1,125 @@
-# v1.23.12 — Security updates, and the fix that makes them arrive
+# v1.23.13 — A patched proxy, and a vacuum that says what it is doing
 
-This release patches four dependencies with published advisories — and fixes the reason a
-dependency patch has never actually reached an install before now.
+A security update for the bundled nginx, and a fix for a maintenance job whose log made a
+healthy run look like a hung one.
 
-> **This one needs `--build`.** `git pull` alone installs nothing. See **Upgrading**.
+> **⚠️ The nginx update needs a one-line edit you have to make yourself.** `docker-compose.yml`
+> is gitignored — it holds your ports, passwords and bind addresses — so `git pull` **cannot**
+> update it. See **Upgrading**; without that edit you stay on the old proxy.
 
 ---
 
 ## Security
 
-### Four dependencies updated
+### The bundled proxy moves to nginx 1.30
 
-`composer audit` flagged **22 advisories** across four packages, all of them installed:
+`docker-compose.yml.example` pinned `nginx:1.27-alpine`, an image **16 months old** on a branch
+that stopped receiving fixes. 1.27.5 falls inside the vulnerable range of **18 nginx advisories**;
+**1.30.4 clears all of them.**
 
-| Package | Was | Now | Why it matters |
-| --- | --- | --- | --- |
-| `guzzlehttp/guzzle` | 7.11.0 | 7.15.5 | 9 advisories, up to high — includes a noncanonical-host check bypass |
-| `guzzlehttp/psr7` | 2.11.0 | 2.13.1 | CRLF injection when serializing an HTTP start line |
-| `league/commonmark` | 2.8.2 | 2.10.0 | 10 advisories — several high-severity denial of service via crafted Markdown, plus a link-filter bypass |
-| `livewire/livewire` | v4.3.1 | v4.4.3 | DOM-based XSS in client-side state handling |
+Most of those need modules this configuration does not use — slice, ssi, dav, mp4, mail, stream,
+scgi/uwsgi, HTTP/3 — and the one rated *major* (a `map` + regex overflow) does not apply either,
+since `docker/nginx.conf` has no `map`. **Two are reachable from the config Guidearr ships:**
 
-Guzzle is what fetches every provider playlist and guide, so it handles remote input on every
-refresh. `laravel/framework` itself was not flagged, and is deliberately left where it was — this
-is a narrow security update, not a framework bump.
+- **CVE-2026-9256** and **CVE-2026-42945**, buffer overflows in `ngx_http_rewrite_module`.
+  `docker/nginx.conf` runs nine regex `if ($query_string ~ …)` tests — that is this module —
+  against an attacker-controlled query string on **every request**.
+
+The old image also carried 16 months of unpatched Alpine 3.21: openssl 3.3.3, curl 8.12.1,
+libxml2, expat, zlib and nghttp2 among them. `1.30-alpine` is Alpine 3.24, with two pending
+package upgrades instead of twenty-two.
+
+Stable (1.30.x) rather than mainline (1.31.x), which is the conventional choice for a production
+reverse proxy; both clear every current advisory.
 
 ---
 
 ## Fixed
 
-### A dependency update now actually reaches your install
+### `feed:vacuum` now tells you which store it is working on
 
-This is the important part of the release, and it is why the section above is worth anything.
+It logged one line per store *after* finishing it, so while it worked it said nothing. `VACUUM`
+on a multi-gigabyte provider store runs for minutes, and a log that only speaks after the fact
+reads as a wedged job. From a real run:
 
-`vendor/` is not in git, and the image never ran `composer` at all — it only copied the composer
-*binary* in. The documented upgrade is:
-
-```bash
-git pull
-docker compose up -d --build
+```
+[10:59:15] [2/36] provider_12.sqlite: 88.0KB -> 76.0KB (reclaimed 12.0KB)
+[11:00:04] === BEGIN scheduled — Purge deleted-account stores ===
+[11:04:08] [3/36] provider_13.sqlite: 1.5GB -> 828.7MB (reclaimed 740.0MB)
 ```
 
-That pulled a **new `composer.lock`** and left the **old packages** sitting on disk, because
-nothing ever installed them. Every security fix in every dependency, in every release so far,
-shipped to GitHub and changed nothing on any running install. The four updates above would have
-done exactly the same.
+Nearly five minutes of silence, with an unrelated hourly task interleaved into the middle of it.
+That run was healthy — it finished cleanly and reclaimed 970MB — but nothing in the log said so,
+and confirming it meant inspecting the process directly.
 
-The image now installs the dependencies during the build. They cannot simply be left at
-`vendor/` inside the image — compose bind-mounts `./` over `/var/www/html`, which hides
-anything the image put there, the same trap the frontend assets hit in v1.23.9 — so they are
-staged outside that path and copied into place when the container starts.
+Each store now announces itself, with its size, **before** the work starts, and reports how long
+it took afterwards:
 
-Two details worth knowing:
+```
+[3/36] provider_13.sqlite: vacuuming 1.5GB…
+[3/36] provider_13.sqlite: done 1.5GB -> 828.7MB (reclaimed 740.0MB in 4m53s)
+```
 
-- **The install is keyed on `composer.lock`.** It runs when the lock file on disk differs from
-  the one already installed, and does nothing when they match — so it costs nothing on a normal
-  restart, and it leaves a local development install (dev dependencies and all) alone.
-- **A `git pull` without `--build` now says so** instead of failing silently. If the code on
-  disk asks for packages the image was not built with, the container logs
-  `composer.lock does not match this image — run 'docker compose up -d --build'` and keeps the
-  packages it has, rather than quietly pinning the old versions.
+Failures say how long they ran before giving up, and the run summary carries a total elapsed time.
+Nothing about what the command does to a store has changed — this is log output only.
 
-### A fresh clone can be built again
+---
 
-Quick start said to clone and run `docker compose up -d --build`. That could not work: the build
-copied `vendor/livewire/flux/dist/flux.css` out of the build context, and `vendor/` is gitignored,
-so a clean checkout failed on that line before it reached anything else — with a `not found` error
-that pointed at a file the user had no obvious way to produce. The build takes its own copy now,
-so a clone builds with no manual `composer install` first.
+## Changed
 
-### Duplicate `Cache-Control` header on dynamic responses
+### Builds no longer ship the whole install to Docker
 
-A blanket `add_header Cache-Control "no-transform" always;` sat at server level in
-`docker/nginx.conf`, and `add_header` can only ever *append* — it cannot replace a header the
-application already set. Every session-authenticated response therefore carried `Cache-Control`
-twice. Harmless to browsers, but it trips intrusion-detection heuristics for repeated response
-headers on essentially every request. It has moved into `location /`, where it still covers static
-assets — which set no `Cache-Control` of their own — without touching PHP responses.
+There was no `.dockerignore`, so every build sent the entire directory to the Docker daemon —
+**2.4GB** on a normal install, of which **2.2GB was the provider and playlist stores** under
+`storage/`, plus a `vendor/` the build stopped reading in v1.23.12. Your `.env` and TLS keys went
+along with it.
 
-### Legacy `/m3u/m3u.php` flood dropped at the proxy
-
-An endpoint that has not existed for several major versions still attracts continuous automated
-requests. nginx now closes those connections without a response instead of passing each one to PHP.
+None of that ever reached an image layer — the build copies only six paths — but there was no
+reason to hand it over. The context is now a few kilobytes, and the image it produces is
+identical. Rebuilds are noticeably quicker, particularly on an install with large feeds.
 
 ---
 
 ## Upgrading
 
-> **`--build` is not optional in this release.** It is what installs the patched dependencies.
-> `git pull` on its own leaves you on the vulnerable versions — that is the bug being fixed here,
-> and it applies to the upgrade *into* this release as much as to the ones after it.
+**1. Update the code:**
 
 ```bash
 cd Guidearr
 git pull
+```
+
+**2. Move your proxy to the patched nginx — this is the manual bit.**
+
+`docker-compose.yml` is yours and is not tracked in git, so the pull above cannot change it. Open
+it, find the `web` service, and change one line:
+
+```yaml
+  web:
+    image: nginx:1.27-alpine     # <- change this
+    image: nginx:1.30-alpine     # <- to this
+```
+
+**3. Rebuild and restart:**
+
+```bash
 docker compose up -d --build
-docker compose exec app php artisan migrate --force
 docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler
 ```
 
-Confirm the dependencies actually landed — the app container logs a line when it installs them:
+Confirm the proxy actually moved:
 
 ```bash
-docker compose logs app | grep guidearr:
-# guidearr: installed PHP dependencies into vendor/
+docker compose exec web nginx -v
+# nginx version: nginx/1.30.4
 ```
 
-If you have edited `docker/nginx.conf` (Quick start step 4 tells you to, for `server_name`),
-`git pull` may report a conflict on it. Keep your `server_name` line and take the incoming
-`Cache-Control` and `/m3u/m3u.php` changes.
+Recreating `web` interrupts serving for a few seconds — it is the front door, so there is no way
+around a brief gap. Everything else is untouched: `docker/nginx.conf` needs no changes, and the
+config passes `nginx -t` on 1.30 exactly as it stands.
 
-**No database migration is strictly required** by this release, but the `migrate` above is
-harmless and keeps an install that skipped v1.23.11 correct.
+> `--build` remains non-optional, as of v1.23.12 — it is what installs PHP dependencies and
+> compiles the frontend. `git pull` alone leaves both on their previous versions.
+
+**No database migration is required** by this release.

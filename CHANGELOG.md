@@ -2,8 +2,62 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10, v1.23.11 and v1.23.12.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10, v1.23.11, v1.23.12 and v1.23.13.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.23.13 — A patched proxy, and a vacuum that says what it is doing · 2026-09-04
+
+**Security**
+- **The bundled proxy moves to nginx 1.30.** `docker-compose.yml.example` pinned
+  `nginx:1.27-alpine`, an image **16 months old** on a branch that stopped receiving fixes.
+  1.27.5 falls inside the vulnerable range of **18 nginx advisories**; **1.30.4 clears all of
+  them.** Most need modules this configuration does not use (slice, ssi, dav, mp4, mail, stream,
+  scgi/uwsgi, HTTP/3), and the one rated *major* (a `map` + regex overflow) does not apply either
+  since `docker/nginx.conf` has no `map` — but **two are reachable from the config Guidearr
+  ships**: CVE-2026-9256 and CVE-2026-42945, buffer overflows in `ngx_http_rewrite_module`, which
+  is what the nine regex `if ($query_string ~ …)` tests in `docker/nginx.conf` run against an
+  attacker-controlled query string on every request. The old image also carried 16 months of
+  unpatched Alpine 3.21 (openssl 3.3.3, curl 8.12.1, libxml2, expat, zlib, nghttp2); `1.30-alpine`
+  is Alpine 3.24. Stable (1.30.x) rather than mainline (1.31.x), the conventional choice for a
+  production reverse proxy. ⚠️ **This one needs a manual edit** — see **Upgrading**.
+
+**Fixed**
+- **`feed:vacuum` now says which store it is working on.** It logged one line per store *after*
+  finishing it, so while it worked it said nothing — and `VACUUM` on a multi-gigabyte provider
+  store runs for minutes, so a healthy run looked like a wedged one. A real run went nearly five
+  minutes between `[2/36]` and `[3/36]`, with an unrelated hourly task interleaved into the middle
+  of the gap; it was fine (970MB reclaimed, clean exit) but nothing in the log said so, and
+  confirming it meant inspecting the process directly. Each store now announces itself and its
+  size **before** the work starts (`[3/36] provider_13.sqlite: vacuuming 1.5GB…`) and reports how
+  long it took afterwards (`done 1.5GB -> 828.7MB (reclaimed 740.0MB in 4m53s)`). Failures say how
+  long they ran before giving up, and the summary carries a total. **Log output only** — nothing
+  about what the command does to a store has changed.
+
+**Changed**
+- **Builds no longer ship the whole install to Docker.** There was no `.dockerignore`, so every
+  build sent the entire directory to the daemon — **2.4GB** on a normal install, **2.2GB** of it
+  the provider and playlist stores under `storage/`, plus a `vendor/` the build stopped reading in
+  v1.23.12, with `.env` and the TLS keys alongside. None of it ever reached an image layer (the
+  build copies only six paths), but there was no reason to hand it over. The context is a few
+  kilobytes now and the resulting image is identical, so rebuilds are quicker — noticeably so on
+  an install with large feeds. `DockerContextTest` fails if a future exclusion would starve a
+  `COPY` of its source.
+
+**Upgrading**
+- ⚠️ **The nginx update needs a one-line edit you have to make yourself.** `docker-compose.yml` is
+  gitignored — it holds your ports, passwords and bind addresses — so `git pull` **cannot** update
+  it. Open it, find the `web` service, and change `image: nginx:1.27-alpine` to
+  `image: nginx:1.30-alpine`. Without that edit you stay on the old proxy.
+- Then `git pull && docker compose up -d --build`, `php artisan optimize:clear`, and
+  `docker compose restart worker scheduler`. Confirm with
+  `docker compose exec web nginx -v` → `nginx/1.30.4`.
+- Recreating `web` interrupts serving for a few seconds — it is the front door. `docker/nginx.conf`
+  needs no changes; it passes `nginx -t` on 1.30 exactly as it stands.
+- `--build` remains non-optional as of v1.23.12 — it installs the PHP dependencies and compiles
+  the frontend.
+- **No database migration is required.**
 
 ---
 
