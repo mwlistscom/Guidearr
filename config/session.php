@@ -167,9 +167,20 @@ return [
     | to the server if the browser has a HTTPS connection. This will keep
     | the cookie from being sent to you when it can't be done securely.
     |
+    | Guidearr defaults this from APP_URL rather than leaving it unset. TLS is
+    | usually terminated at a proxy in front, so the app sees plain HTTP and
+    | cannot work out on its own that the browser is on HTTPS — which left the
+    | session cookie without a Secure flag on every install that did not set
+    | this by hand, and one stray http:// request puts it on the wire.
+    |
+    | Deriving it from APP_URL gets that right without anything to configure,
+    | and still leaves an install genuinely served over http working, since the
+    | flag would lock those users out of logging in entirely. SESSION_SECURE_COOKIE
+    | overrides it either way.
+    |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    'secure' => env('SESSION_SECURE_COOKIE', str_starts_with(strtolower((string) env('APP_URL')), 'https://')),
 
     /*
     |--------------------------------------------------------------------------
