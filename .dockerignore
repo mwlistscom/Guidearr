@@ -1,0 +1,40 @@
+# Everything not excluded here is sent to the Docker daemon on every build.
+#
+# The Dockerfile needs only six paths from the context — composer.json/lock,
+# package.json/lock, vite.config.js, resources/ and docker/ — because the application
+# code is bind-mounted at runtime rather than copied into the image. Without this the
+# context was 2.4GB, and almost all of it was the provider feed stores under storage/.
+#
+# Anything the Dockerfile COPYs must stay OUT of this file; DockerContextTest fails if
+# one of them is excluded, so a future COPY cannot be silently starved of its source.
+
+# Runtime data. The per-provider and per-playlist SQLite stores live here and are the
+# bulk of the context — gigabytes on a busy install.
+storage
+
+# Installed dependencies. The deps stage runs composer itself and the assets stage runs
+# npm ci, so sending these is pure cost — and a stale host vendor/ must never be able to
+# reach a build that is supposed to install its own.
+vendor
+node_modules
+
+# Compiled assets. The assets stage rebuilds them from resources/.
+public/build
+
+# Secrets. None of these reach an image layer, but there is no reason to hand them to
+# the daemon either.
+.env
+.env.*
+certs
+health/heartbeat.env
+health/state
+
+# History, CI config and local tooling.
+.git
+.github
+.claude
+CLAUDE.md
+
+# Logs and rotated archives that accumulate in the tree.
+*.log
+*.log.*
