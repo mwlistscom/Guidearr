@@ -7,6 +7,42 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Added**
+- **Two new maintenance tasks, both on the admin Maintenance tab** and both destructive, so they
+  follow the existing pattern: preview first, then an explicit "Apply for real".
+  - **Prune idle accounts** (`users:prune-idle`, manual, default 30 days) — deletes non-admin
+    accounts that registered, never set anything up, and have sat that way. "Never set anything up"
+    means **no providers AND no playlist containing any channels** — both, not either: any provider
+    at all, or one playlist with channels in it, protects the account. Admins are never touched.
+    Deleting cascades the account's playlists and queues its stores for `feed:purge`.
+  - **Reap stale playlists & providers** (`maintenance:reap-stale`, **weekly**, default 60 days) —
+    permanently deletes playlists and providers nothing has accessed in that window, and their
+    SQLite stores. This is the stage *after* `reap`, which only disables a provider at 14 days and
+    revives it on access; here the row is gone for good.
+- Both report exact ages (`60.9 days ago (2026-07-05)`) rather than Carbon's "1 month ago", which
+  rounds and reads, on a preview of a 60-day threshold, as though the command is about to delete
+  something well inside the window.
+
+**Changed**
+- `maintenance:reap-stale` deletes **playlists before providers**, so a provider whose last
+  playlist goes in the same run is collected then rather than a week later — and **a provider still
+  attached to a surviving playlist is never deleted**, including one used only as a
+  `guide_provider_id`. Playlist channels are pointers into a provider store, so removing the
+  provider would turn a playlist someone still uses into "(missing channel)" rows that serve
+  nothing, with no other signal that anything had broken.
+
+**Upgrading**
+- ⚠️ **The weekly reaper starts running on its own after this upgrade.** Activity means *human*
+  activity — an editor visit or a player pulling the playlist — so anything genuinely in use keeps
+  itself warm. But a deleted playlist takes its ordering, group flags and renames with it, and
+  none of that is recoverable. **Run `php artisan maintenance:reap-stale --dry-run` once before
+  the first Sunday** to see what it would take, and raise `--days` (or drop the schedule) if the
+  answer surprises you.
+
+---
+
 ## v1.23.16 — A Secure session cookie, and what trusting a proxy costs · 2026-09-04
 
 **Security**

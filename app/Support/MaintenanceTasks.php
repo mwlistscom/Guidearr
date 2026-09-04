@@ -60,6 +60,18 @@ class MaintenanceTasks
                 'desc' => 'Removes "(missing channel)" pointers from playlists after a provider drops/rotates channels.',
                 'command' => 'playlists:prune-missing',
             ],
+            'prune-idle' => [
+                'label' => 'Prune idle accounts', 'schedule' => 'manual only', 'manual' => true,
+                'destructive' => true, 'dryRun' => true,
+                'desc' => 'Deletes non-admin accounts older than 30 days that have no providers and no playlist with any channels. Any provider, or one non-empty playlist, protects the account.',
+                'command' => 'users:prune-idle',
+            ],
+            'reap-stale' => [
+                'label' => 'Reap stale playlists & providers', 'schedule' => 'weekly', 'manual' => true,
+                'destructive' => true, 'dryRun' => true,
+                'desc' => 'Permanently deletes playlists and providers with no access for 60 days, and their stores. A provider still attached to a surviving playlist is kept. Irreversible — a deleted playlist takes its ordering and renames with it.',
+                'command' => 'maintenance:reap-stale',
+            ],
         ];
     }
 

@@ -40,5 +40,7 @@ docker-compose.override.yml
 
 # Guidearr heartbeat runtime + secrets (never commit)
 health/heartbeat.log
+# …and its rotations: heartbeat.log.1.gz is not matched by the line above.
+health/heartbeat.log.*
 health/state/
 health/heartbeat.env
