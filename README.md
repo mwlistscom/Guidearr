@@ -127,7 +127,9 @@ docker compose exec app php artisan admin:password   # create the admin (prompts
 
 Then browse to `https://<your-host>:7979` and log in with the admin email and password you entered when running `admin:password`.
 
-> **Note on the default port:** the stack publishes the app on **`7979`** (TLS). Adjust the published port in `docker-compose.yml` and the `listen`/redirect lines in `docker/nginx.conf` if you want a different one, and keep `APP_URL` in sync.
+> **Note on the default port:** the stack publishes the app on **`7979`** (TLS). `setup.sh` asks for this and writes it to `.env` as `TLS_PORT`, which `docker-compose.yml` reads — so changing it later means editing `.env`, not the compose file, and keeping `APP_URL` in sync. The `listen`/redirect lines in `docker/nginx.conf` are the *container* side and stay at 7979 unless you change them there too.
+
+> **Where to make local changes.** `docker-compose.yml` **is tracked in git**, which is what lets an upgrade deliver changes to it — a proxy security bump, a new service, a corrected default. Everything install-specific comes from `.env` (`TLS_PORT`, `HTTP_BIND`, `HTTP_PORT`, `DB_*`). For anything else, create a **`docker-compose.override.yml`**: Compose merges it on top automatically, and it is never committed. Editing the tracked file directly works, but the next `git pull` will conflict with you.
 
 PHP dependencies and front‑end assets are both installed **during the image build**, so nothing needs PHP, composer or Node on the host — `--build` in step 5 is what produces them. If you want them on the host as well (to run the test suite, say), see [Building dependencies with Docker](#building-dependencies-with-docker) in Troubleshooting.
 
@@ -146,7 +148,9 @@ It prompts for the hostname, HTTPS port, admin email, admin password (blank → 
 
 From then on you can edit most values from the browser — see [The admin panel → Environment](#the-admin-panel) — instead of touching the file by hand.
 
-> ⚠️ **Database credentials are pinned to the compose file.** The `db` service initialises MySQL with `tunarr / tunarr / secret`, so `setup.sh` writes those into `.env`. To use different values, change them in **both** `docker-compose.yml` and `.env` *before* the database volume is first created (otherwise MySQL keeps the originals and the app can't connect).
+> ⚠️ **Database credentials live in `.env` only.** `docker-compose.yml` reads `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` and `DB_ROOT_PASSWORD` from there, so there is only one place to change them — they used to have to be kept in step in two files. `setup.sh` generates both passwords.
+>
+> **A database volume is initialised once**, with whatever it saw the first time. Changing `DB_PASSWORD` afterwards does not change the volume, and the app will simply stop being able to log in — so change it *before* first start, or reset the volume. `DB_ROOT_PASSWORD` is never used by the app; it exists because the MySQL image refuses to initialise without one. If either is missing, Compose stops with a message naming it rather than starting a database with a blank password.
 
 ---
 

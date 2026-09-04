@@ -7,6 +7,53 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Changed**
+- **`docker-compose.yml` is tracked in git now, so an upgrade can actually change it.** It was
+  gitignored — it held each install's ports and database passwords — and the tracked copy was
+  `docker-compose.yml.example`, which an install copies once at setup and never reads again. Every
+  change to a service was therefore undeliverable: v1.23.13 moved the proxy off an nginx carrying
+  **18 open advisories** and could do no more than ask each operator to edit their own file by hand.
+  Everything install-specific now comes from `.env` — `TLS_PORT`, `HTTP_BIND`, `HTTP_PORT`,
+  `DB_LOCAL_BIND`, `DB_LOCAL_PORT` and the `DB_*` credentials — and anything else belongs in a
+  **`docker-compose.override.yml`**, which Compose merges on top automatically and which is not
+  committed. `docker-compose.yml.example` is gone; two sources of truth is what caused this.
+  A missing `DB_PASSWORD` or `DB_ROOT_PASSWORD` now **stops Compose with a message naming it**
+  instead of quietly initialising a database with a blank password.
+
+**Fixed**
+- **A fresh install could not start its database at all.** `docker-compose.yml.example` referenced
+  `${DB_ROOT_PASSWORD}` and `setup.sh` never wrote it, so `MYSQL_ROOT_PASSWORD` interpolated to
+  empty and the MySQL image refused to initialise — *"Database is uninitialized and password option
+  is not specified"*. Anyone following Quick start hit this on step 5. `setup.sh` generates one now.
+- **The HTTPS port `setup.sh` asks for is now the port the stack publishes.** The answer only ever
+  reached `APP_URL`, while the compose file hardcoded `7979:7979` — so answering anything else
+  produced an install whose URL pointed at a port nothing listened on.
+- **Database passwords are generated rather than being the word `secret`.** They had to be
+  hardcoded to match the compose file; now that the compose file reads them from `.env`, `setup.sh`
+  generates 32 characters. A `--force` rerun carries the existing values over, since a database
+  volume keeps whatever password it was initialised with.
+
+**Upgrading**
+- ⚠️ **This one needs three commands before the usual pull, and skipping them breaks the stack.**
+  Your `docker-compose.yml` is untracked, so `git pull` will refuse to overwrite it, and its values
+  have to reach `.env` or the tracked file will come up with defaults that do not match your
+  database volume:
+  ```bash
+  cp docker-compose.yml docker-compose.yml.backup
+  rm docker-compose.yml
+  git pull
+  ./docker/migrate-compose.sh docker-compose.yml.backup   # copies your values into .env
+  docker compose config                                   # check before starting anything
+  docker compose up -d --build
+  ```
+- `migrate-compose.sh` is safe to run twice, prints every change it makes without printing the
+  secrets, and keeps a backup of `.env`. `docker compose config` prints the fully resolved stack
+  and fails loudly if anything required is missing — compare its ports against your backup.
+
+---
+
 ## v1.23.13 — A patched proxy, and a vacuum that says what it is doing · 2026-09-04
 
 **Security**

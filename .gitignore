@@ -32,7 +32,11 @@ yarn-error.log
 /storage/app/env-backups/
 /storage/app/branding/
 /certs/
-docker-compose.yml
+
+# docker-compose.yml is TRACKED, so an upgrade can deliver changes to it. Install-specific
+# values come from .env; put any local changes in the override file, which Compose merges
+# on top automatically and which is never committed.
+docker-compose.override.yml
 
 # Guidearr heartbeat runtime + secrets (never commit)
 health/heartbeat.log
