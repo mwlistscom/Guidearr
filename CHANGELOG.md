@@ -7,6 +7,32 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Security**
+- **The session cookie is marked `Secure` on an HTTPS install.** Laravel leaves `secure` unset
+  unless `SESSION_SECURE_COOKIE` is set by hand, and Guidearr is normally deployed with TLS
+  terminated at a proxy in front — so the app sees plain HTTP over the compose network and cannot
+  work out that the browser is on HTTPS. The session cookie therefore carried no `Secure` flag on
+  every install that had not set it themselves, and a single stray `http://` request would put it
+  on the wire. It is derived from `APP_URL` now, so an install served over `https://` gets the flag
+  with nothing to configure. An install genuinely served over plain `http://` still works — forcing
+  the flag there would stop anyone logging in at all, which is a worse failure than the one being
+  fixed — and `SESSION_SECURE_COOKIE` still overrides the default in either direction.
+
+**Changed**
+- **`docker/nginx.conf` now spells out what trusting an X-Forwarded-For range costs.** The proxy
+  trust list covers the private ranges, which is what makes the real client IP work behind a proxy —
+  but anything that can open a connection from inside a trusted range can send its own
+  `X-Forwarded-For` and be believed, and that decides what the playlist IP-lock sees and which
+  addresses the threat feed treats as a customer rather than a scanner. The right value is
+  install-specific, so this is guidance rather than a new default: keep `HTTP_BIND` no wider than
+  your proxy can reach (`127.0.0.1` by default, which makes the ranges cost nothing), and if you
+  have widened it, narrow the trust to the proxy's own address. It also points at
+  `docker-compose.override.yml` as the way to carry that change without conflicting on the next pull.
+
+---
+
 ## v1.23.15 — Provider URLs can no longer point inwards · 2026-09-04
 
 **Security**
