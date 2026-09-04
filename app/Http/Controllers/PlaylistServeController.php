@@ -40,12 +40,18 @@ class PlaylistServeController extends Controller
             echo "#EXTM3U\n";
             $n = $start;
             foreach ($rows as $r) {
-                $url = (string) $r['url'];
+                // Cleaned before the empty check, so a url of nothing but control characters is
+                // treated as missing rather than emitted as a blank line.
+                $url = $this->clean($r['url']);
                 if ($url === '') {
                     continue;
                 }
-                $name = (string) ($r['name'] !== '' ? $r['name'] : ($r['tvg_name'] ?: 'Channel'));
-                $group = (string) $r['group_title'];
+                $name = $this->clean($r['name'] !== '' ? $r['name'] : ($r['tvg_name'] ?: 'Channel'));
+                $group = $this->clean($r['group_title']);
+
+                if ($name === '') {
+                    $name = 'Channel';
+                }
                 printf(
                     '#EXTINF:-1 tvg-chno="%s" tvg-id="%s" tvg-name="%s" tvg-logo="%s" group-title="%s",%s'."\n",
                     $n,
@@ -295,9 +301,33 @@ class PlaylistServeController extends Controller
         return $out;
     }
 
+    /**
+     * One m3u field, forced onto one line.
+     *
+     * The format is line-based, so a newline anywhere in a field ends the entry and whatever
+     * follows is read by the player as further directives. A channel called
+     * "Sky Sports\n#EXTINF:-1,Free Movies\nhttp://…" therefore *adds a channel* to the playlist.
+     *
+     * That is reachable from upstream, not just from the account holder: Xtream channel names
+     * arrive as JSON, where a newline is perfectly legal, so a hostile or compromised provider
+     * could inject entries a subscriber never chose and which survive their curation. (The M3U
+     * importer is line-based and cannot carry one; manual channels can, but only into the
+     * author's own playlist.)
+     *
+     * Stripped silently rather than dropping the channel: the name is cosmetic, and a player
+     * showing one oddly-named channel is a better outcome than one silently missing.
+     */
+    private function clean($v): string
+    {
+        // Every C0 control plus DEL — \r and \n are the injection, the rest have no business in
+        // a playlist line and can confuse players in their own right.
+        return (string) preg_replace('/[\x00-\x1F\x7F]+/u', '', (string) ($v ?? ''));
+    }
+
+    /** A quoted #EXTINF attribute: one line, and no quote to close it early. */
     private function attr($v): string
     {
-        return str_replace('"', '', (string) ($v ?? ''));
+        return str_replace('"', '', $this->clean($v));
     }
 
     private function stream(string $contentType, callable $body): StreamedResponse
