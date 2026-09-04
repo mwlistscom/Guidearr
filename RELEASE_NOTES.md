@@ -1,56 +1,58 @@
-# v1.23.15 — Provider URLs can no longer point inwards
+# v1.23.16 — A Secure session cookie, and what trusting a proxy costs
 
-A security fix. Guidearr fetches the URL you give a provider, and until now nothing checked
-where that URL pointed — only that it began with `http`. This closes that.
+Two loose ends from the same security review that produced v1.23.15. One is a real fix that
+needs nothing from you; the other is guidance, because the right answer depends on how your
+install is wired and no default can know that.
 
-> **Nothing to run.** Pull, rebuild, done. The one case that needs attention is an install
-> whose provider genuinely lives on the local network — see **Upgrading**.
+> **Nothing to configure.** Pull, rebuild, and log in once to confirm — see **Upgrading**.
 
 ---
 
 ## Security
 
-### Provider URLs could reach the internal network (SSRF)
+### The session cookie is now marked `Secure` on an HTTPS install
 
-Adding or editing a provider makes **the server** fetch the URL, from inside your network.
-Nothing constrained the destination, so any account could point a provider at:
+Laravel leaves this off unless `SESSION_SECURE_COOKIE` is set by hand, and almost every
+Guidearr install terminates TLS at a proxy in front — HAProxy, Caddy, nginx, a tunnel. The app
+itself therefore only ever sees plain HTTP arriving over the internal network, and has no way
+to work out that the browser at the other end is on HTTPS.
 
-- `http://127.0.0.1:9000/` — services on the container itself
-- `http://db:3306/` — the database container
-- `http://169.254.169.254/latest/meta-data/` — cloud instance metadata
-- `http://192.168.1.1/` — anything on your LAN
+The result: unless you had set that variable yourself, your session cookie went out **without
+a `Secure` flag**, and a single stray `http://` request would put it on the wire in clear text.
 
-and have Guidearr reach it on their behalf. `REGISTRATION_REQUIRES_APPROVAL` defaults to
-`false`, so holding an account is not much of a barrier.
+It is derived from `APP_URL` now. If yours starts with `https://` — which it does if `setup.sh`
+wrote it — the flag is set, with nothing for you to change.
 
-**It was not blind, either.** The validator reported back enough to make it useful:
+**An install genuinely served over plain `http://` keeps working.** Forcing the flag there
+would stop anyone logging in at all, which is a worse failure than the one being fixed.
+`SESSION_SECURE_COOKIE` still overrides the default in either direction if you want to be
+explicit.
 
-| What happened | What the user was told |
-| --- | --- |
-| Nothing listening on that port | *"Could not fetch the URL (timeout, DNS, or connection refused)"* |
-| Something listening | *"The URL did not look like a M3U…"* — **plus the size of the response** |
-| The response began `#EXTM3U` or `<?xml` | Accepted, imported, and shown back as channels |
+---
 
-Those three outcomes are a working internal port scanner, with content disclosure whenever a
-target happened to serve something playlist-shaped.
+## Changed
 
-### What changed
+### `docker/nginx.conf` now says what trusting a proxy range actually costs
 
-Every outbound fetch — the M3U/XMLTV signature check, the Xtream login, the playlist download
-and the guide download — now goes through one guard, and it does two things:
+The proxy trust list covers the private ranges, and that is what makes the real client IP work
+when Guidearr sits behind something. The part worth knowing: **anything that can open a
+connection from inside a trusted range can send its own `X-Forwarded-For` and be believed.**
+That decides what the playlist IP-lock sees, and which addresses the threat feed treats as a
+customer rather than a scanner.
 
-**It resolves the host and refuses private or reserved space**, checking *every* address the
-name resolves to. A name answering with one public and one loopback record would otherwise
-walk straight through.
+The right value is specific to your network, so this release does not change the default —
+narrowing it centrally would break `real_ip` for anyone whose proxy sits on a range that got
+removed. Instead the config now states the trade-off and gives you the two levers:
 
-**It re-checks every redirect hop.** This is the part that is easy to leave out, and the reason
-a check on the typed-in URL alone proves nothing: an attacker runs the first server, so it can
-simply answer `302 http://169.254.169.254/`. curl is no longer allowed to follow redirects by
-itself, and is pinned to HTTP and HTTPS rather than relying on library defaults.
+1. **Keep `HTTP_BIND` no wider than your proxy can reach.** The default, `127.0.0.1`, means
+   nothing else can connect at all and the ranges cost you nothing. Widening it to a LAN
+   address is what puts every other machine on that network inside the trusted set.
+2. **If you have widened it, narrow the trust to the proxy itself** — `set_real_ip_from
+   192.168.1.2;` — and drop the ranges you do not use.
 
-Guidearr also blocks three ranges that PHP's own private/reserved check misses — carrier-grade
-NAT (`100.64.0.0/10`, which several VPN and container networks sit inside), `192.0.0.0/24` and
-the benchmarking block.
+`docker/nginx.conf` is tracked in git, so carry that change in a `docker-compose.override.yml`
+that mounts your own copy over `/etc/nginx/conf.d/default.conf`, rather than editing the
+tracked file and conflicting on the next `git pull`.
 
 ---
 
@@ -64,41 +66,11 @@ docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler
 ```
 
-No migration, no configuration change, and nothing to undo.
+No migration and no configuration change.
 
-### If one of your providers is on your own network
-
-Some people legitimately run an M3U or XMLTV source on a NAS or another box at home. Those
-providers will now fail with:
-
-> Refusing to fetch a private or reserved address (nas.lan resolves to 192.168.1.20).
-
-Allow that host back in `.env` — the narrow option first:
-
-```ini
-# Just these hosts, still blocking everything else internal
-OUTBOUND_ALLOW_HOSTS=nas.lan,192.168.1.20
-```
-
-```ini
-# Or drop the check entirely. Only sensible where every account is trusted.
-OUTBOUND_ALLOW_PRIVATE=true
-```
-
-`OUTBOUND_MAX_REDIRECTS` (default 5) caps how many hops are followed; each one is checked
-against the same rules.
-
-Restart the app after editing `.env` so the new settings are read:
-
-```bash
-docker compose restart app worker scheduler
-```
-
----
-
-## A note on who this affects
-
-If your Guidearr sits on a private network with only accounts you trust, this was never
-especially exploitable. If registration is open — the default — or the instance is reachable
-from the internet, it was: anyone who could sign up could use your server to look at things
-inside your network that they could not reach themselves. Worth taking promptly in that case.
+**Log in once afterwards.** The cookie change is the kind that is obvious in hindsight if it
+goes wrong: if your `APP_URL` says `https://` but you actually reach Guidearr over plain
+`http://`, the browser will now refuse to send the session cookie back and you will not be able
+to log in. The fix in that case is to correct `APP_URL` to match how you really browse to it —
+or set `SESSION_SECURE_COOKIE=false` in `.env` if you mean to stay on http — then
+`docker compose restart app`.
