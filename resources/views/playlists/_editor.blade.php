@@ -102,6 +102,9 @@
     .pleg-sub { font-size:.77rem; color:#aab; font-style:italic; }
     .pleg-desc { font-size:.77rem; color:#9aa0aa; margin-top:.12rem; line-height:1.35; }
     .pleg-empty { padding:1rem; color:#8a8f98; font-size:.85rem; text-align:center; }
+    .pleg-retry { margin-left:.4rem; padding:.15rem .5rem; font:inherit; color:#e8eaed; cursor:pointer;
+                  background:#2a2d33; border:1px solid #3a3f47; border-radius:4px; }
+    .pleg-retry:hover { background:#343841; }
     .ple-toolbar .ple-spacer { flex:0 0 auto; width:1.6rem; }
 </style>
 
@@ -515,7 +518,29 @@ window.GXPLE = (function () {
         $('ple-guide-sub').textContent = d.tvg_id ? ('tvg-id: ' + d.tvg_id) : 'no tvg-id on this channel';
         $('ple-guide-list').innerHTML = '<div class="pleg-empty">Loading…</div>';
         $('ple-guide-overlay').classList.add('show');
-        const { data } = await J('/playlists/' + plId + '/guide?tvg_id=' + encodeURIComponent(d.tvg_id || ''));
+
+        // A failed request must never leave the panel on "Loading…". fetch() throws on a
+        // network-level failure — a container restart mid-request is enough — and without this
+        // the whole function aborted with the spinner still on screen, no error shown, and no way
+        // back except closing and reopening the panel.
+        const fail = msg => {
+            $('ple-guide-list').innerHTML = '<div class="pleg-empty">' + esc(msg)
+                + ' <button type="button" class="pleg-retry">Retry</button></div>';
+            $('ple-guide-list').querySelector('.pleg-retry').addEventListener('click', () => openChannelGuide(d));
+        };
+
+        let res;
+        try {
+            res = await J('/playlists/' + plId + '/guide?tvg_id=' + encodeURIComponent(d.tvg_id || ''));
+        } catch (e) {
+            return fail('Could not reach the server.');
+        }
+        // An error response is reported as one. J() returns an empty body for a non-2xx, which
+        // used to fall through to "No upcoming programmes." — telling the operator the guide was
+        // empty when the request had actually failed.
+        if (! res.ok) { return fail('Could not load the guide (HTTP ' + res.status + ').'); }
+
+        const data = res.data;
         const progs = (data && data.programmes) || [];
         if (!progs.length) { $('ple-guide-list').innerHTML = '<div class="pleg-empty">' + esc((data && data.reason) || 'No upcoming programmes.') + '</div>'; return; }
         const fmtD = ts => new Date(ts * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });

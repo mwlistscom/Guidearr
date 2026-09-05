@@ -7,6 +7,22 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **A guide panel that failed to load stayed on "Loading…" forever.** Opening the TV guide for a
+  channel — or a programme list from the provider grid — set the spinner and then awaited the
+  request with no error handling. `fetch` throws on a network-level failure rather than returning
+  a response, which aborted the function outright and left the spinner on screen with no message
+  and no way back except closing and reopening the panel. A container restart while the panel was
+  open was enough to trigger it. Both panels now report the failure and offer a **Retry**.
+- **An error response said "No upcoming programmes."** The fetch helper returns an empty body for
+  a non-2xx, which fell through to the empty-state message — so a 500 told you the guide was empty
+  when the request had actually failed. Errors are now reported as errors, with the status code,
+  and the empty state means genuinely empty.
+
+---
+
 ## v1.23.18 — Trust only the proxy in front of you · 2026-09-05
 
 **Security**
