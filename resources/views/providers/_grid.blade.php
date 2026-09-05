@@ -62,6 +62,9 @@
     .gx-prog-head { padding:.55rem .7rem; font-weight:700; color:#e6e7ea; border-bottom:1px solid rgba(255,255,255,.10); background:#1c1d21; }
     .gx-prog-list { overflow:auto; flex:1; }
     .gx-prog-empty { padding:1rem; color:#8a8f98; font-size:.85rem; }
+    .gx-prog-retry { margin-left:.4rem; padding:.15rem .5rem; font:inherit; color:#e8eaed; cursor:pointer;
+                     background:#2a2d33; border:1px solid #3a3f47; border-radius:4px; }
+    .gx-prog-retry:hover { background:#343841; }
     .gx-prog-item { display:flex; gap:.7rem; padding:.5rem .7rem; border-bottom:1px solid rgba(255,255,255,.06); }
     .gx-prog-time { flex:0 0 6.5rem; font-size:.74rem; color:#8ab4f8; font-family:ui-monospace,monospace; line-height:1.3; }
     .gx-prog-time span { display:block; color:#6b7280; }
@@ -628,7 +631,25 @@ window.GXP = (function () {
         async function loadProgrammes(id, tvgId, name) {
             $('gx-prog-head').textContent = name || tvgId;
             $('gx-prog-list').innerHTML = '<div class="gx-prog-empty">Loading…</div>';
-            const { data } = await J('/providers/' + id + '/guide/programmes?tvg_id=' + encodeURIComponent(tvgId));
+
+            // Same guard as the playlist editor's guide panel: fetch() throws on a network-level
+            // failure, and without this the function aborted with the spinner left on screen.
+            const fail = msg => {
+                $('gx-prog-list').innerHTML = '<div class="gx-prog-empty">' + esc(msg)
+                    + ' <button type="button" class="gx-prog-retry">Retry</button></div>';
+                $('gx-prog-list').querySelector('.gx-prog-retry')
+                    .addEventListener('click', () => loadProgrammes(id, tvgId, name));
+            };
+
+            let res;
+            try {
+                res = await J('/providers/' + id + '/guide/programmes?tvg_id=' + encodeURIComponent(tvgId));
+            } catch (e) {
+                return fail('Could not reach the server.');
+            }
+            if (! res.ok) { return fail('Could not load the guide (HTTP ' + res.status + ').'); }
+
+            const data = res.data;
             const progs = (data && data.programmes) || [];
             if (!progs.length) { $('gx-prog-list').innerHTML = '<div class="gx-prog-empty">No upcoming programmes.</div>'; return; }
             const fmt = ts => { const d = new Date(ts * 1000); return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
