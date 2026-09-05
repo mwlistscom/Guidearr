@@ -28,6 +28,9 @@ services:
     volumes:
       - ./:/var/www/html
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Which addresses may set X-Forwarded-For. Its own file so it can be narrowed to your
+      # proxy from a docker-compose.override.yml, without copying the whole nginx config.
+      - ./docker/real-ip.conf:/etc/nginx/real-ip.conf:ro
       - ./docker/nginx-logrotate.sh:/docker-entrypoint.d/99-nginx-logrotate.sh:ro
       - ./certs:/etc/ssl/tunarr:ro
     depends_on: [app]
