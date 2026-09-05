@@ -7,6 +7,24 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **An Xtream server sending an over-long timezone could stop a provider being saved.**
+  `server_info.timezone` from the provider's `player_api` response is written straight into
+  `providers.timeshift`, a `varchar(64)`, from three places — provider create, provider update and
+  every refresh. A server answering with anything longer produced an unhandled *"Data too long for
+  column 'timeshift'"* and a **500**, so the operator saw a provider fail to save when its
+  credentials were perfectly good. Seen in production on 2026-07-27.
+  The value is now dropped rather than stored when it is not something the column can hold — over
+  64 characters, blank, or not a string at all (a misbehaving server can send an object where a
+  string was expected). `timeshift` is optional: losing it costs a guide-time offset, whereas
+  letting it through cost the whole provider. Legitimate values are unaffected — the longest real
+  IANA identifier is 32 characters, and the limit is counted in **characters**, matching how MySQL
+  counts a utf8mb4 `varchar`, so a multi-byte timezone is not thrown away for being 128 bytes.
+
+---
+
 ## v1.23.19 — A guide panel that tells you when it fails · 2026-09-05
 
 **Fixed**

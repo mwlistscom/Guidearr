@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Support\OutboundUrl;
-
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -58,7 +57,36 @@ class ProviderValidator
         $status = data_get($data, 'user_info.status');
         $tz     = data_get($data, 'server_info.timezone');
 
-        return ['ok' => $auth === 1, 'timeshift' => $tz, 'status' => $status];
+        return ['ok' => $auth === 1, 'timeshift' => self::cleanTimezone($tz), 'status' => $status];
+    }
+
+    /**
+     * `server_info.timezone` as the provider sent it, or null when it is not storable.
+     *
+     * This value goes straight into `providers.timeshift`, a varchar(64), from three places —
+     * provider create, provider update, and every refresh in FeedWork — all of which read this
+     * one return value. An Xtream server that answered with something long therefore produced
+     * an unhandled "Data too long for column 'timeshift'" and a 500, with the operator seeing a
+     * failure to add a provider whose credentials were perfectly fine. That happened on this
+     * deployment on 2026-07-27.
+     *
+     * A real value is a short timezone name or offset — `UTC`, `Europe/Amsterdam`, `+0000`; the
+     * longest IANA identifier is 32 characters. So anything past the column width is not a
+     * timezone at all, and is worth discarding rather than storing: `timeshift` is optional, and
+     * dropping it costs a guide-time offset, where letting it through costs the whole provider.
+     *
+     * Bounded in characters, not bytes, to match how MySQL counts a utf8mb4 varchar.
+     */
+    private static function cleanTimezone(mixed $tz): ?string
+    {
+        if (! is_scalar($tz)) {
+            return null;
+        }
+
+        // Control characters would also break the m3u and log lines this ends up on.
+        $tz = trim((string) preg_replace('/[\x00-\x1F\x7F]+/u', '', (string) $tz));
+
+        return ($tz === '' || mb_strlen($tz) > 64) ? null : $tz;
     }
 
     private function validateSignature(?string $url, string $type): array
