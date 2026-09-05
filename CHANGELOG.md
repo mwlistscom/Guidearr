@@ -7,6 +7,25 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Security**
+- **The list of proxies allowed to set `X-Forwarded-For` can now be narrowed without forking the
+  whole nginx config.** Trusting a range means trusting everything in it: any host that can open a
+  connection from a trusted address can send its own `X-Forwarded-For` and be believed, and that
+  decides what the playlist IP-lock sees and which addresses the threat feed treats as a customer
+  rather than a scanner. The shipped defaults stay broad on purpose — a default that is too narrow
+  silently breaks the real client IP for anyone whose proxy sits somewhere it did not guess, and
+  that failure is far harder to notice than an over-broad trust. What changes is that the list now
+  lives in **`docker/real-ip.conf`**, mounted separately, so an operator can replace that one file
+  from a `docker-compose.override.yml` instead of copying `docker/nginx.conf` and inheriting a
+  merge conflict on every upgrade. The file itself explains how to find the single address that
+  actually needs trusting (`docker compose exec web sh -c 'netstat -tn | grep :8080'` while real
+  traffic is arriving — the peer column is your proxy). `docker/*.local.conf` is gitignored for
+  exactly this use.
+
+---
+
 ## v1.23.17 — Playlists that only contain what you put in them · 2026-09-04
 
 **Security**

@@ -37,6 +37,9 @@ yarn-error.log
 # values come from .env; put any local changes in the override file, which Compose merges
 # on top automatically and which is never committed.
 docker-compose.override.yml
+# Local nginx fragments mounted over the shipped ones via that override file — e.g.
+# docker/real-ip.local.conf narrowing which proxy may set X-Forwarded-For.
+docker/*.local.conf
 
 # Guidearr heartbeat runtime + secrets (never commit)
 health/heartbeat.log
