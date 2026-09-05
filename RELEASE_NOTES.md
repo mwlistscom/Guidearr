@@ -1,33 +1,32 @@
-# v1.23.19 — A guide panel that tells you when it fails
+# v1.23.20 — A provider that saves even when its server misbehaves
 
-A small fix to the TV guide panels. Nothing to configure, and no change to how the guide works
-when it works — only to what you see when it doesn't.
+One fix, for a failure that looked like Guidearr rejecting perfectly good credentials.
 
 ---
 
 ## Fixed
 
-### A guide that failed to load sat on "Loading…" indefinitely
+### An Xtream server could stop its own provider being saved
 
-Opening the TV guide for a channel — from the editor, or from the programme list in the provider
-grid — showed a spinner while it fetched. If that request failed at the network level rather than
-returning an error, the panel simply stopped there. The spinner stayed up with no message, no
-explanation, and no way to try again short of closing the panel and reopening it.
+When you add or edit an Xtream provider, Guidearr logs in to its `player_api` and keeps a couple
+of details the server reports back — among them its timezone, used to line the guide up with your
+local time.
 
-A restart of the containers while a guide panel was open was enough to cause it.
+That timezone was written into the database exactly as the server sent it, into a field sized for
+a timezone. A server answering with something much longer than a timezone therefore broke the
+save: the record could not be written, and you were shown a failure while your username and
+password were perfectly fine. Nothing in the message pointed at the real cause, because the login
+itself had succeeded.
 
-Both panels now say what went wrong and offer a **Retry**, since the usual cause is momentary.
+It happened on the deployment this was found on, eight times in one day.
 
-### An error was reported as "No upcoming programmes."
+An unusable timezone is now simply discarded. The provider saves, the login result is unchanged,
+and all that is lost is the guide-time offset — which is optional, and far cheaper to lose than
+the provider itself.
 
-The quieter half of the same problem, and the more misleading one.
-
-When the server returned an error, the panel had nothing to read from it and fell through to the
-same message it shows for a channel with no listings. So a genuine failure looked like a definite
-answer: you were told the guide was empty, when in fact the request had not succeeded at all.
-
-Errors now say they are errors, and include the status code. "No upcoming programmes." now means
-exactly that — the channel has no listings.
+Genuine timezones are untouched: the longest real one in existence is well within the limit, and
+the limit is counted in characters rather than bytes, so a timezone written in a non-Latin script
+is not thrown away for being "too long" when it is not.
 
 ---
 
@@ -41,4 +40,8 @@ docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler
 ```
 
-No migration, no configuration, nothing to undo.
+No migration, no configuration change.
+
+If a provider of yours has been failing to save with a database error, it should save now. If one
+saved *before* with an odd timezone, nothing about it changes — the next refresh simply re-reads
+the value and discards it if it is still unusable.
