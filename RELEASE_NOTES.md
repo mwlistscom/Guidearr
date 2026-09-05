@@ -1,74 +1,100 @@
-# v1.23.17 — Playlists that only contain what you put in them
+# v1.23.18 — Trust only the proxy in front of you
 
-A security fix for the served playlist, and two new maintenance tasks for clearing out accounts
-and content nobody uses.
-
-> **The weekly reaper starts running on its own after this upgrade.** It deletes permanently.
-> Read **Upgrading** before the first Sunday.
+A small release, and a hardening step you have to opt into rather than one that arrives on its
+own. Nothing changes on upgrade unless you choose to change it.
 
 ---
 
 ## Security
 
-### A hostile provider could add channels to your playlist
+### The X-Forwarded-For trust list can now be narrowed without forking the config
 
-The m3u Guidearr serves is a line-based format, and three of the fields written into it — the
-channel's display name, its group and its stream URL — were written with no sanitising at all.
-Only the five quoted `#EXTINF` attributes were cleaned, and even those only had `"` removed.
+When Guidearr runs behind a reverse proxy — the usual arrangement — nginx only sees the proxy's
+address, so it takes the visitor's real IP from the `X-Forwarded-For` header the proxy sets. That
+promoted address is what the playlist **IP-lock** matches on, and what the **threat feed** uses to
+tell a customer apart from a scanner.
 
-So a channel named:
+The catch is that **trusting a range means trusting everything inside it**. The shipped list covers
+`10/8`, `172.16/12` and `192.168/16`, so any machine that can reach Guidearr from one of those
+networks can send its own `X-Forwarded-For` and be believed. If your `HTTP_BIND` is anything wider
+than `127.0.0.1`, that is your whole LAN.
 
-```
-Sky Sports
-#EXTINF:-1,Free Movies
-http://attacker.example/evil.ts
-```
+**The defaults have not changed, and that is deliberate.** A default that is too narrow silently
+breaks the real client IP for anyone whose proxy sits somewhere it did not guess — and that failure
+is much harder to notice than an over-broad trust, because everything keeps working while every
+visitor quietly appears to be the proxy.
 
-did not show up as an oddly-named channel. It **added a channel** to the playlist, pointing
-wherever the attacker chose — and it survived your curation, because you never chose it in the
-first place and so never disabled it.
-
-**This was reachable from your provider, not just from your own account.** Xtream channel names
-arrive as JSON, where a newline is perfectly legal, so a hostile or compromised provider could put
-entries into a subscriber's playlist. (An M3U source could not — that parser is line-based and
-cannot carry a newline through in the first place.)
-
-Every field is now forced onto a single line before it is written. The channel itself is kept
-rather than thrown away: the name is cosmetic, and one oddly-named channel is a better outcome
-than one that silently disappears.
-
-**The EPG output was never affected.** It is written with `XMLWriter`, which escapes its own text.
-
-**How much did this matter?** It needed a provider you subscribe to, and anyone who controls that
-already controls what the channels you *did* add actually play. What it added was entries you
-never picked. It was never a way into the site, or into anyone else's account.
+What has changed is that narrowing it is now practical. The list lives in its own file,
+`docker/real-ip.conf`, mounted separately — so you can replace **just that file** rather than
+copying the whole of `docker/nginx.conf` and carrying a local change that conflicts on every
+upgrade.
 
 ---
 
-## Added
+## Narrowing it, if you want to
 
-### Two new maintenance tasks
+Most installs do not need to. If `HTTP_BIND` is `127.0.0.1`, nothing but this host can connect and
+the broad list costs you nothing. It is worth doing if you have widened that bind so a proxy on
+another machine can reach Guidearr.
 
-Both appear on **Admin → Maintenance**, and both are destructive, so they get the same treatment as
-the existing ones: preview first, then an explicit **Apply for real**.
+**1. Find the one address that actually needs trusting.** Do this from inside the container while
+real traffic is arriving — the answer is not what you see from the host, which shows its own NAT
+instead:
 
-**Prune idle accounts** — deletes accounts that registered, never set anything up, and have sat
-that way for 30 days. "Never set anything up" means **no providers and no playlist with any
-channels in it**. One provider, or one playlist with channels, protects the account. Admins are
-never touched. Manual only — nothing happens until you run it.
+```bash
+docker compose exec web sh -c 'netstat -tn | grep :8080'
+```
 
-**Reap stale playlists & providers** — permanently deletes playlists and providers nothing has
-accessed for 60 days, and their stored data. **Runs weekly, on its own.**
+```
+172.18.0.6:8080     192.168.3.1:16061     TIME_WAIT
+                    ^^^^^^^^^^^ your proxy
+```
 
-This is the stage after the existing daily reaper, which only *disables* a provider after 14 days
-and brings it straight back the moment anything uses it. Here the playlist or provider is gone.
+**2. Write that one address into a local file** — `docker/*.local.conf` is gitignored:
 
-Two things it will not do:
+```bash
+echo 'set_real_ip_from 192.168.3.1;' > docker/real-ip.local.conf
+```
 
-- **A provider still attached to a playlist you use is never deleted**, even if the provider itself
-  looks idle. Your channels are pointers into that provider's data, so removing it would leave the
-  playlist full of "(missing channel)" rows serving nothing.
-- **A playlist created recently is never reaped**, even if nobody has opened it yet.
+**3. Mount it** from `docker-compose.override.yml`, which Compose merges automatically and which is
+never committed:
+
+```yaml
+services:
+  web:
+    volumes:
+      - ./docker/real-ip.local.conf:/etc/nginx/real-ip.conf:ro
+```
+
+**4. Apply it.** A new mount needs the container recreated, not just reloaded — a few seconds:
+
+```bash
+docker compose up -d web
+docker compose exec web cat /etc/nginx/real-ip.conf
+```
+
+### Check both directions afterwards
+
+They fail in opposite ways, and only checking one will mislead you.
+
+**A forged header should now be ignored.** From a machine that is *not* your proxy:
+
+```bash
+curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.99' http://<your-host>:<port>/login
+docker compose logs web | tail -1
+```
+
+It should log that machine's own address, not `203.0.113.99`.
+
+**Real visitors should still show their own IP.** Watch the log for ordinary traffic:
+
+```bash
+docker compose logs web --tail 20
+```
+
+If every request suddenly logs as your *proxy's* address, you have narrowed to the wrong one —
+promotion has stopped, and the IP-lock and threat feed will both be working from a single address.
+Widen it back and re-check step 1.
 
 ---
 
@@ -82,20 +108,6 @@ docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler
 ```
 
-No migration and no configuration change.
-
-### Before the first Sunday
-
-The weekly reaper deletes permanently, and a deleted playlist takes its ordering, group choices and
-renames with it. None of that comes back.
-
-Activity means *human* activity — opening the editor, or a player fetching the playlist — so
-anything genuinely in use keeps itself alive without you doing anything. But it is worth one look:
-
-```bash
-docker compose exec app php artisan maintenance:reap-stale --dry-run
-```
-
-That changes nothing and prints exactly what a real run would remove, with the age of each item.
-If 60 days is tighter than suits you, change `--days` on the schedule line in `routes/console.php`,
-or remove the line to keep the task manual-only like the account prune.
+No migration, and no behaviour change unless you follow the section above. `docker/real-ip.conf`
+ships with exactly the same three ranges the config used before, so an install that does nothing
+keeps working precisely as it did.
