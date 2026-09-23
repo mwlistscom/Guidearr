@@ -22,6 +22,14 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   likewise kept; it just loses the guide.
   If the impact check cannot be reached, the delete is refused rather than falling back to the old
   unqualified prompt — you are never asked to confirm a delete whose blast radius is unknown.
+- **That confirmation is a proper dialog, not a browser alert.** It matches the rest of the app and
+  lists what is going: the provider by name, then each playlist that goes with it, then each
+  playlist that is kept and what it loses. The confirm button says what it will do —
+  *"Delete provider + 2 playlists"*.
+- **The playlist list refreshes after a provider delete.** The playlists it removed are shown on a
+  different page, which `wire:navigate` can restore from its cache — so a playlist that no longer
+  existed could still be listed. The delete now marks that list stale and it reloads past any
+  cached copy.
 
 **Fixed**
 - **A deleted provider no longer leaves dangling rows behind.** `playlist_providers.provider_id` is

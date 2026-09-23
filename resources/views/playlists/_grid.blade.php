@@ -179,6 +179,20 @@ window.GXPL = (function () {
     let table = null;
     let createProvs = [];   // provider readiness snapshot for the open create modal
 
+    // Deleting a provider on the Providers page can delete playlists outright. That happens on a
+    // different page, which wire:navigate may later restore from its cache, so the delete leaves a
+    // marker here instead: the next load of this grid busts any cached copy of the row data rather
+    // than showing a playlist that no longer exists.
+    function dataUrl() {
+        const base = '{{ route('playlists.data') }}';
+        let stale = null;
+        try {
+            stale = sessionStorage.getItem('gx-playlists-stale');
+            if (stale) sessionStorage.removeItem('gx-playlists-stale');
+        } catch (e) {}
+        return stale ? base + (base.includes('?') ? '&' : '?') + 't=' + stale : base;
+    }
+
     function init() {
         const el = $('playlist-grid');
         if (!el || !window.Tabulator) return;
@@ -190,7 +204,7 @@ window.GXPL = (function () {
         table = new Tabulator(el, {
             layout: 'fitColumns', maxHeight: '70vh', placeholder: 'No playlists yet — use + to create one.',
             editTriggerEvent: 'dblclick',
-            ajaxURL: '{{ route('playlists.data') }}',
+            ajaxURL: dataUrl(),
             columns: [
                 { title: 'Name', field: 'name', widthGrow: 3, editor: 'input', cellEdited: onEdit },
                 { title: 'Key', field: 'cipher', widthGrow: 2, formatter: c => `<span class="pl-key">${esc(c.getValue())}</span>` },
@@ -222,7 +236,7 @@ window.GXPL = (function () {
         });
     }
 
-    const reload = () => table && table.setData('{{ route('playlists.data') }}');
+    const reload = () => table && table.setData(dataUrl());
 
     async function openCreate() {
         $('pl-name').value = ''; $('pl-iplock').value = ''; $('pl-chstart').value = '100';
