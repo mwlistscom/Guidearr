@@ -368,8 +368,61 @@ window.GXP = (function () {
             if (ok && data.msgid) openFeed(data.msgid, name);
         }
 
+        // Build the delete warning. Playlist channels are pointers into a provider store, so a
+        // delete can take whole playlists with it — never ask for confirmation without saying which.
+        function delWarning(name, imp) {
+            const gone = (imp && imp.deleted) || [];
+            const kept = (imp && imp.affected) || [];
+            const list = (rows, fmt) => {
+                const out = rows.slice(0, 12).map(fmt);
+                if (rows.length > 12) out.push('  • …and ' + (rows.length - 12) + ' more');
+                return out.join('\n');
+            };
+
+            let msg = 'Delete provider "' + name + '"?';
+
+            if (gone.length) {
+                msg += '\n\nThis will also PERMANENTLY DELETE ' + gone.length + ' playlist'
+                     + (gone.length === 1 ? ' that has' : 's that have') + '\nno other source:\n'
+                     + list(gone, p => '  • ' + p.name);
+            }
+
+            if (kept.length) {
+                msg += '\n\n' + (kept.length === 1 ? 'This playlist keeps' : 'These ' + kept.length + ' playlists keep')
+                     + ' working, but will change:\n'
+                     + list(kept, p => {
+                         if (!p.others) return '  • ' + p.name + ' (loses its guide source; keeps all channels)';
+                         const loses = 'loses this provider\'s channels'
+                                     + (p.guide ? ' and its guide source' : '');
+                         const remain = p.others + ' other provider'
+                                      + (p.others === 1 ? ' remains' : 's remain');
+                         return '  • ' + p.name + ' (' + loses + '; ' + remain + ')';
+                     });
+            }
+
+            if (gone.length) msg += '\n\nThis cannot be undone.';
+
+            return msg;
+        }
+
         async function del(id, name) {
-            if (!confirm('Delete provider "' + name + '"?')) return;
+            // Check the blast radius first. J() swallows an HTTP error and fetch() throws on a
+            // network one — both must abort, because falling back to a bare "Delete provider?"
+            // would confirm a delete that silently takes playlists with it.
+            let res;
+            try {
+                res = await J('/providers/' + id + '/delete-impact');
+            } catch (e) {
+                alert('Could not reach the server to check what this delete would affect.\nNothing was deleted — please try again.');
+                return;
+            }
+            if (!res.ok) {
+                alert('Could not check what this delete would affect (HTTP ' + res.status + ').\nNothing was deleted — please try again.');
+                return;
+            }
+
+            if (!confirm(delWarning(name, res.data))) return;
+
             const { ok, data } = await J('/providers/' + id, 'DELETE');
             if (!ok) { alert((data && data.message) || 'Could not delete provider.'); return; }
             if (Number(browseProvider) === Number(id)) closeBrowse();

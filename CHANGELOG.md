@@ -7,6 +7,32 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Changed**
+- **Deleting a provider now takes the playlists it was the only source for with it, and says so
+  first.** Playlist channels are only *pointers* into a provider store, so deleting a provider left
+  its playlists alive but serving nothing — a wall of *"(missing channel)"* rows, with nothing
+  anywhere to say why. A playlist whose only source was that provider is now deleted alongside it.
+  The confirmation is no longer a bare *"Delete provider?"*: it names every playlist that will be
+  deleted, and separately every playlist that survives in a changed state, before anything happens.
+  A playlist another provider still feeds is **never** deleted — it keeps its ordering, renames and
+  group flags and simply loses this provider's channels, exactly as it does when a provider drops a
+  channel on a normal refresh. A playlist that used the provider only as its guide (EPG) source is
+  likewise kept; it just loses the guide.
+  If the impact check cannot be reached, the delete is refused rather than falling back to the old
+  unqualified prompt — you are never asked to confirm a delete whose blast radius is unknown.
+
+**Fixed**
+- **A deleted provider no longer leaves dangling rows behind.** `playlist_providers.provider_id` is
+  a bare indexed column and `playlists.guide_provider_id` is an unconstrained nullable — neither has
+  a foreign key, so nothing cleaned them up. Surviving playlists now have the pivot row dropped and
+  a guide reference cleared as part of the delete. (Checked on this install first: **0** orphaned
+  pivot rows and **0** dangling guide references today, so there is nothing to repair — this only
+  stops new ones.)
+
+---
+
 ## v1.23.20 — A provider that saves even when its server misbehaves · 2026-09-05
 
 **Fixed**
