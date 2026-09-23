@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\DB;
 
 class Provider extends Model
 {
@@ -84,6 +85,78 @@ class Provider extends Model
     public function playlists(): BelongsToMany
     {
         return $this->belongsToMany(Playlist::class, 'playlist_providers');
+    }
+
+    /**
+     * What deleting this provider would do to its owner's playlists.
+     *
+     * Playlist channels are only POINTERS into a provider store, so removing a provider takes its
+     * channels with it. Split the holders in two:
+     *
+     *  - 'deleted'  — playlists this provider is the ONLY content source for. Every pointer they
+     *                 hold is into this store, so they would be left serving nothing at all; they
+     *                 are deleted alongside it rather than left as a wall of "(missing channel)".
+     *  - 'affected' — playlists another provider still feeds. They survive with their ordering,
+     *                 renames and group flags intact and merely lose this provider's channels
+     *                 (the same reconcile the refresh path already does), and/or their guide
+     *                 source. Never delete one of these: the user's curation of the other
+     *                 providers' channels is not this provider's to throw away.
+     *
+     * A playlist that uses this provider ONLY as its guide (EPG) source is always 'affected' —
+     * losing an EPG is not losing the channels.
+     */
+    public function playlistDeleteImpact(): array
+    {
+        $holders = $this->playlists()
+            ->orderBy('playlists.id')
+            ->get(['playlists.id', 'playlists.name', 'playlists.guide_provider_id']);
+
+        // How many OTHER providers each holder still has. A holder missing from this map has none.
+        $others = DB::table('playlist_providers')
+            ->whereIn('playlist_id', $holders->pluck('id'))
+            ->where('provider_id', '!=', $this->id)
+            ->groupBy('playlist_id')
+            ->selectRaw('playlist_id, COUNT(*) as c')
+            ->pluck('c', 'playlist_id');
+
+        $deleted = [];
+        $affected = [];
+
+        foreach ($holders as $p) {
+            $n = (int) ($others[$p->id] ?? 0);
+
+            if ($n === 0) {
+                $deleted[] = ['id' => (int) $p->id, 'name' => (string) $p->name];
+
+                continue;
+            }
+
+            $affected[] = [
+                'id' => (int) $p->id,
+                'name' => (string) $p->name,
+                'others' => $n,
+                'guide' => (int) $p->guide_provider_id === (int) $this->id,
+            ];
+        }
+
+        // Playlists that reference this provider ONLY as their guide source — they hold no channel
+        // pointers into it at all, so they just lose their EPG.
+        $guideOnly = Playlist::where('user_id', $this->user_id)
+            ->where('guide_provider_id', $this->id)
+            ->whereNotIn('id', $holders->pluck('id'))
+            ->orderBy('id')
+            ->get(['id', 'name']);
+
+        foreach ($guideOnly as $p) {
+            $affected[] = [
+                'id' => (int) $p->id,
+                'name' => (string) $p->name,
+                'others' => 0,
+                'guide' => true,
+            ];
+        }
+
+        return ['deleted' => $deleted, 'affected' => $affected];
     }
 
     public function feedLogs(): HasMany

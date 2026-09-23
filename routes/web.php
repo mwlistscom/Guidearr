@@ -107,6 +107,7 @@ Route::middleware(['auth', 'verified', 'activity.touch'])->group(function () {
     Route::post('providers', [ProviderController::class, 'store'])->name('providers.store');
     Route::get('providers/{provider}', [ProviderController::class, 'show'])->name('providers.show');
     Route::put('providers/{provider}', [ProviderController::class, 'update'])->name('providers.update');
+    Route::get('providers/{provider}/delete-impact', [ProviderController::class, 'deleteImpact'])->name('providers.delete-impact');
     Route::delete('providers/{provider}', [ProviderController::class, 'destroy'])->name('providers.destroy');
     Route::post('providers/{provider}/toggle', [ProviderController::class, 'toggle'])->name('providers.toggle');
     Route::patch('providers/{provider}/cell', [ProviderController::class, 'updateCell'])->name('providers.cell');

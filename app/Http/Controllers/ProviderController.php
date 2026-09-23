@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Playlist;
 use App\Models\Provider;
 use App\Models\FeedQueue;
 use App\Models\FeedLog;
@@ -12,6 +13,7 @@ use App\Services\XtreamCredentialMigrator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class ProviderController extends Controller
@@ -199,12 +201,52 @@ class ProviderController extends Controller
             && ($data['url'] ?? null) !== $provider->url;
     }
 
+    /**
+     * Preview for the grid's delete confirmation: which playlists this delete would take with it,
+     * and which would survive in a changed state. Read-only — the UI refuses to proceed if this
+     * fails, so the user is never asked to confirm a delete whose blast radius is unknown.
+     */
+    public function deleteImpact(Provider $provider)
+    {
+        $this->authorizeOwner($provider);
+
+        return response()->json([
+            'name' => $provider->name,
+        ] + $provider->playlistDeleteImpact());
+    }
+
     public function destroy(Provider $provider)
     {
         $this->authorizeOwner($provider);
-        $provider->delete();
 
-        return response()->json(['message' => 'Provider deleted.']);
+        $impact = $provider->playlistDeleteImpact();
+
+        DB::transaction(function () use ($provider, $impact) {
+            // One at a time, as models, so Playlist::deleting fires and unlinks each SQLite
+            // pointer store — a mass delete on the query builder would leave the files orphaned.
+            foreach ($impact['deleted'] as $row) {
+                Playlist::where('id', $row['id'])->first()?->delete();
+            }
+
+            // Survivors must not be left pointing at a provider that no longer exists. There is no
+            // FK on either column (playlist_providers.provider_id is a bare indexed column, and
+            // guide_provider_id is nullable with no constraint), so nothing cleans these up for us.
+            DB::table('playlist_providers')
+                ->where('provider_id', $provider->id)
+                ->delete();
+
+            Playlist::where('user_id', $provider->user_id)
+                ->where('guide_provider_id', $provider->id)
+                ->update(['guide_provider_id' => null]);
+
+            $provider->delete();
+        });
+
+        return response()->json([
+            'message' => 'Provider deleted.',
+            'deleted_playlists' => $impact['deleted'],
+            'affected_playlists' => $impact['affected'],
+        ]);
     }
 
     /** Inline single-cell edit from the grid (safe text fields only). */
