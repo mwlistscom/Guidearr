@@ -111,6 +111,18 @@
     .gx-btn.secondary { background:#26272b; color:#e6e7ea; border:1px solid rgba(255,255,255,.14); }
     .gx-btn:hover { filter:brightness(1.06); }
     .gx-err { color:#f87171; font-size:.85rem; min-height:1.1rem; margin-top:.3rem; }
+    .gx-btn.danger-btn { background:#dc2626; color:#fff; }
+    .gx-btn.danger-btn:hover { background:#ef4444; }
+    .gx-del p { font-size:.88rem; margin:0 0 .45rem; }
+    .gx-del p.lead { color:#aab; }
+    .gx-del ul { list-style:none; margin:0 0 1rem; padding:0; border-radius:.5rem; overflow:hidden; }
+    .gx-del li { font-size:.88rem; padding:.4rem .65rem; background:rgba(255,255,255,.04);
+        border-bottom:1px solid rgba(255,255,255,.06); }
+    .gx-del li:last-child { border-bottom:none; }
+    .gx-del ul.gone li { background:rgba(248,113,113,.10); color:#fecaca; }
+    .gx-del li .sub { display:block; font-size:.76rem; color:#9aa; margin-top:.1rem; }
+    .gx-del .kind { font-weight:800; color:#e6e7ea; }
+    .gx-del .warn { color:#f87171; font-weight:700; margin-top:.2rem; }
     .gx-log { max-height:22rem; overflow:auto; font:.8rem/1.5 ui-monospace,monospace; }
     .gx-log .e { padding:.45rem .2rem; border-bottom:1px solid rgba(255,255,255,.07); }
     .gx-log .t { color:#9aa; }
@@ -170,6 +182,19 @@
 
 {{-- The channel/group browser markup lives in providers/_browser.blade.php so it can
      render full-width below the page rows. Include it once on any page that uses this grid. --}}
+
+{{-- Delete-provider confirmation. Built from /providers/{id}/delete-impact so it can name
+     every playlist that goes with the provider before anything is touched. --}}
+<div class="gx-overlay" id="gx-del-overlay">
+    <div class="gx-modal">
+        <h2>Delete provider</h2>
+        <div class="gx-del" id="gx-del-body"></div>
+        <div class="gx-modal-actions">
+            <button class="gx-btn secondary" onclick="GXP.closeDelete()">Cancel</button>
+            <button class="gx-btn danger-btn" id="gx-del-btn" onclick="GXP.runDelete()">Delete</button>
+        </div>
+    </div>
+</div>
 
 {{-- Log overlay --}}
 <div class="gx-overlay" id="gx-log-overlay">
@@ -368,47 +393,79 @@ window.GXP = (function () {
             if (ok && data.msgid) openFeed(data.msgid, name);
         }
 
-        // Build the delete warning. Playlist channels are pointers into a provider store, so a
-        // delete can take whole playlists with it — never ask for confirmation without saying which.
-        function delWarning(name, imp) {
+        // ----- delete provider (HTML dialog, built from the server's impact preview) -----
+        let delFn = null;
+
+        // Rows for the "these go too" / "these change" lists. Names are provider-supplied, so esc().
+        function delList(rows, gone) {
+            return '<ul class="' + (gone ? 'gone' : '') + '">'
+                 + rows.map(p => {
+                     if (gone) return '<li>' + esc(p.name) + '</li>';
+                     const loses = p.others
+                         ? 'loses this provider\'s channels' + (p.guide ? ' and its guide source' : '')
+                           + ' — ' + p.others + ' other provider' + (p.others === 1 ? ' remains' : 's remain')
+                         : 'loses its guide source — keeps all its channels';
+                     return '<li>' + esc(p.name) + '<span class="sub">' + loses + '</span></li>';
+                 }).join('')
+                 + '</ul>';
+        }
+
+        function openDelete(id, name, imp) {
             const gone = (imp && imp.deleted) || [];
             const kept = (imp && imp.affected) || [];
-            const list = (rows, fmt) => {
-                const out = rows.slice(0, 12).map(fmt);
-                if (rows.length > 12) out.push('  • …and ' + (rows.length - 12) + ' more');
-                return out.join('\n');
-            };
 
-            let msg = 'Delete provider "' + name + '"?';
+            let html = '<p class="lead">This will permanently delete:</p>'
+                     + '<ul class="gone"><li><span class="kind">Provider</span> — ' + esc(name) + '</li></ul>';
 
             if (gone.length) {
-                msg += '\n\nThis will also PERMANENTLY DELETE ' + gone.length + ' playlist'
-                     + (gone.length === 1 ? ' that has' : 's that have') + '\nno other source:\n'
-                     + list(gone, p => '  • ' + p.name);
+                html += '<p class="lead">…and ' + (gone.length === 1 ? 'this playlist, which has' : 'these '
+                      + gone.length + ' playlists, which have') + ' no other source:</p>'
+                      + delList(gone, true);
             }
 
             if (kept.length) {
-                msg += '\n\n' + (kept.length === 1 ? 'This playlist keeps' : 'These ' + kept.length + ' playlists keep')
-                     + ' working, but will change:\n'
-                     + list(kept, p => {
-                         if (!p.others) return '  • ' + p.name + ' (loses its guide source; keeps all channels)';
-                         const loses = 'loses this provider\'s channels'
-                                     + (p.guide ? ' and its guide source' : '');
-                         const remain = p.others + ' other provider'
-                                      + (p.others === 1 ? ' remains' : 's remain');
-                         return '  • ' + p.name + ' (' + loses + '; ' + remain + ')';
-                     });
+                html += '<p class="lead">' + (kept.length === 1 ? 'This playlist is kept' : 'These '
+                      + kept.length + ' playlists are kept') + ', but will change:</p>'
+                      + delList(kept, false);
             }
 
-            if (gone.length) msg += '\n\nThis cannot be undone.';
+            if (!gone.length && !kept.length) {
+                html += '<p class="lead">No playlists use this provider.</p>';
+            }
 
-            return msg;
+            html += '<p class="warn">This cannot be undone.</p>';
+
+            $('gx-del-body').innerHTML = html;
+            $('gx-del-btn').textContent = gone.length
+                ? 'Delete provider + ' + gone.length + ' playlist' + (gone.length === 1 ? '' : 's')
+                : 'Delete provider';
+            delFn = () => doDelete(id, gone.length);
+            $('gx-del-overlay').classList.add('show');
+        }
+
+        const closeDelete = () => { $('gx-del-overlay').classList.remove('show'); delFn = null; };
+
+        async function runDelete() { const fn = delFn; closeDelete(); if (fn) await fn(); }
+
+        async function doDelete(id, goneCount) {
+            const { ok, data } = await J('/providers/' + id, 'DELETE');
+            if (!ok) { alert((data && data.message) || 'Could not delete provider.'); return; }
+            if (Number(browseProvider) === Number(id)) closeBrowse();
+
+            // The playlists this took with it live on a DIFFERENT page, which wire:navigate may
+            // serve from its cache — so mark the list stale for whenever it is next shown, and
+            // refresh it outright if it happens to be on this page already.
+            if ((data && data.deleted_playlists || []).length || goneCount) {
+                try { sessionStorage.setItem('gx-playlists-stale', String(Date.now())); } catch (e) {}
+                if (window.GXPL && window.GXPL.reload) window.GXPL.reload();
+            }
+            reload();
         }
 
         async function del(id, name) {
             // Check the blast radius first. J() swallows an HTTP error and fetch() throws on a
-            // network one — both must abort, because falling back to a bare "Delete provider?"
-            // would confirm a delete that silently takes playlists with it.
+            // network one — both must abort, because a delete that silently takes playlists with
+            // it must never be confirmed against an unknown impact.
             let res;
             try {
                 res = await J('/providers/' + id + '/delete-impact');
@@ -421,12 +478,7 @@ window.GXP = (function () {
                 return;
             }
 
-            if (!confirm(delWarning(name, res.data))) return;
-
-            const { ok, data } = await J('/providers/' + id, 'DELETE');
-            if (!ok) { alert((data && data.message) || 'Could not delete provider.'); return; }
-            if (Number(browseProvider) === Number(id)) closeBrowse();
-            reload();
+            openDelete(id, name, res.data);
         }
 
         // ----- live feed/log overlay (polls feed_logs by msgid) -----
@@ -790,7 +842,7 @@ window.GXP = (function () {
             }
         }
 
-        return { init, onInput, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, openLog, closeLog, openBrowse, openGuide, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse, reloadGroups, toggleAddGroup, addGroup, openEditChannel, cePreview, closeEditChannel, saveEditChannel };
+        return { init, onInput, reload, syncType, openAdd, openEdit, closeForm, save, toggle, saveCell, refresh, del, closeDelete, runDelete, openLog, closeLog, openBrowse, openGuide, closeBrowse, saveChannel, delChannel, toggleAddChannel, addChannel, reloadBrowse, reloadGroups, toggleAddGroup, addGroup, openEditChannel, cePreview, closeEditChannel, saveEditChannel };
     })();
 
     // Bind document-level listeners once; they call through window.GXP so the latest code always runs.

@@ -227,4 +227,44 @@ class ProviderDeleteCascadeTest extends TestCase
         $this->assertNotNull(Provider::find($prov->id));
         $this->assertNotNull(Playlist::find($pl->id));
     }
+
+    // ---- the confirmation UI ---------------------------------------------------------------
+
+    public function test_the_providers_page_confirms_in_a_dialog_not_a_native_confirm(): void
+    {
+        $html = $this->actingAs($this->user())->get('/providers')->assertOk()->getContent();
+
+        $this->assertStringContainsString('id="gx-del-overlay"', $html, 'the delete dialog must be on the page');
+        $this->assertStringContainsString('id="gx-del-body"', $html, 'it needs a body to list the names into');
+        $this->assertStringNotContainsString("confirm('Delete provider", $html, 'a native confirm cannot list the playlists');
+    }
+
+    /**
+     * Drift guard. A provider delete removes playlists that live on a DIFFERENT page, which
+     * wire:navigate may later restore from its cache — so the delete leaves a sessionStorage
+     * marker and the playlists grid busts its data cache when it sees one. The two halves are in
+     * unrelated files and are useless apart: if either key is renamed, a deleted playlist goes on
+     * being listed and nothing else complains.
+     */
+    public function test_the_delete_and_the_playlists_grid_agree_on_the_staleness_marker(): void
+    {
+        $providers = file_get_contents(resource_path('views/providers/_grid.blade.php'));
+        $playlists = file_get_contents(resource_path('views/playlists/_grid.blade.php'));
+
+        $this->assertStringContainsString(
+            "sessionStorage.setItem('gx-playlists-stale'",
+            $providers,
+            'deleting a provider must mark the playlist list stale'
+        );
+        $this->assertStringContainsString(
+            "sessionStorage.getItem('gx-playlists-stale'",
+            $playlists,
+            'the playlists grid must honour the marker the provider delete leaves'
+        );
+        $this->assertStringContainsString(
+            'ajaxURL: dataUrl()',
+            $playlists,
+            'the grid must load its rows through the cache-busting url, or the marker does nothing'
+        );
+    }
 }
