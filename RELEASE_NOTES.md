@@ -1,32 +1,70 @@
-# v1.23.20 — A provider that saves even when its server misbehaves
+# v1.23.21 — A provider delete that doesn't leave dead playlists behind
 
-One fix, for a failure that looked like Guidearr rejecting perfectly good credentials.
+Deleting a provider used to quietly break playlists. It no longer does, and it tells you what it
+is about to do first.
+
+---
+
+## Changed
+
+### Deleting a provider now takes the playlists that depended on it
+
+A playlist does not hold copies of channels. It holds *pointers* into the provider the channels
+came from, plus your own work on top — the ordering, the renames, which groups are switched off.
+
+So when a provider was deleted, its playlists did not fail. They stayed, still enabled, still
+serving, but every channel that came from that provider became a *"(missing channel)"* row that
+plays nothing. A playlist backed by only that one provider became an empty shell that still
+answered its URL. Nothing anywhere said why, and the confirmation you had clicked said only
+*"Delete provider?"* — it never mentioned playlists at all.
+
+Now, a playlist whose **only** source was that provider is deleted along with it, channel-list file
+included.
+
+### A playlist another provider still feeds is never deleted
+
+This is the more important half. If a playlist draws on two or three providers, deleting one of
+them leaves the playlist alone. It keeps working, it keeps your ordering and renames and group
+settings, and it simply loses the channels that came from the provider you removed — the same
+thing that already happens when a provider drops a channel during a normal refresh.
+
+Your curation of the *other* providers' channels is not something a provider delete has any
+business throwing away.
+
+A playlist that used the provider only as its **guide (EPG) source** is kept too. Losing a guide is
+not losing your channels; the playlist carries on and the guide source is simply cleared.
+
+### The confirmation is a real dialog that names everything
+
+Instead of a browser pop-up, you get a dialog listing exactly what is going:
+
+- the provider, by name
+- every playlist that will be deleted with it
+- every playlist that is **kept**, and what each one loses
+
+The confirm button says what it will do — *"Delete provider + 2 playlists"* — rather than just
+*OK*. If the check of what would be affected cannot be completed, the delete is refused outright
+rather than falling back to a vague prompt. You are never asked to approve a deletion whose extent
+is unknown.
+
+### The playlist list refreshes afterwards
+
+The playlists removed by a delete are shown on a different page, which the app can restore from its
+cache — so a playlist that no longer existed could still appear in the list. It is now refreshed
+after a delete, so what you see is what is actually there.
 
 ---
 
 ## Fixed
 
-### An Xtream server could stop its own provider being saved
+### A deleted provider no longer leaves dangling references behind
 
-When you add or edit an Xtream provider, Guidearr logs in to its `player_api` and keeps a couple
-of details the server reports back — among them its timezone, used to line the guide up with your
-local time.
+The link rows tying playlists to their providers, and a playlist's chosen guide source, had no
+database constraint tidying them up. A deleted provider left both pointing at something that no
+longer existed. Surviving playlists now have those cleared as part of the delete.
 
-That timezone was written into the database exactly as the server sent it, into a field sized for
-a timezone. A server answering with something much longer than a timezone therefore broke the
-save: the record could not be written, and you were shown a failure while your username and
-password were perfectly fine. Nothing in the message pointed at the real cause, because the login
-itself had succeeded.
-
-It happened on the deployment this was found on, eight times in one day.
-
-An unusable timezone is now simply discarded. The provider saves, the login result is unchanged,
-and all that is lost is the guide-time offset — which is optional, and far cheaper to lose than
-the provider itself.
-
-Genuine timezones are untouched: the longest real one in existence is well within the limit, and
-the limit is counted in characters rather than bytes, so a timezone written in a non-Latin script
-is not thrown away for being "too long" when it is not.
+Existing installs are not affected retroactively and there is nothing to repair — this stops new
+ones being created.
 
 ---
 
@@ -40,8 +78,11 @@ docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler
 ```
 
-No migration, no configuration change.
+No migration and no configuration change.
 
-If a provider of yours has been failing to save with a database error, it should save now. If one
-saved *before* with an odd timezone, nothing about it changes — the next refresh simply re-reads
-the value and discards it if it is still unusable.
+**This release does not change the image** — no `Dockerfile`, dependency or frontend-asset changes
+are involved, so a plain `git pull` is genuinely enough here. The `--build` above is kept because it
+is always safe and costs only a moment when there is nothing to rebuild.
+
+If you have providers you have been avoiding deleting because you were not sure what would happen
+to your playlists, the new dialog will tell you before anything is touched — and you can cancel.
