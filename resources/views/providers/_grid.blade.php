@@ -456,7 +456,11 @@ window.GXP = (function () {
             // serve from its cache — so mark the list stale for whenever it is next shown, and
             // refresh it outright if it happens to be on this page already.
             if ((data && data.deleted_playlists || []).length || goneCount) {
-                try { sessionStorage.setItem('gx-playlists-stale', String(Date.now())); } catch (e) {}
+                const stamp = String(Date.now());
+                // This tab (or the next page it shows): a per-tab marker.
+                try { sessionStorage.setItem('gx-playlists-stale', stamp); } catch (e) {}
+                // Every OTHER tab: a localStorage write raises a 'storage' event there.
+                try { localStorage.setItem('gx-playlists-changed', stamp); } catch (e) {}
                 if (window.GXPL && window.GXPL.reload) window.GXPL.reload();
             }
             reload();

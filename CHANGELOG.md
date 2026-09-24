@@ -7,6 +7,19 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Changed**
+- **The playlist list now refreshes in other tabs too.** The refresh added in v1.23.21 used
+  `sessionStorage`, which is per-tab — so a Playlists page left open in a *second* tab went on
+  listing a playlist a provider delete had already removed, until it was reloaded by hand. The
+  delete now also writes a `localStorage` key, which raises a `storage` event in every other tab of
+  the same origin (never in the one that wrote it, which is why the per-tab marker is still needed
+  for the deleting tab). Each other tab stamps its own marker from the event and refetches through
+  the same cache-busting path. Unrelated keys and a `localStorage.clear()` are ignored.
+
+---
+
 ## v1.23.21 — A provider delete that doesn't leave dead playlists behind · 2026-09-23
 
 **Changed**

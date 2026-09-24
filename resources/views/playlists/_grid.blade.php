@@ -392,6 +392,17 @@ if (!window.__GXPL_BOUND) {
     window.__GXPL_BOUND = true;
     document.addEventListener('livewire:navigated', () => window.GXPL && window.GXPL.init());
     document.addEventListener('DOMContentLoaded', () => window.GXPL && window.GXPL.init());
+
+    // A provider delete in ANOTHER tab can remove playlists outright. A localStorage write fires a
+    // 'storage' event in every other tab of this origin — never in the one that wrote it, which is
+    // why the writing tab still refreshes itself separately. The value is just a timestamp; the
+    // event is the signal. Stamping the per-tab marker first routes the refetch through dataUrl(),
+    // so this tab busts its own cached row data on the way.
+    window.addEventListener('storage', e => {
+        if (e.key !== 'gx-playlists-changed' || !window.GXPL) return;
+        try { sessionStorage.setItem('gx-playlists-stale', e.newValue || String(Date.now())); } catch (err) {}
+        window.GXPL.reload();
+    });
 }
 console.log('GXPL playlists {{ config('guidearr.version') }} loaded');
 window.GXPL.init();
