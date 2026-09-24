@@ -267,4 +267,33 @@ class ProviderDeleteCascadeTest extends TestCase
             'the grid must load its rows through the cache-busting url, or the marker does nothing'
         );
     }
+
+    /**
+     * The same drift guard for the CROSS-TAB half. sessionStorage is per-tab, so a Playlists page
+     * open in another tab never sees the marker above; a localStorage write raises a 'storage'
+     * event in every other tab instead. Both halves are again in unrelated files and useless
+     * apart — rename the key on either side and the other tab silently goes on listing a playlist
+     * that no longer exists.
+     */
+    public function test_a_provider_delete_signals_other_tabs_to_refresh(): void
+    {
+        $providers = file_get_contents(resource_path('views/providers/_grid.blade.php'));
+        $playlists = file_get_contents(resource_path('views/playlists/_grid.blade.php'));
+
+        $this->assertStringContainsString(
+            "localStorage.setItem('gx-playlists-changed'",
+            $providers,
+            'the delete must broadcast to other tabs, not only mark its own'
+        );
+        $this->assertStringContainsString(
+            "addEventListener('storage'",
+            $playlists,
+            'the playlists grid must listen for the cross-tab signal'
+        );
+        $this->assertStringContainsString(
+            "e.key !== 'gx-playlists-changed'",
+            $playlists,
+            'the listener must react to the key the delete actually writes'
+        );
+    }
 }
