@@ -232,7 +232,9 @@
                 fetch(form.action, {
                     method: 'POST',
                     headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-                    body: new FormData(form)
+                    // url-encoded, not multipart: the form has no file inputs, and nginx
+                    // refuses multipart bodies while the php2shell stopgap is in place.
+                    body: new URLSearchParams(new FormData(form))
                 })
                 .then(function (r) {
                     return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; });

@@ -9,6 +9,16 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ## Unreleased
 
+**Security**
+- **Stopgap for php2shell (CVE-2026-109618 / CVE-2026-109619, CVSS v4 9.2).** PHP before 8.4.27
+  can be exploited, unauthenticated, through a crafted `multipart/form-data` body — PHP parses it
+  before any application code or auth check runs, so a clean app is not protected. Until the image
+  is rebuilt on a patched PHP, the bundled nginx answers **every** multipart request with `415`,
+  and the session upload-progress handler (one of the two exploit paths) is turned off via
+  `PHP_VALUE` and in `docker/php.ini`. Registration now posts URL-encoded instead of multipart so
+  sign-up keeps working; **the admin branding upload is unavailable while the block is in place**.
+  The block comes out once the app container's `php -v` reports 8.4.27 or later.
+
 **Changed**
 - **The playlist list now refreshes in other tabs too.** The refresh added in v1.23.21 used
   `sessionStorage`, which is per-tab — so a Playlists page left open in a *second* tab went on
