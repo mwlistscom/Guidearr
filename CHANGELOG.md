@@ -7,6 +7,32 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **Someone who registers your email address first can no longer share your account.** An
+  account whose email was never verified could be claimed by signing in with Google or Facebook
+  under the same address. The account was then linked, but kept the password the unverified
+  registrant had chosen, so they could sign in to it too. Social sign-in now treats that account
+  as the address owner's alone: the earlier password, two-factor, passkeys, connected providers,
+  remember-me token and open sessions are removed first (set a password later through "Forgot
+  password"). A Google address that Google itself has not verified is no longer accepted.
+- **Changing or resetting your password now signs out your other sessions.** Before, a
+  password change left every other browser and every remember-me cookie signed in, so it did
+  nothing against someone who already had your password. The browser you change it from stays
+  signed in.
+- **The admin Environment page no longer puts secret values in the page.** `APP_KEY`, the
+  database and mail passwords and other secrets were sent to the browser inside masked fields:
+  hidden on screen, but readable in the page source. Secret fields are now empty, and leaving
+  one blank keeps its current value. A secret cannot be cleared to empty from this page.
+- **Deleting a user now removes their playlist files too.** Only their provider data files were
+  cleaned up; each playlist's file stayed on disk.
+- **A verification code stops working after 5 wrong guesses.** Request a new code to carry on.
+  The wait between new codes still applies.
+- **"Forgot password" no longer reveals whether an email address has an account.** It said
+  "We can't find a user with that email address" for unknown addresses. Every request now gets
+  the same reply.
+
 ## v1.23.23 — Account security: reset links, admin two-factor, bans · 2026-10-21
 
 **Fixed**
