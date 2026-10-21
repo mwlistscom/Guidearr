@@ -7,6 +7,22 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **Security updates for PHP and build-time JavaScript dependencies.** `composer audit` flagged
+  seven advisories; six are cleared by a narrow update (`-w`, not `-W`):
+  `symfony/http-foundation` 8.1.6 → 8.1.9 (CVE-2026-108082 — a ReDoS in the `Cache-Control`
+  request header, **reachable by any unauthenticated request**), `symfony/yaml` 8.1.0 → 8.1.9,
+  `league/commonmark` 2.10.0 → 2.10.4, `league/flysystem` 3.34.0 → 3.36.0, `phpseclib/phpseclib`
+  3.0.55 → 3.0.57, plus their direct dependencies. `laravel/framework` is deliberately left at
+  13.13.0: its one advisory (CVE-2026-102279) is an XSS on the debug page, which a production
+  install (`APP_DEBUG=false`) never renders, and a framework bump is a far larger change.
+  `npm audit` reported six (two critical) — all in the asset **build** toolchain, never in what
+  is served: vite 8.0.16 → 8.1.6 (the smallest fixed release; rolldown 1.0 → 1.1 comes with it),
+  concurrently, shell-quote, postcss, nanoid, source-map-js. The compiled JavaScript is
+  byte-identical to before.
+
 ## v1.23.22 — PHP 8.4.27: the php2shell fix · 2026-10-21
 
 **Security**
