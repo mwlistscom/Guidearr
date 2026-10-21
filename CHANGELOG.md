@@ -10,6 +10,12 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 ## Unreleased
 
 **Fixed**
+- **The admin login now asks for your two-factor code.** It checked only the password and then
+  logged in on the same session as the normal login, so an admin who had turned on two-factor was
+  protected at `/login` but not at the admin login page — a phished or reused password alone was a
+  full admin session. An admin with two-factor enabled is now sent to the same code challenge as
+  `/login`, and lands on the admin dashboard once it is accepted. Admins without two-factor log in
+  exactly as before.
 - **Password-reset links can no longer be pointed at someone else's site, and a visitor can no
   longer choose their own IP address.** The app trusted forwarded headers from *any* client, and
   built links from the host the request arrived with. So anyone could request a reset for any
