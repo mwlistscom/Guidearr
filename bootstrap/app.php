@@ -27,18 +27,21 @@ return Application::configure(basePath: dirname(__DIR__))
         // the request is authenticated by the signed_request HMAC instead.
         $middleware->validateCsrfTokens(except: ['data-deletion/facebook']);
 
-        // Honor X-Forwarded-* from a TLS-terminating reverse proxy (HAProxy/Traefik/Caddy/nginx).
-        // When the headers are absent (direct access) the real connection is used, so the app
-        // works the same way whether it's reached directly on :7979 or via a proxy — no switch.
-        // Default trusts all proxies (the app is only reachable through the proxy/internal net);
-        // set TRUSTED_PROXIES to a CSV of IPs/CIDRs to tighten.
+        // Only X-Forwarded-Proto is honoured, so a TLS-terminating proxy in front still reads as
+        // https. The other three are deliberately NOT trusted:
+        //
+        //  - X-Forwarded-For: the bundled nginx has already resolved the client address (its
+        //    real_ip block, against the trusted list in docker/real-ip.conf) and hands PHP the
+        //    result as REMOTE_ADDR. "Trusting" the header again here trusted the VISITOR: with
+        //    '*', Laravel treats REMOTE_ADDR as the proxy, so anyone could pick their own
+        //    $request->ip() — defeating every IP rate limit and the playlist IP lock.
+        //  - X-Forwarded-Host / -Port: links are built from APP_URL instead (AppServiceProvider),
+        //    because a client-chosen host ended up in password-reset emails — a reset link that
+        //    delivers the token to whoever sent the header.
         $proxies = trim((string) env('TRUSTED_PROXIES', '*'));
         $middleware->trustProxies(
             at: $proxies === '*' ? '*' : array_values(array_filter(array_map('trim', explode(',', $proxies)))),
-            headers: Request::HEADER_X_FORWARDED_FOR
-                | Request::HEADER_X_FORWARDED_HOST
-                | Request::HEADER_X_FORWARDED_PORT
-                | Request::HEADER_X_FORWARDED_PROTO,
+            headers: Request::HEADER_X_FORWARDED_PROTO,
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {

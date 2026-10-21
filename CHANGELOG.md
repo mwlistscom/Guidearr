@@ -10,6 +10,17 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 ## Unreleased
 
 **Fixed**
+- **Password-reset links can no longer be pointed at someone else's site, and a visitor can no
+  longer choose their own IP address.** The app trusted forwarded headers from *any* client, and
+  built links from the host the request arrived with. So anyone could request a reset for any
+  account — an admin's included — with `X-Forwarded-Host` (or simply `Host`) set to a server they
+  controlled, and the genuine reset email would carry that account's token to them; one click by
+  the victim was enough. The same trust let `X-Forwarded-For` set `$request->ip()` to anything,
+  which undid every per-IP rate limit (login, registration, password reset, the social sign-up
+  cap) and the playlist IP lock. Links are now always built from **`APP_URL`**, and only
+  `X-Forwarded-Proto` is still read from a proxy — the bundled nginx already resolves the real
+  client address before PHP sees the request. ⚠️ `APP_URL` must be the address your users
+  actually use: links in emails and pages now always point there.
 - **Security updates for PHP and build-time JavaScript dependencies.** `composer audit` flagged
   seven advisories; six are cleared by a narrow update (`-w`, not `-W`):
   `symfony/http-foundation` 8.1.6 → 8.1.9 (CVE-2026-108082 — a ReDoS in the `Cache-Control`
