@@ -69,12 +69,14 @@ Route::get('security/threat-feed/{token}', function (string $token) {
         ->header('Cache-Control', 'no-store');
 })->name('security.threat-feed');
 
+// No `auth`: registration signs nobody in (see App\Support\PendingRegistration), so the code
+// screen works from the session's pending sign-up as well as for a signed-in unverified user.
 Route::post('email/verify-code', [VerifyEmailCodeController::class, 'store'])
-    ->middleware(['auth', 'throttle:10,1'])
+    ->middleware(['throttle:10,1'])
     ->name('verification.code');
 
 Route::post('email/resend-code', [VerifyEmailCodeController::class, 'resend'])
-    ->middleware(['auth', 'throttle:10,1'])
+    ->middleware(['throttle:10,1'])
     ->name('verification.resend');
 
 Route::middleware(['auth', 'verified', 'activity.touch'])->group(function () {

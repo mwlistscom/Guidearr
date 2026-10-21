@@ -33,9 +33,12 @@ class RegistrationTest extends TestCase
             'password_confirmation' => 'password',
         ]);
 
+        // Registration signs nobody in (see RegistrationEnumerationTest): the account is
+        // created and waits for its emailed code.
         $response->assertSessionHasNoErrors()
-            ->assertRedirect(route('dashboard', absolute: false));
+            ->assertRedirect(route('login', absolute: false));
 
-        $this->assertAuthenticated();
+        $this->assertGuest();
+        $this->assertDatabaseHas('users', ['email' => 'test@example.com', 'email_verified_at' => null]);
     }
 }
