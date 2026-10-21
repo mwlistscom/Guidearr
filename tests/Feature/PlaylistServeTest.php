@@ -57,6 +57,40 @@ class PlaylistServeTest extends TestCase
         $this->assertStringContainsString('http://h/cnn.ts', $body);
     }
 
+    public function test_a_banned_owners_playlist_stops_serving(): void
+    {
+        // A ban used to lock only the web UI: every player kept pulling the list.
+        $u = User::factory()->create(['email_verified_at' => now()]);
+        $this->buildPlaylist($u);
+        $u->forceFill(['status' => 'banned'])->save();
+
+        $this->assertServesNothing('/m3u?key=serveKey1234');
+    }
+
+    public function test_an_email_ban_stops_serving_even_with_an_active_status(): void
+    {
+        $u = User::factory()->create(['email_verified_at' => now()]);
+        $this->buildPlaylist($u);
+        \App\Models\Ban::ban($u->email);
+
+        $this->assertServesNothing('/m3u?key=serveKey1234');
+    }
+
+    /**
+     * Read the body whichever way it came back: a playlist that serves is STREAMED, so
+     * getContent() on it is empty — and "does not contain the channel" would then pass
+     * against code that served it. The unknown-key answer is a plain response.
+     */
+    private function assertServesNothing(string $uri): void
+    {
+        $res = $this->get($uri)->assertOk();
+        $body = $res->baseResponse instanceof \Symfony\Component\HttpFoundation\StreamedResponse
+            ? $res->streamedContent()
+            : (string) $res->getContent();
+
+        $this->assertSame('#EXTM3U', trim($body), 'answered exactly like an unknown key');
+    }
+
     public function test_strm_serves_json(): void
     {
         $u = User::factory()->create(['email_verified_at' => now()]);

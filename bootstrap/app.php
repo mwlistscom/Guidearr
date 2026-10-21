@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // reset-link requests, reset submissions). Fortify covers only login/2FA/passkeys
         // and exposes no hook for the rest, so this rides the group and matches by route name.
         $middleware->appendToGroup('web', \App\Http\Middleware\ThrottleAuthEndpoints::class);
+        $middleware->appendToGroup('web', \App\Http\Middleware\EnsureAccountIsActive::class);
 
         // Facebook posts its data-deletion signed_request server-to-server (no session/CSRF token);
         // the request is authenticated by the signed_request HMAC instead.

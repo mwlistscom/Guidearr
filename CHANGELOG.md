@@ -10,6 +10,14 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 ## Unreleased
 
 **Fixed**
+- **A ban now actually ends access.** Account status was checked in exactly one place — the
+  password login — so a banned account kept any session it already had, was signed straight back
+  in by a remember-me cookie, or signed in with a passkey, and **its playlists kept serving**. With
+  `REGISTRATION_REQUIRES_APPROVAL` on, a pending account could reach the dashboard the same way.
+  Status and the email ban list are now checked on every request (a banned or pending session is
+  signed out, and its remember-me token cycled), on passkey sign-in, and when a playlist is served
+  — a banned owner's playlist answers exactly like an unknown key. A pending account can still
+  enter its email verification code, which is the one thing it is signed in to do.
 - **The admin login now asks for your two-factor code.** It checked only the password and then
   logged in on the same session as the normal login, so an admin who had turned on two-factor was
   protected at `/login` but not at the admin login page — a phished or reused password alone was a
