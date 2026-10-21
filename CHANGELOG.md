@@ -7,6 +7,16 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **The database now comes back after a reboot.** `docker-compose.yml` gave every service a
+  restart policy except MySQL. So after the host rebooted (or Docker restarted), everything else
+  came back up and the database didn't: every page and every playlist fetch failed until
+  someone ran `docker compose up -d` by hand. This affects every install since v1.23.14, when
+  the compose file was first tracked. Run `docker compose up -d` after pulling to apply it; the
+  database restarts once, for a few seconds.
+
 ## v1.23.25 — Sign-up no longer reveals which emails have an account · 2026-10-21
 
 **Fixed**
