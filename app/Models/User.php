@@ -67,6 +67,15 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     /**
+     * Mirror the column default (`status` is NOT NULL DEFAULT 'active'). Without it a freshly
+     * created model holds status = null in memory until it is reloaded, and canSignIn() — now
+     * checked on every request — would treat a brand-new active account as inactive.
+     */
+    protected $attributes = [
+        'status' => 'active',
+    ];
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -86,6 +95,21 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     /**
      * Get the user's initials
      */
+    /**
+     * May this account be signed in right now? The one rule every sign-in path and every
+     * already-signed-in request checks: active, and not on the ban list (which is keyed by
+     * email, so it can hold an address whose account status was never changed).
+     */
+    public function canSignIn(): bool
+    {
+        return $this->status === 'active' && ! $this->isBanned();
+    }
+
+    public function isBanned(): bool
+    {
+        return Ban::isBanned($this->email);
+    }
+
     public function initials(): string
     {
         return Str::of($this->name)

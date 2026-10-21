@@ -26,6 +26,7 @@ use Laravel\Fortify\Actions\PrepareAuthenticatedSession;
 use Laravel\Fortify\Contracts\RedirectsIfTwoFactorAuthenticatable;
 use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
+use Laravel\Passkeys\Passkeys;
 
 class FortifyServiceProvider extends ServiceProvider
 {
@@ -56,6 +57,13 @@ class FortifyServiceProvider extends ServiceProvider
      */
     private function configureAuthentication(): void
     {
+        // Passkey sign-in never reaches authenticateUsing() below, and the package allows every
+        // login unless a callback says otherwise — so a banned or pending account could sign
+        // straight in with a passkey. Apply the same rule.
+        Passkeys::authorizeLoginUsing(
+            fn (Request $request, $user): bool => $user instanceof User && $user->canSignIn(),
+        );
+
         Fortify::authenticateUsing(function (Request $request) {
             $user = User::where('email', $request->email)->first();
 

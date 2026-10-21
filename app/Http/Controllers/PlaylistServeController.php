@@ -182,6 +182,13 @@ class PlaylistServeController extends Controller
             return [null, $this->empty($format)];
         }
 
+        // A banned or disabled owner's playlists stop serving too — otherwise a ban only locked
+        // the web UI while every player kept pulling the list. Answered exactly like an unknown
+        // key, so the response does not reveal that the account exists.
+        if (! $playlist->user?->canSignIn()) {
+            return [null, $this->empty($format)];
+        }
+
         // Self-heal: if the per-playlist store FILE has gone missing (e.g. removed out-of-band),
         // rebuild it from the attached providers before serving rather than emitting an empty list.
         if (! PlaylistStore::existsFor($playlist->id)) {
