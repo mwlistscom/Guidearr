@@ -2,12 +2,12 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10, v1.23.11, v1.23.12, v1.23.13, v1.23.14, v1.23.15, v1.23.16, v1.23.17, v1.23.18, v1.23.19, v1.23.20, v1.23.21, v1.23.22 and v1.23.23.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10, v1.23.11, v1.23.12, v1.23.13, v1.23.14, v1.23.15, v1.23.16, v1.23.17, v1.23.18, v1.23.19, v1.23.20, v1.23.21, v1.23.22, v1.23.23 and v1.23.24.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
 
 ---
 
-## Unreleased
+## v1.23.24 — Account security, part two: social sign-in, sessions, secrets · 2026-10-21
 
 **Fixed**
 - **Someone who registers your email address first can no longer share your account.** An
