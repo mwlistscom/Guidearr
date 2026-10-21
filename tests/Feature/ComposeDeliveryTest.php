@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use Symfony\Component\Yaml\Yaml;
 use Tests\TestCase;
 
 /**
@@ -161,5 +162,18 @@ class ComposeDeliveryTest extends TestCase
             base_path('docker/migrate-compose.sh'),
             'existing installs need a way to carry their values across',
         );
+    }
+    /**
+     * The database shipped with no restart policy from v1.23.14 to v1.23.25, so after a host
+     * reboot the app, proxy and workers came back and MySQL did not.
+     */
+    public function test_every_service_comes_back_after_a_reboot(): void
+    {
+        $services = Yaml::parse($this->compose())['services'] ?? [];
+        $this->assertNotEmpty($services);
+
+        foreach ($services as $name => $service) {
+            $this->assertContains($service['restart'] ?? null, ['unless-stopped', 'always'], "service '{$name}' has no restart policy");
+        }
     }
 }

@@ -36,6 +36,10 @@ services:
     depends_on: [app]
   db:
     image: mysql:8.4
+    # Every service needs this, the database most of all: without it MySQL stays down after a
+    # host reboot (or a Docker restart) while the rest of the stack comes back, and every page
+    # and every playlist fetch fails until someone starts it by hand.
+    restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${DB_DATABASE:-tunarr}
       MYSQL_USER: ${DB_USERNAME:-tunarr}
