@@ -5,6 +5,8 @@ namespace Tests\Feature\Auth;
 use App\Models\SocialAccount;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Laravel\Socialite\Contracts\Provider;
 use Laravel\Socialite\Contracts\User as SocialiteUser;
 use Laravel\Socialite\Facades\Socialite;
@@ -166,5 +168,89 @@ class SocialLoginTest extends TestCase
             ->assertOk()
             ->assertSee('callback', false)
             ->assertSee('/data-deletion', false);
+    }
+
+    /** A real Socialite user (not a mock) so the raw payload — email_verified — is present. */
+    private function fakeGoogleRawUser(string $id, string $email, bool $emailVerified): void
+    {
+        $u = (new \Laravel\Socialite\Two\User)
+            ->setRaw(['sub' => $id, 'email' => $email, 'email_verified' => $emailVerified])
+            ->map(['id' => $id, 'email' => $email, 'name' => 'Owner', 'avatar' => null]);
+
+        $provider = Mockery::mock(Provider::class);
+        $provider->shouldReceive('redirectUrl')->andReturnSelf();
+        $provider->shouldReceive('user')->andReturn($u);
+        Socialite::shouldReceive('driver')->with('google')->andReturn($provider);
+    }
+
+    /**
+     * Pre-account-takeover: someone registers the victim's address with a password they know,
+     * can't verify it, and waits. When the real owner later uses "Continue with Google", the
+     * account must become the owner's alone — the squatter's password, 2FA, passkeys, linked
+     * providers and sessions all go.
+     */
+    public function test_social_sign_in_to_an_unverified_account_drops_the_registrants_credentials(): void
+    {
+        $this->enableGoogle();
+        config(['session.driver' => 'database']);   // the shipped default; sessions have an owner column
+        $squatted = User::factory()->withTwoFactor()->create(['email' => 'owner@example.com', 'email_verified_at' => null]);
+        $squatted->socialAccounts()->create(['provider' => 'facebook', 'provider_id' => 'FB-squatter']);
+        $squatted->passkeys()->create(['name' => 'squatter key', 'credential_id' => 'cred-1', 'credential' => []]);
+        DB::table('sessions')->insert([
+            'id' => 'squatter-session', 'user_id' => $squatted->id, 'ip_address' => '203.0.113.9',
+            'user_agent' => 'x', 'payload' => base64_encode('x'), 'last_activity' => time(),
+        ]);
+        $this->fakeGoogleUser('G-owner', 'owner@example.com');
+
+        $this->get('/auth/google/callback')->assertRedirect(route('dashboard'));
+
+        $user = $squatted->fresh();
+        $this->assertAuthenticatedAs($user);
+        $this->assertNull($user->password);
+        $this->assertNull($user->two_factor_secret);
+        $this->assertNull($user->two_factor_confirmed_at);
+        $this->assertNotNull($user->email_verified_at);
+        $this->assertSame(0, $user->passkeys()->count());
+        $this->assertSame(['google'], $user->socialAccounts()->pluck('provider')->all());
+        $this->assertDatabaseMissing('sessions', ['id' => 'squatter-session']);
+        $this->assertNotSame($squatted->remember_token, $user->remember_token);
+
+        // The squatter's password no longer signs in.
+        Auth::logout();
+        $this->post(route('login.store'), ['email' => 'owner@example.com', 'password' => 'password']);
+        $this->assertGuest();
+    }
+
+    public function test_social_sign_in_to_a_verified_account_keeps_its_credentials(): void
+    {
+        $this->enableGoogle();
+        $existing = User::factory()->create(['email' => 'kept@example.com']);
+        $hash = $existing->password;
+        $this->fakeGoogleUser('G-kept', 'kept@example.com');
+
+        $this->get('/auth/google/callback')->assertRedirect(route('dashboard'));
+
+        $this->assertSame($hash, $existing->fresh()->password);
+    }
+
+    public function test_an_address_google_has_not_verified_cannot_sign_in(): void
+    {
+        $this->enableGoogle();
+        $existing = User::factory()->create(['email' => 'victim@example.com']);
+        $this->fakeGoogleRawUser('G-unverified', 'victim@example.com', emailVerified: false);
+
+        $this->get('/auth/google/callback')->assertRedirect(route('login'))->assertSessionHasErrors('email');
+
+        $this->assertGuest();
+        $this->assertSame(0, $existing->socialAccounts()->count());
+    }
+
+    public function test_an_address_google_has_verified_signs_in(): void
+    {
+        $this->enableGoogle();
+        $this->fakeGoogleRawUser('G-verified', 'fine@example.com', emailVerified: true);
+
+        $this->get('/auth/google/callback')->assertRedirect(route('dashboard'));
+        $this->assertAuthenticated();
     }
 }

@@ -24,6 +24,13 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToGroup('web', \App\Http\Middleware\ThrottleAuthEndpoints::class);
         $middleware->appendToGroup('web', \App\Http\Middleware\EnsureAccountIsActive::class);
 
+        // A password change or reset ends every OTHER session and remember-me cookie for that
+        // account. Each session (and recaller cookie) carries a MAC of the password hash it signed
+        // in with; a mismatch signs it out. The request that changes the password stores the new
+        // hash, so the person changing it stays signed in. Accounts with no password (social-only)
+        // are skipped by the middleware itself.
+        $middleware->appendToGroup('web', \Illuminate\Session\Middleware\AuthenticateSession::class);
+
         // Facebook posts its data-deletion signed_request server-to-server (no session/CSRF token);
         // the request is authenticated by the signed_request HMAC instead.
         $middleware->validateCsrfTokens(except: ['data-deletion/facebook']);

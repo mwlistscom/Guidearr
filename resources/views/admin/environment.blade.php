@@ -46,7 +46,7 @@
 </style>
 
 <h1>Environment</h1>
-<p class="muted">Edit values from the application's <code>.env</code> file. A timestamped backup is written before every save and the config cache is cleared automatically.@if ($lastBackup) Last backup: <code>{{ $lastBackup }}</code>.@endif</p>
+<p class="muted">Edit values from the application's <code>.env</code> file. A timestamped backup is written before every save and the config cache is cleared automatically. Secret values are never shown — leave one blank to keep it.@if ($lastBackup) Last backup: <code>{{ $lastBackup }}</code>.@endif</p>
 
 <form method="POST" action="{{ route('admin.environment.update') }}" autocomplete="off">
     @csrf
@@ -62,10 +62,13 @@
                         @elseif ($e['secret'])<span class="tag secret">secret</span>@endif
                     </div>
                     @if ($e['locked'])
-                        <div class="env-val"><input type="text" value="{{ $e['value'] }}" disabled></div>
+                        {{-- Never rendered: the value is a secret too (APP_KEY signs every session). --}}
+                        <div class="env-val"><input type="text" value="{{ $e['value'] === '' ? __('(not set)') : __('(set — hidden)') }}" disabled></div>
                     @elseif ($e['secret'])
                         <div class="env-val">
-                            <input type="password" name="env[{{ $e['key'] }}]" value="{{ $e['value'] }}" autocomplete="off">
+                            {{-- The stored value is never sent to the browser; blank on save keeps it. --}}
+                            <input type="password" name="env[{{ $e['key'] }}]" value="" autocomplete="new-password"
+                                   placeholder="{{ $e['value'] === '' ? __('not set') : __('set — leave blank to keep') }}">
                             <button type="button" class="eye" data-eye aria-label="Show value">
                                 <svg class="eye-on"  viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                 <svg class="eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>

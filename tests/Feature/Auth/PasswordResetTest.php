@@ -78,4 +78,24 @@ class PasswordResetTest extends TestCase
             return true;
         });
     }
+
+    public function test_reset_link_request_does_not_reveal_whether_an_account_exists(): void
+    {
+        Notification::fake();
+        $user = User::factory()->create();
+
+        $known = $this->from(route('password.request'))->post(route('password.email'), ['email' => $user->email]);
+        $again = $this->from(route('password.request'))->post(route('password.email'), ['email' => $user->email]);   // throttled by the broker
+        $unknown = $this->from(route('password.request'))->post(route('password.email'), ['email' => 'nobody@example.com']);
+
+        foreach ([$known, $again, $unknown] as $response) {
+            $response->assertRedirect(route('password.request'))
+                ->assertSessionHasNoErrors()
+                ->assertSessionHas('status', 'If an account exists for that email address, a password reset link is on its way.');
+        }
+        Notification::assertSentToTimes($user, ResetPassword::class, 1);
+
+        $this->postJson(route('password.email'), ['email' => 'nobody@example.com'])
+            ->assertOk()->assertJsonPath('message', 'If an account exists for that email address, a password reset link is on its way.');
+    }
 }

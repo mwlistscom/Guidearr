@@ -32,7 +32,9 @@ class VerifyEmailCodeController extends Controller
         }
 
         if (! $user->verifyCode((string) $request->input('code'))) {
-            $message = __('That code is invalid or has expired.');
+            $message = $user->verificationCodeLocked()
+                ? __('Too many incorrect codes. Request a new code and try again.')
+                : __('That code is invalid or has expired.');
 
             if ($request->expectsJson()) {
                 return response()->json(['ok' => false, 'error' => $message], 422);
