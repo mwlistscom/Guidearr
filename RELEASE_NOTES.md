@@ -1,70 +1,61 @@
-# v1.23.21 — A provider delete that doesn't leave dead playlists behind
+# v1.23.22 — PHP 8.4.27: the php2shell fix
 
-Deleting a provider used to quietly break playlists. It no longer does, and it tells you what it
-is about to do first.
+> 🛑 **Security release. Upgrade today, and you must rebuild the image — `git pull` alone does
+> nothing for you here.** The fix is in PHP itself, which lives in the Docker image, not in the
+> code a pull brings down. See **Upgrading** below.
+
+---
+
+## Security
+
+### PHP is updated to 8.4.27 (CVE-2026-109618 / CVE-2026-109619)
+
+On 21 October 2026 PHP released fixes for two vulnerabilities, rated **CVSS v4 9.2** and widely
+referred to as *php2shell*. Together they allow **unauthenticated remote code execution**: anyone
+who can reach your Guidearr can send it a specially crafted upload request and run code on the
+server.
+
+What makes these unusual is *where* they are. PHP reads an upload request (`multipart/form-data`)
+**before any application code runs** — before Guidearr checks whether you are logged in, before
+it even decides which page you asked for. So it does not matter that Guidearr's own code is
+sound, or that the page in question requires a login. If the PHP underneath is vulnerable, the
+install is vulnerable. Every version before 8.4.27 is affected, and exploitation was reported in
+the wild before the fix was even published.
+
+Guidearr's image now builds on **PHP 8.4.27**.
+
+### The image now pins its PHP version, so a rebuild cannot quietly keep the old one
+
+Until now the image was built on `php:8.4-fpm-alpine` — a *floating* tag that always means
+"the newest 8.4". The catch is that Docker only re-downloads a floating tag when explicitly told
+to. If your machine already had a copy, `docker compose up -d --build` rebuilt on **that** copy
+and finished without complaint, leaving you on the old PHP while everything looked fine.
+
+The image is now built on `php:8.4.27-fpm-alpine` exactly. Your machine will not have that one
+cached, so the rebuild fetches it. From now on a PHP security fix arrives the same way any other
+change does — with the pull and the rebuild.
+
+### The upload-progress handler is switched off
+
+One of the two exploit paths runs through PHP's *session upload progress* feature. Guidearr has
+never used it, so it is now disabled in the image's PHP configuration
+(`session.upload_progress.enabled = 0`) as permanent defence in depth.
 
 ---
 
 ## Changed
 
-### Deleting a provider now takes the playlists that depended on it
+### The playlist list refreshes in your other tabs, too
 
-A playlist does not hold copies of channels. It holds *pointers* into the provider the channels
-came from, plus your own work on top — the ordering, the renames, which groups are switched off.
+v1.23.21 made the Playlists page refresh itself after deleting a provider took a playlist with
+it — but only in the tab you deleted from. A Playlists page left open in a second tab went on
+showing the deleted playlist until you reloaded it by hand. Every open tab now updates.
 
-So when a provider was deleted, its playlists did not fail. They stayed, still enabled, still
-serving, but every channel that came from that provider became a *"(missing channel)"* row that
-plays nothing. A playlist backed by only that one provider became an empty shell that still
-answered its URL. Nothing anywhere said why, and the confirmation you had clicked said only
-*"Delete provider?"* — it never mentioned playlists at all.
+### Sign-up sends its form a different way
 
-Now, a playlist whose **only** source was that provider is deleted along with it, channel-list file
-included.
-
-### A playlist another provider still feeds is never deleted
-
-This is the more important half. If a playlist draws on two or three providers, deleting one of
-them leaves the playlist alone. It keeps working, it keeps your ordering and renames and group
-settings, and it simply loses the channels that came from the provider you removed — the same
-thing that already happens when a provider drops a channel during a normal refresh.
-
-Your curation of the *other* providers' channels is not something a provider delete has any
-business throwing away.
-
-A playlist that used the provider only as its **guide (EPG) source** is kept too. Losing a guide is
-not losing your channels; the playlist carries on and the guide source is simply cleared.
-
-### The confirmation is a real dialog that names everything
-
-Instead of a browser pop-up, you get a dialog listing exactly what is going:
-
-- the provider, by name
-- every playlist that will be deleted with it
-- every playlist that is **kept**, and what each one loses
-
-The confirm button says what it will do — *"Delete provider + 2 playlists"* — rather than just
-*OK*. If the check of what would be affected cannot be completed, the delete is refused outright
-rather than falling back to a vague prompt. You are never asked to approve a deletion whose extent
-is unknown.
-
-### The playlist list refreshes afterwards
-
-The playlists removed by a delete are shown on a different page, which the app can restore from its
-cache — so a playlist that no longer existed could still appear in the list. It is now refreshed
-after a delete, so what you see is what is actually there.
-
----
-
-## Fixed
-
-### A deleted provider no longer leaves dangling references behind
-
-The link rows tying playlists to their providers, and a playlist's chosen guide source, had no
-database constraint tidying them up. A deleted provider left both pointing at something that no
-longer existed. Surviving playlists now have those cleared as part of the delete.
-
-Existing installs are not affected retroactively and there is nothing to repair — this stops new
-ones being created.
+The registration form now submits as an ordinary form post instead of as an upload. Nothing about
+signing up looks or behaves differently; it just no longer depends on the kind of request the
+vulnerability above lives in.
 
 ---
 
@@ -78,11 +69,35 @@ docker compose exec app php artisan optimize:clear
 docker compose restart worker scheduler
 ```
 
+**`--build` is not optional this time — it *is* the fix.** Without it your containers keep
+running the PHP they already had, and you remain exposed.
+
+Then confirm PHP actually moved:
+
+```bash
+docker compose exec app php -v
+# PHP 8.4.27 (cli) …
+```
+
+If that still says anything older, the rebuild did not happen: run `docker compose build --pull`
+and `docker compose up -d` again.
+
 No migration and no configuration change.
 
-**This release does not change the image** — no `Dockerfile`, dependency or frontend-asset changes
-are involved, so a plain `git pull` is genuinely enough here. The `--build` above is kept because it
-is always safe and costs only a moment when there is nothing to rebuild.
+### If you cannot rebuild straight away
 
-If you have providers you have been avoiding deleting because you were not sure what would happen
-to your playlists, the new dialog will tell you before anything is touched — and you can cancel.
+As a stopgap until you can, add this line to `docker/nginx.conf`, just after
+`server_tokens off;`, and reload the proxy:
+
+```nginx
+    if ($http_content_type ~* "multipart") { return 415; }
+```
+
+```bash
+docker compose exec web nginx -t && docker compose exec web nginx -s reload
+```
+
+It refuses every upload request before PHP sees it. The cost is that the admin **branding upload**
+stops working while it is in place — nothing else in Guidearr uploads files. Take it back out
+once `php -v` reports 8.4.27. Edit the file in place with a normal editor save; tools that replace
+the file (`mv`, some `sed -i` variants) leave the running proxy reading the old copy.

@@ -2,12 +2,12 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10, v1.23.11, v1.23.12, v1.23.13, v1.23.14, v1.23.15, v1.23.16, v1.23.17, v1.23.18, v1.23.19, v1.23.20 and v1.23.21.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10, v1.23.11, v1.23.12, v1.23.13, v1.23.14, v1.23.15, v1.23.16, v1.23.17, v1.23.18, v1.23.19, v1.23.20, v1.23.21 and v1.23.22.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
 
 ---
 
-## Unreleased
+## v1.23.22 — PHP 8.4.27: the php2shell fix · 2026-10-21
 
 **Security**
 - **Stopgap for php2shell (CVE-2026-109618 / CVE-2026-109619, CVSS v4 9.2).** PHP before 8.4.27
@@ -16,8 +16,10 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   is rebuilt on a patched PHP, the bundled nginx answers **every** multipart request with `415`,
   and the session upload-progress handler (one of the two exploit paths) is turned off via
   `PHP_VALUE` and in `docker/php.ini`. Registration now posts URL-encoded instead of multipart so
-  sign-up keeps working; **the admin branding upload is unavailable while the block is in place**.
-  The block comes out once the app container's `php -v` reports 8.4.27 or later.
+  sign-up keeps working. The admin branding upload was unavailable while the block was in place.
+  **The block was removed again before this release**, once the image was rebuilt on PHP 8.4.27, so
+  `docker/nginx.conf` is unchanged from v1.23.21; the release notes carry the one-line block for
+  installs that cannot rebuild straight away.
 - **The PHP base image is pinned to `php:8.4.27-fpm-alpine`** — the php2shell fix. It was the
   floating `php:8.4-fpm-alpine`, which `docker compose up -d --build` does not re-fetch when the
   host already has a copy cached, so an upgrade could rebuild on the old, vulnerable PHP and look
