@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\PendingRegistration;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
@@ -25,22 +26,22 @@ class VerifyEmailCodeController extends Controller
             'code' => ['required', 'string'],
         ]);
 
-        $user = $request->user();
+        $user = $this->subject($request);
+
+        if ($user === null) {
+            return PendingRegistration::isStandIn($request)
+                ? $this->invalidCode($request, PendingRegistration::standInWrongCode($request))
+                : $this->unauthenticated($request);
+        }
 
         if ($user->hasVerifiedEmail()) {
             return $this->success($request, __('Your email is already verified — you can log in.'));
         }
 
         if (! $user->verifyCode((string) $request->input('code'))) {
-            $message = $user->verificationCodeLocked()
+            return $this->invalidCode($request, $user->verificationCodeLocked()
                 ? __('Too many incorrect codes. Request a new code and try again.')
-                : __('That code is invalid or has expired.');
-
-            if ($request->expectsJson()) {
-                return response()->json(['ok' => false, 'error' => $message], 422);
-            }
-
-            throw ValidationException::withMessages(['code' => $message]);
+                : __('That code is invalid or has expired.'));
         }
 
         $user->markEmailAsVerified();
@@ -62,29 +63,37 @@ class VerifyEmailCodeController extends Controller
      */
     public function resend(Request $request)
     {
-        $user = $request->user();
+        $user = $this->subject($request);
+        $standIn = $user === null && PendingRegistration::isStandIn($request);
 
-        if ($user->hasVerifiedEmail()) {
+        if ($user === null && ! $standIn) {
+            return $this->unauthenticated($request);
+        }
+
+        if ($user?->hasVerifiedEmail()) {
             return $this->success($request, __('Your email is already verified — you can log in.'));
         }
 
-        if (! $user->canResendVerification()) {
-            $availableAt = $user->verificationResendAvailableAt();
-            $seconds = $availableAt ? max(1, now()->diffInSeconds($availableAt, false)) : 0;
+        $wait = $standIn
+            ? PendingRegistration::standInResendWait($request)
+            : ($user->canResendVerification() ? 0 : max(1, (int) ceil(now()->diffInSeconds($user->verificationResendAvailableAt(), false))));
+
+        if ($wait > 0) {
             $message = __('Please wait before requesting another code.');
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'ok' => false,
                     'error' => $message,
-                    'retry_after' => (int) ceil($seconds),
+                    'retry_after' => $wait,
                 ], 429);
             }
 
             return back()->withErrors(['code' => $message]);
         }
 
-        $user->sendEmailVerificationNotification();
+        // The stand-in sends nothing: its address's owner already has the one notice they need.
+        $standIn ? PendingRegistration::standInResent($request) : $user->sendEmailVerificationNotification();
 
         if ($request->expectsJson()) {
             return response()->json([
@@ -95,6 +104,32 @@ class VerifyEmailCodeController extends Controller
         }
 
         return back()->with('status', __('A new code has been sent. Check your spam folder if it does not arrive.'));
+    }
+
+    /**
+     * The person completing a sign-up: the signed-in user (the standalone /email/verify page, after
+     * signing in unverified), else the account this browser's sign-up created.
+     */
+    private function subject(Request $request): ?User
+    {
+        return $request->user() ?? PendingRegistration::user($request);
+    }
+
+    private function invalidCode(Request $request, string $message)
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => false, 'error' => $message], 422);
+        }
+
+        throw ValidationException::withMessages(['code' => $message]);
+    }
+
+    /** No sign-up in progress here and nobody signed in: what the old `auth` middleware answered. */
+    private function unauthenticated(Request $request)
+    {
+        return $request->expectsJson()
+            ? response()->json(['message' => 'Unauthenticated.'], 401)
+            : redirect()->guest(route('login'));
     }
 
     /**

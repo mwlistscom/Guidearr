@@ -7,6 +7,7 @@ use App\Actions\Fortify\CreateNewUser;
 /* @end-chisel-registration */
 use App\Actions\Fortify\ResetUserPassword;
 use App\Http\Responses\PasswordResetLinkRequestedResponse;
+use App\Http\Responses\RegisterResponse;
 use App\Listeners\UpdateLastLoginTimestamp;
 use App\Models\Ban;
 use App\Models\User;
@@ -26,6 +27,7 @@ use Laravel\Fortify\Actions\EnsureLoginIsNotThrottled;
 use Laravel\Fortify\Actions\PrepareAuthenticatedSession;
 use Laravel\Fortify\Contracts\FailedPasswordResetLinkRequestResponse;
 use Laravel\Fortify\Contracts\RedirectsIfTwoFactorAuthenticatable;
+use Laravel\Fortify\Contracts\RegisterResponse as RegisterResponseContract;
 use Laravel\Fortify\Contracts\SuccessfulPasswordResetLinkRequestResponse;
 use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
@@ -41,6 +43,9 @@ class FortifyServiceProvider extends ServiceProvider
         // The reset-link form must not reveal whether an address has an account.
         $this->app->singleton(FailedPasswordResetLinkRequestResponse::class, PasswordResetLinkRequestedResponse::class);
         $this->app->singleton(SuccessfulPasswordResetLinkRequestResponse::class, PasswordResetLinkRequestedResponse::class);
+
+        // …and neither may the sign-up form (see PendingRegistration).
+        $this->app->singleton(RegisterResponseContract::class, RegisterResponse::class);
     }
 
     /**

@@ -7,6 +7,22 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **The sign-up form no longer reveals whether an email address already has an account.** It
+  said "The email has already been taken", so anyone could check addresses one at a time. Now a
+  sign-up with a taken address gets exactly the same reply and the same "check your email"
+  screen as a new one. Nothing is created, and the address owner gets an email saying someone
+  tried to sign up with their address and that they can sign in or reset their password. At
+  most three of these emails go to one address per hour. To make the two cases identical,
+  **sign-up no longer signs you in**: you enter the emailed code on the same screen, then sign
+  in, which was already the next step.
+- **A sign-up that failed now says why.** A rejected password, a failed CAPTCHA or a taken
+  address was answered with a redirect. The page followed the redirect and took it for success,
+  so it showed "check your email" for a sign-up that had not happened, and no code ever came.
+  The page now shows the error.
+
 ## v1.23.24 — Account security, part two: social sign-in, sessions, secrets · 2026-10-21
 
 **Fixed**

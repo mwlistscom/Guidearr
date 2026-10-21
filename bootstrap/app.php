@@ -53,7 +53,12 @@ return Application::configure(basePath: dirname(__DIR__))
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // The sign-up page drives registration and the code screen with fetch(). Without JSON
+        // here a validation error became a 302 back to /register, which fetch follows to a 200
+        // HTML page — so the page showed "check your email" for a sign-up that had FAILED, and
+        // the error never appeared.
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('api/*'),
+            fn (Request $request) => $request->is('api/*')
+                || ($request->wantsJson() && $request->routeIs('register.store', 'verification.code', 'verification.resend')),
         );
     })->create();
