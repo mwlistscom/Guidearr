@@ -38,7 +38,12 @@ COPY --from=deps /app/vendor/laravel/framework/src/Illuminate/Pagination/resourc
 RUN npm run build
 
 # ---- application -----------------------------------------------------------------
-FROM php:8.4-fpm-alpine
+# PINNED to a patch release, not the floating php:8.4-fpm-alpine. A floating tag is only
+# re-fetched with `--pull`, so `docker compose up -d --build` on an install that already had
+# the old base cached rebuilt on it and kept a vulnerable PHP. A pinned tag the host does not
+# have yet is always fetched. 8.4.27 is the php2shell fix (CVE-2026-109618 / -109619).
+# Bump it for each PHP security release; PhpBaseImageTest refuses anything older.
+FROM php:8.4.27-fpm-alpine
 ENV COMPOSER_ALLOW_SUPERUSER=1
 # gd (with png/jpeg/webp) is used to downscale uploaded branding images — an operator's
 # 4000px logo would otherwise be served at full size to every visitor. No freetype: nothing
