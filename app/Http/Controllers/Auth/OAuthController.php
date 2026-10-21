@@ -9,8 +9,10 @@ use App\Models\User;
 use App\Support\SocialLogin;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use Laravel\Socialite\AbstractUser;
 use Laravel\Socialite\Contracts\User as SocialiteUser;
 use Laravel\Socialite\Facades\Socialite;
 
@@ -45,6 +47,12 @@ class OAuthController extends Controller
 
         if (! $oauthUser->getEmail()) {
             return redirect()->route('login')->withErrors(['email' => "{$label} did not share an email address, which is required to sign in."]);
+        }
+
+        // The email is what links this sign-in to an existing account, so it has to be one the
+        // provider has confirmed. Google says so explicitly; an unconfirmed address proves nothing.
+        if (! $this->providerVerifiedEmail($oauthUser)) {
+            return redirect()->route('login')->withErrors(['email' => "{$label} has not verified this email address, so it cannot be used to sign in."]);
         }
 
         // A banned email cannot sign in or auto-provision an account via social login either.
@@ -117,6 +125,8 @@ class OAuthController extends Controller
             // correct for the login guards below. Mirrors the email/password registration policy.
             $user->status = config('guidearr.registration_requires_approval') ? 'pending' : 'active';
             $user->save();                              // password stays null (social-only account)
+        } elseif (! $user->hasVerifiedEmail()) {
+            $this->claimUnverifiedAccount($user);
         }
 
         $user->socialAccounts()->create([
@@ -126,6 +136,54 @@ class OAuthController extends Controller
         ]);
 
         return $user;
+    }
+
+    /**
+     * Hand an unverified same-email account to the person the provider has just verified owns
+     * the address — and to nobody else.
+     *
+     * Whoever registered it never proved the address, so anything they set up is not the
+     * owner's: the password (else: register victim@…, wait for the victim to "Continue with
+     * Google", then sign in with the password you chose — a shared account), two-factor,
+     * passkeys, any provider they connected from Settings (reachable before verification), the
+     * remember-me token and their open sessions. The owner can set a password later through
+     * "Forgot password". The account can hold no other data yet: everything else sits behind
+     * the `verified` middleware.
+     */
+    private function claimUnverifiedAccount(User $user): void
+    {
+        DB::transaction(function () use ($user) {
+            $user->passkeys()->delete();
+            $user->socialAccounts()->delete();
+            $user->forceFill([
+                'password' => null,
+                'two_factor_secret' => null,
+                'two_factor_recovery_codes' => null,
+                'two_factor_confirmed_at' => null,
+                'remember_token' => Str::random(60),
+                'verification_code' => null,
+                'verification_code_expires_at' => null,
+                'email_verified_at' => now(),           // the provider just verified the address
+            ])->save();
+
+            // Sessions only have an owner column on the database driver (the default). With no
+            // password left, AuthenticateSession cannot end them on its own.
+            if (config('session.driver') === 'database') {
+                DB::connection(config('session.connection'))
+                    ->table(config('session.table', 'sessions'))
+                    ->where('user_id', $user->getKey())
+                    ->delete();
+            }
+        });
+    }
+
+    /** Google reports email_verified; other providers only share addresses they have confirmed. */
+    private function providerVerifiedEmail(SocialiteUser $oauthUser): bool
+    {
+        $raw = $oauthUser instanceof AbstractUser ? $oauthUser->getRaw() : [];
+        $flag = $raw['email_verified'] ?? $raw['verified_email'] ?? true;
+
+        return $flag === true || $flag === 'true' || $flag === 1 || $flag === '1';
     }
 
     /** Connect a provider to the already-signed-in user (from the Connected accounts page). */

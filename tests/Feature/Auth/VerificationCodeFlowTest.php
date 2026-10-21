@@ -130,4 +130,40 @@ class VerificationCodeFlowTest extends TestCase
             ->assertOk()
             ->assertSee('spam', false);
     }
+
+    public function test_a_code_is_void_after_too_many_wrong_guesses(): void
+    {
+        $user = $this->unverifiedUserWithCode('246810');
+
+        for ($i = 1; $i < User::VERIFICATION_MAX_ATTEMPTS; $i++) {
+            $this->actingAs($user)->postJson(route('verification.code'), ['code' => '000000'])
+                ->assertStatus(422)->assertJsonPath('error', 'That code is invalid or has expired.');
+        }
+        $this->actingAs($user)->postJson(route('verification.code'), ['code' => '000000'])
+            ->assertStatus(422)->assertJsonPath('error', 'Too many incorrect codes. Request a new code and try again.');
+
+        // Even the right code no longer works…
+        $this->actingAs($user)->postJson(route('verification.code'), ['code' => '246810'])->assertStatus(422);
+        $this->assertNull($user->fresh()->email_verified_at);
+
+        // …and voiding it does not lift the resend cooldown.
+        $this->assertFalse($user->fresh()->canResendVerification());
+    }
+
+    public function test_a_new_code_resets_the_guess_count(): void
+    {
+        Notification::fake();
+        $user = $this->unverifiedUserWithCode('246810');
+
+        for ($i = 1; $i < User::VERIFICATION_MAX_ATTEMPTS; $i++) {
+            $this->actingAs($user)->postJson(route('verification.code'), ['code' => '000000'])->assertStatus(422);
+        }
+
+        $user->sendEmailVerificationNotification();
+        $code = $user->fresh()->verification_code;
+
+        $this->actingAs($user)->postJson(route('verification.code'), ['code' => '000000'])->assertStatus(422);
+        $this->actingAs($user)->postJson(route('verification.code'), ['code' => $code])->assertOk();
+        $this->assertNotNull($user->fresh()->email_verified_at);
+    }
 }

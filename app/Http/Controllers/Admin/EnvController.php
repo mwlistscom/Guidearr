@@ -16,8 +16,13 @@ class EnvController extends Controller
      */
     private const LOCKED = ['APP_KEY'];
 
-    /** Substrings that mark a value as secret (rendered masked, never sent to the browser). */
-    private const SECRET_HINTS = ['PASSWORD', 'SECRET', 'TOKEN', 'PRIVATE', 'SALT', 'KEY'];
+    /**
+     * Substrings that mark a value as secret. A secret's value is never sent to the browser —
+     * the field renders empty, and submitting it empty keeps the stored value. (It used to be
+     * rendered into a password input's value attribute: masked on screen, but in the page HTML
+     * for anything that could read it — browser extensions, the cache, a saved page.)
+     */
+    private const SECRET_HINTS = ['PASS', 'SECRET', 'TOKEN', 'PRIVATE', 'SALT', 'KEY', 'CREDENTIAL', 'DSN'];
 
     public function edit()
     {
@@ -29,7 +34,7 @@ class EnvController extends Controller
 
     public function update(Request $request)
     {
-        $path = base_path('.env');
+        $path = app()->environmentFilePath();
 
         if (! is_writable($path)) {
             return back()->with('status', null)->withErrors([
@@ -77,6 +82,9 @@ class EnvController extends Controller
                 continue; // never touch locked keys
             }
             $value = (string) $value;
+            if ($value === '' && $this->isSecret($key)) {
+                continue; // the form never holds the stored secret, so blank means "keep"
+            }
             if ($value !== $current[$key]) {
                 $newValues[$key] = $value;
                 $changed[] = $key;
@@ -225,7 +233,7 @@ class EnvController extends Controller
 
     private function read(): string
     {
-        $path = base_path('.env');
+        $path = app()->environmentFilePath();
 
         return is_readable($path) ? (string) file_get_contents($path) : '';
     }

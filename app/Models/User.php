@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Notifications\VerifyEmailCode;
+use App\Services\PlaylistStore;
 use App\Services\ProviderStore;
 use Carbon\CarbonInterface;
 use Database\Factories\UserFactory;
@@ -13,6 +14,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
@@ -40,9 +42,10 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     protected static function booted(): void
     {
         // When an account is deleted (self-service Settings or admin), the DB cascade
-        // removes providers + feed_queue but leaves the per-provider SQLite store FILES
-        // on disk (FK cascades don't touch the filesystem). Snapshot those file paths
-        // into the purge queue so `php artisan feed:purge` can delete them afterwards.
+        // removes providers, playlists + feed_queue but leaves the per-provider AND
+        // per-playlist SQLite store FILES on disk (FK cascades don't touch the filesystem,
+        // and a cascade fires no model events). Snapshot those file paths into the purge
+        // queue so `php artisan feed:purge` can delete them afterwards.
         // feed_logs.user_id is nulled on delete, so clear the user's logs here first.
         static::deleting(function (User $u) {
             $payload = $u->providers()->get(['id', 'name'])
@@ -50,7 +53,14 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
                     'id' => $p->id,
                     'name' => $p->name,
                     'path' => ProviderStore::path($p->id),
-                ])->all();
+                ])
+                ->concat($u->playlists()->get(['id', 'name'])->map(fn ($p) => [
+                    'id' => $p->id,
+                    'name' => $p->name,
+                    'kind' => 'playlist',
+                    'path' => PlaylistStore::path($p->id),
+                ]))
+                ->values()->all();
 
             PurgeJob::create([
                 'user_id' => $u->id,
@@ -126,6 +136,13 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     public const VERIFICATION_RESEND_MINUTES = 5;
 
     /**
+     * Wrong guesses one code survives. The route throttle (10/minute) alone allowed ~150 guesses
+     * over a code's 15-minute life; after this many the code is void and a new one must be
+     * requested — which the resend cooldown paces, so the guess rate stays bounded.
+     */
+    public const VERIFICATION_MAX_ATTEMPTS = 5;
+
+    /**
      * Send a 6-digit verification code instead of the default verification link.
      */
     public function sendEmailVerificationNotification(): void
@@ -136,6 +153,8 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'verification_code' => $code,
             'verification_code_expires_at' => now()->addMinutes(self::VERIFICATION_TTL_MINUTES),
         ])->save();
+
+        RateLimiter::clear($this->verificationAttemptsKey());
 
         $this->notify(new VerifyEmailCode($code));
     }
@@ -185,6 +204,32 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             return false;
         }
 
-        return hash_equals($this->verification_code, trim($code));
+        if (hash_equals($this->verification_code, trim($code))) {
+            RateLimiter::clear($this->verificationAttemptsKey());
+
+            return true;
+        }
+
+        RateLimiter::hit($this->verificationAttemptsKey(), self::VERIFICATION_TTL_MINUTES * 60);
+
+        if (RateLimiter::attempts($this->verificationAttemptsKey()) >= self::VERIFICATION_MAX_ATTEMPTS) {
+            // Void the code but keep its expiry, so the resend cooldown still applies.
+            $this->forceFill(['verification_code' => null])->save();
+        }
+
+        return false;
+    }
+
+    /** True when the current code was voided by too many wrong guesses (and has not expired). */
+    public function verificationCodeLocked(): bool
+    {
+        return $this->verification_code === null
+            && $this->verification_code_expires_at !== null
+            && $this->verification_code_expires_at->isFuture();
+    }
+
+    private function verificationAttemptsKey(): string
+    {
+        return 'verify-code|'.$this->getKey();
     }
 }
