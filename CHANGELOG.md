@@ -18,6 +18,11 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   `PHP_VALUE` and in `docker/php.ini`. Registration now posts URL-encoded instead of multipart so
   sign-up keeps working; **the admin branding upload is unavailable while the block is in place**.
   The block comes out once the app container's `php -v` reports 8.4.27 or later.
+- **The PHP base image is pinned to `php:8.4.27-fpm-alpine`** — the php2shell fix. It was the
+  floating `php:8.4-fpm-alpine`, which `docker compose up -d --build` does not re-fetch when the
+  host already has a copy cached, so an upgrade could rebuild on the old, vulnerable PHP and look
+  successful. A pinned tag the host lacks is always fetched. `PhpBaseImageTest` refuses a floating
+  tag or anything older than 8.4.27.
 
 **Changed**
 - **The playlist list now refreshes in other tabs too.** The refresh added in v1.23.21 used
