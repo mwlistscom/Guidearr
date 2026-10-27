@@ -16,6 +16,16 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   someone ran `docker compose up -d` by hand. This affects every install since v1.23.14, when
   the compose file was first tracked. Run `docker compose up -d` after pulling to apply it; the
   database restarts once, for a few seconds.
+- **Security updates for Laravel and Livewire.** `laravel/framework` v13.13.0 → v13.39.0 and
+  `livewire/livewire` v4.4.3 → v4.4.8 close four advisories: CVE-2026-114509 (critical — TokenGuard
+  authentication bypass), CVE-2026-114508 (medium — relationship inclusion can destroy data),
+  CVE-2026-102279 (low — XSS on the debug page) and GHSA-mhf7-xp6r-6qrc (medium — Livewire
+  `#[Authorize]` bypass). Guidearr doesn't use the affected features (it has no token guard, no
+  JSON:API includes or `#[Authorize]`, and runs with `APP_DEBUG=false`), so none of these was
+  reachable here as far as we can tell. They're patched anyway. `composer audit` is clean again.
+  The framework jump brings framework dependencies along (Symfony 8.1 patches, Carbon, Guzzle,
+  brick/math). Apply with `git pull && docker compose up -d --build`; the image installs the new
+  `composer.lock`.
 
 ## v1.23.25 — Sign-up no longer reveals which emails have an account · 2026-10-21
 
