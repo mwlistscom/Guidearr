@@ -1,44 +1,46 @@
-# v1.23.25 — Sign-up no longer reveals which emails have an account
+# v1.23.26 — Laravel and Livewire security updates; the database restarts after a reboot
 
-> **Security release.** This closes the last item from the account-security review behind
-> v1.23.23 and v1.23.24. It also fixes sign-up errors never being shown.
+> **Security release. ⚠️ It needs a rebuild:** `git pull` alone does **not** apply it. The
+> patched packages are installed by the image, so run `docker compose up -d --build` (see
+> **Upgrading** below).
 >
-> One visible change: **creating an account no longer signs you in.** You enter the emailed code
-> as before, then sign in. No rebuild and no configuration change is needed.
+> It updates Laravel and Livewire for four published advisories, one of them rated critical. It
+> also fixes the database not coming back after the host reboots.
 
 ---
 
 ## Security
 
-### The sign-up form no longer tells anyone which addresses are registered
+### Laravel 13.13.0 → 13.39.0, Livewire 4.4.3 → 4.4.8
 
-The sign-up form answered "The email has already been taken", so anyone could find out whether
-an address had an account here by trying it, one address at a time.
+| Advisory | Severity | What it is |
+| --- | --- | --- |
+| CVE-2026-114509 | critical | Laravel `TokenGuard`: authentication bypass via non-string API credentials |
+| CVE-2026-114508 | medium | Laravel: relationship inclusion can trigger unauthorized data destruction |
+| CVE-2026-102279 | low | Laravel: XSS on the debug error page |
+| GHSA-mhf7-xp6r-6qrc | medium | Livewire: `#[Authorize]` bypass via reordered parameter keys |
 
-Now a sign-up with an address that already has an account looks exactly like a new one. It gets
-the same reply and the same "check your email" screen, and the code screen behaves the same way.
-Behind the scenes nothing is created, and the address owner gets an email instead: someone
-tried to sign up with their address, and they can sign in or reset their password if it was
-them. To keep the form from being used to flood someone's inbox, at most three of these emails
-go to one address per hour.
+**As far as we can tell, Guidearr was not exposed to any of these.** It uses session sign-in
+only, with no API token guard. It has no JSON:API relationship includes and doesn't use
+Livewire's `#[Authorize]`. The debug page only appears with `APP_DEBUG=true`, which a production
+install shouldn't run with. These are patched anyway. That conclusion comes from reading the
+code, not from a proof, and security scanners will keep flagging an install until the packages
+are updated.
 
-### Why sign-up no longer signs you in
-
-Hiding the message wasn't enough on its own. A real sign-up used to leave the browser signed in
-and a refused one didn't, so the difference was still visible. Now nobody is signed in by
-signing up. The code screen still works as before, and once your code is accepted you sign in
-as usual. Before, the verification step signed you out at that point anyway, so the number of
-steps is unchanged.
+Laravel's own dependencies move up with it (Symfony 8.1 patch releases, Carbon, Guzzle and
+others). Nothing outside Laravel and Livewire was updated, and `composer audit` now reports no
+advisories.
 
 ---
 
 ## Fixed
 
-### A failed sign-up now says why
+### The database now comes back after a reboot
 
-A sign-up rejected for any reason (a password that broke the rules, passwords that didn't match,
-a failed CAPTCHA) was showing the "check your email" screen as though it had worked, and no code
-ever arrived. The page now shows the actual error so it can be corrected.
+`docker-compose.yml` gave every service a restart policy except MySQL. So after the host
+rebooted (or Docker restarted), the app, worker and proxy came back up but the database didn't.
+Every page and every playlist URL then failed until someone ran `docker compose up -d` by hand.
+This affects every install since v1.23.14, when the compose file was first tracked.
 
 ---
 
@@ -47,8 +49,12 @@ ever arrived. The page now shows the actual error so it can be corrected.
 ```bash
 cd Guidearr
 git pull
-docker compose exec app php artisan optimize:clear
+docker compose up -d --build
 ```
 
-No rebuild, no migration and no `.env` change. Anyone part-way through signing up when you
-upgrade can still finish with the code they were sent.
+**`--build` is required.** The new Laravel and Livewire are installed by the image. Without
+`--build`, the app keeps the old, vulnerable packages. The next time the app container starts,
+it logs a warning that the image's `composer.lock` doesn't match the checked-out one.
+
+`up -d` also applies the database's new restart policy. The database restarts once, for a few
+seconds. No migration and no `.env` change is needed.
