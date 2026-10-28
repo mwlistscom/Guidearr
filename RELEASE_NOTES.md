@@ -1,46 +1,41 @@
-# v1.23.26 — Laravel and Livewire security updates; the database restarts after a reboot
+# v1.23.27 — One scanner can no longer hold every PHP worker
 
-> **Security release. ⚠️ It needs a rebuild:** `git pull` alone does **not** apply it. The
-> patched packages are installed by the image, so run `docker compose up -d --build` (see
-> **Upgrading** below).
+> **⚠️ This release needs a rebuild AND a restart of the `web` container.** `git pull` alone
+> changes nothing that is running. See **Upgrading** below; it's three commands.
 >
-> It updates Laravel and Livewire for four published advisories, one of them rated critical. It
-> also fixes the database not coming back after the host reboots.
-
----
-
-## Security
-
-### Laravel 13.13.0 → 13.39.0, Livewire 4.4.3 → 4.4.8
-
-| Advisory | Severity | What it is |
-| --- | --- | --- |
-| CVE-2026-114509 | critical | Laravel `TokenGuard`: authentication bypass via non-string API credentials |
-| CVE-2026-114508 | medium | Laravel: relationship inclusion can trigger unauthorized data destruction |
-| CVE-2026-102279 | low | Laravel: XSS on the debug error page |
-| GHSA-mhf7-xp6r-6qrc | medium | Livewire: `#[Authorize]` bypass via reordered parameter keys |
-
-**As far as we can tell, Guidearr was not exposed to any of these.** It uses session sign-in
-only, with no API token guard. It has no JSON:API relationship includes and doesn't use
-Livewire's `#[Authorize]`. The debug page only appears with `APP_DEBUG=true`, which a production
-install shouldn't run with. These are patched anyway. That conclusion comes from reading the
-code, not from a proof, and security scanners will keep flagging an install until the packages
-are updated.
-
-Laravel's own dependencies move up with it (Symfony 8.1 patch releases, Carbon, Guzzle and
-others). Nothing outside Laravel and Livewire was updated, and `composer audit` now reports no
-advisories.
+> It stops a scanner hammering made-up URLs from slowing the site for everyone else. No
+> configuration change is needed and nothing is removed.
 
 ---
 
 ## Fixed
 
-### The database now comes back after a reboot
+### A scanner could keep every PHP worker busy
 
-`docker-compose.yml` gave every service a restart policy except MySQL. So after the host
-rebooted (or Docker restarted), the app, worker and proxy came back up but the database didn't.
-Every page and every playlist URL then failed until someone ran `docker compose up -d` by hand.
-This affects every install since v1.23.14, when the compose file was first tracked.
+Automated scanners request hundreds of URLs that don't exist (`/sitemap.xml`, `/team`,
+`/api-docs`, …), often well over 100 a second. nginx already refuses the obviously hostile ones
+(`/.env`, path traversal) itself, but the rest reached Laravel for a "not found" page. That
+takes about 45 ms each, and the PHP pool had only 5 workers. A few scanners at once kept all
+five busy, and real visitors' pages and playlist fetches queued behind them. On the install
+this was found on, PHP-FPM reported running out of workers about twenty times a day.
+
+Two changes:
+
+- **nginx now limits PHP requests per client address**: 5 per second with a burst of 30.
+  Anything over the limit is answered `429 Too Many Requests` by nginx, which costs PHP
+  nothing. Static files (stylesheets, scripts, images) are never counted. Real use stays far
+  below the limit; the busiest real session seen peaked at 6 requests in one second.
+- **The PHP-FPM pool grows from 5 workers to 10.** That's about 400 MB at the usual ~40 MB
+  per worker.
+
+**Private and loopback addresses are never limited.** That covers health checks and your
+reverse proxy. It also matters if your proxy isn't listed in `docker/real-ip.conf`: then every
+visitor appears as the proxy's private address, and limiting that one address would throttle
+the whole site as if it were one visitor.
+
+If you use the threat feed, nothing changes there. The hostile probes it counts are refused
+before the limit applies, and a rate-limited scanner still produces plenty of entries to be
+listed.
 
 ---
 
@@ -50,11 +45,17 @@ This affects every install since v1.23.14, when the compose file was first track
 cd Guidearr
 git pull
 docker compose up -d --build
+docker compose up -d --force-recreate --no-deps web
 ```
 
-**`--build` is required.** The new Laravel and Livewire are installed by the image. Without
-`--build`, the app keeps the old, vulnerable packages. The next time the app container starts,
-it logs a warning that the image's `composer.lock` doesn't match the checked-out one.
+**Both steps are required, and each one delivers a different half:**
 
-`up -d` also applies the database's new restart policy. The database restarts once, for a few
-seconds. No migration and no `.env` change is needed.
+- **`--build`** installs the larger PHP pool. It lives in the image, so without it PHP stays
+  at 5 workers.
+- **Recreating `web`** applies the rate limit. The nginx config is mounted into the container
+  as a file, and after `git pull` the running container keeps reading the version it started
+  with, so without the recreate there is no limit at all. Recreating `web` after `app` also
+  makes nginx pick up the rebuilt app container's new address, which avoids a burst of
+  `502 Bad Gateway` errors.
+
+No migration and no `.env` change is needed.
