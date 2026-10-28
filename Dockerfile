@@ -56,6 +56,8 @@ RUN apk add --no-cache git unzip libzip-dev icu-dev oniguruma-dev linux-headers 
 # The base image ships no php.ini, so PHP would otherwise run on compiled-in defaults
 # (2M uploads) that contradict both nginx and the app's own validation.
 COPY docker/php.ini /usr/local/etc/php/conf.d/zz-guidearr.ini
+# Pool size. Named zz- so it loads after the image's www.conf and wins.
+COPY docker/php-fpm.conf /usr/local/etc/php-fpm.d/zz-guidearr.conf
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY --from=deps /app/vendor /opt/guidearr/vendor
 COPY --from=assets /app/public/build /opt/guidearr/build

@@ -7,6 +7,20 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **A scanner can no longer tie up every PHP worker.** nginx now limits PHP requests to 5 per
+  second per client address (burst of 30; static files are never counted). Anything over the
+  limit gets a `429` from nginx, which costs PHP nothing. The PHP-FPM pool also grows from 5
+  workers to 10. Before this, a few scanners requesting made-up paths at 150+ a second, each
+  one a Laravel 404, kept all five workers busy, and real visitors queued behind them; the
+  pool logged "server reached pm.max_children" about twenty times a day. Private and loopback
+  addresses are exempt, so health checks and the reverse proxy itself are never limited.
+  **Needs a rebuild and a restart of `web`.** The pool size is in the image, and the nginx
+  config is bind-mounted, so `web` only picks it up when it is recreated:
+  `git pull && docker compose up -d --build && docker compose up -d --force-recreate --no-deps web`.
+
 ## v1.23.26 — Laravel and Livewire security updates; the database restarts after a reboot · 2026-10-27
 
 **Fixed**
