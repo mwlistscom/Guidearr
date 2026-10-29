@@ -1,41 +1,43 @@
-# v1.23.27 — One scanner can no longer hold every PHP worker
+# v1.23.28 — A blocked scanner stays blocked
 
-> **⚠️ This release needs a rebuild AND a restart of the `web` container.** `git pull` alone
-> changes nothing that is running. See **Upgrading** below; it's three commands.
->
-> It stops a scanner hammering made-up URLs from slowing the site for everyone else. No
-> configuration change is needed and nothing is removed.
+> **Only affects you if you use the threat feed** (Admin → Config → Threat feed) with
+> pfBlockerNG or another firewall. Upgrading is just `git pull`; no rebuild or restart is
+> needed. Nothing else changes and no setting needs touching.
 
 ---
 
 ## Fixed
 
-### A scanner could keep every PHP worker busy
+### The threat feed unblocked scanners once the firewall had blocked them
 
-Automated scanners request hundreds of URLs that don't exist (`/sitemap.xml`, `/team`,
-`/api-docs`, …), often well over 100 a second. nginx already refuses the obviously hostile ones
-(`/.env`, path traversal) itself, but the rest reached Laravel for a "not found" page. That
-takes about 45 ms each, and the PHP pool had only 5 workers. A few scanners at once kept all
-five busy, and real visitors' pages and playlist fetches queued behind them. On the install
-this was found on, PHP-FPM reported running out of workers about twenty times a day.
+The feed lists addresses caught probing your install, for a firewall to block. It was rebuilt
+from the nginx access log alone, and that log is trimmed when it gets large (15 MB → the newest
+5 MB). Together, those made the feed undo itself:
 
-Two changes:
+1. A scanner is listed, and the firewall blocks it.
+2. Blocked, it can't reach Guidearr, so it adds nothing more to the log.
+3. When the log is trimmed, its old entries go, and the next rebuild leaves it off the list.
+4. The firewall's next download of the list lets it back in.
 
-- **nginx now limits PHP requests per client address**: 5 per second with a burst of 30.
-  Anything over the limit is answered `429 Too Many Requests` by nginx, which costs PHP
-  nothing. Static files (stylesheets, scripts, images) are never counted. Real use stays far
-  below the limit; the busiest real session seen peaked at 6 requests in one second.
-- **The PHP-FPM pool grows from 5 workers to 10.** That's about 400 MB at the usual ~40 MB
-  per worker.
+On the install where this was found, the feed fell from 38 addresses to 5 in a day while those
+scanners were still active.
 
-**Private and loopback addresses are never limited.** That covers health checks and your
-reverse proxy. It also matters if your proxy isn't listed in `docker/real-ip.conf`: then every
-visitor appears as the proxy's private address, and limiting that one address would throttle
-the whole site as if it were one visitor.
+**Listed addresses are now remembered**, in `storage/app/threat-feed-state.json`. Each stays
+listed for **14 days after its last attack** (`THREAT_FEED_WINDOW_DAYS`), whether or not the
+log still has its entries. If it attacks again, the 14 days start over. After 14 quiet days it
+drops off, so nothing is blocked permanently.
 
-If you use the threat feed, nothing changes there. The hostile probes it counts are refused
-before the limit applies, and a rate-limited scanner still produces plenty of entries to be
-listed.
+The protections are unchanged and apply to remembered addresses too:
+
+- an address that successfully pulls a playlist comes off the list;
+- private and reserved addresses, and anything in `THREAT_FEED_ALLOWLIST`, are never listed;
+- raising *List after N attacks* removes addresses below the new number;
+- the list is still capped at 5,000 entries.
+
+A new address still needs the usual number of attacks within what the log currently holds.
+
+The record starts empty on upgrade, so addresses that had already dropped off are only listed
+again if they attack again.
 
 ---
 
@@ -44,18 +46,8 @@ listed.
 ```bash
 cd Guidearr
 git pull
-docker compose up -d --build
-docker compose up -d --force-recreate --no-deps web
 ```
 
-**Both steps are required, and each one delivers a different half:**
-
-- **`--build`** installs the larger PHP pool. It lives in the image, so without it PHP stays
-  at 5 workers.
-- **Recreating `web`** applies the rate limit. The nginx config is mounted into the container
-  as a file, and after `git pull` the running container keeps reading the version it started
-  with, so without the recreate there is no limit at all. Recreating `web` after `app` also
-  makes nginx pick up the rebuilt app container's new address, which avoids a burst of
-  `502 Bad Gateway` errors.
-
-No migration and no `.env` change is needed.
+That's all. The change is PHP code only, and the app reads it from your checkout directly.
+The list rebuilds itself within the hour, or straight away with
+`docker compose exec -u www-data app php artisan security:threat-feed`.
