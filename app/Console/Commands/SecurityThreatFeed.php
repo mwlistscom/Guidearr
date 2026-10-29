@@ -23,8 +23,9 @@ class SecurityThreatFeed extends Command
         $stats = ThreatFeed::rebuild();
 
         $this->info(sprintf(
-            'Threat feed: %d address(es) listed from %d log line(s); %d host(s) protected as playlist clients.',
+            'Threat feed: %d address(es) listed (%d remembered from earlier rebuilds) from %d log line(s); %d host(s) protected as playlist clients.',
             $stats['listed'],
+            $stats['held'],
             $stats['scanned'],
             $stats['protected'],
         ));

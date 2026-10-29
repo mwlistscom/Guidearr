@@ -235,7 +235,8 @@ those probes were **74% of all requests**.
 **Admin → Config → Threat feed** publishes the offending addresses as a plain‑text list, one per
 line, for **pfBlockerNG** (or any tool that polls a URL) to block at the edge. Tick *Serve the
 feed*, copy the URL shown, and add it as a **custom IPv4 source**. Set *List after N attacks* to
-control how aggressive it is (default `20`).
+control how aggressive it is (default `20`). An address stays listed for **14 days after its last
+attack** (`THREAT_FEED_WINDOW_DAYS`), even though a blocked address stops appearing in the logs.
 
 There is **nothing to run** after an install or upgrade: the secret URL is generated for you, the
 list builds itself on the first fetch and refreshes hourly. The URL segment is yours to change; a
