@@ -7,6 +7,21 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **A blocked scanner no longer drops off the threat feed and gets unblocked.** The feed was
+  rebuilt from the access log alone, and that log is trimmed by size. Once the firewall blocked a
+  scanner, it stopped writing log lines. When its old lines were trimmed, the next rebuild left it
+  off the list, and the firewall's next download let it back in. On one install the feed fell from
+  38 addresses to 5 in a day while all the scanners were still active. Listed addresses are now
+  remembered in `storage/app/threat-feed-state.json`. Each one stays listed for 14 days after its
+  last hostile request (`THREAT_FEED_WINDOW_DAYS`), whatever the logs still hold. An address that
+  pulls a playlist, is allowlisted, or falls below a raised threshold still comes off. No rebuild
+  needed.
+
+---
+
 ## v1.23.27 — One scanner can no longer hold every PHP worker · 2026-10-28
 
 **Fixed**

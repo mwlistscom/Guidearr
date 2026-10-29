@@ -16,6 +16,12 @@ use Illuminate\Support\Facades\Cache;
  * tried something that has no legitimate interpretation", never "this IP made
  * a mistake". An IP that has ever successfully pulled a playlist is protected
  * outright, whatever else it did.
+ *
+ * Listed addresses are remembered between rebuilds (statePath()). Without that, the
+ * feed undid itself: a blocked scanner stops reaching nginx, so it writes no more log
+ * lines, and once the size-based log trim removes its old ones it drops off the list
+ * and the firewall lets it straight back in. An address now stays listed until
+ * `window_days` after its last hostile request, whatever the logs still hold.
  */
 final class ThreatFeed
 {
@@ -26,6 +32,15 @@ final class ThreatFeed
     public static function path(): string
     {
         return storage_path('app/threat-feed.txt');
+    }
+
+    /**
+     * Addresses listed on earlier rebuilds, with their hit count and the time of their
+     * last hostile request: {"ip": {"hits": n, "last": unix}}. Rewritten on each rebuild.
+     */
+    public static function statePath(): string
+    {
+        return storage_path('app/threat-feed-state.json');
     }
 
     /**
@@ -103,11 +118,12 @@ final class ThreatFeed
      * Tally hostile hits per IP over a window, and note which IPs are protected.
      *
      * @param  iterable<string>  $lines
-     * @return array{hits: array<string, int>, protected: array<string, true>, scanned: int}
+     * @return array{hits: array<string, int>, last: array<string, int>, protected: array<string, true>, scanned: int}
      */
     public static function collect(iterable $lines, DateTimeInterface $since): array
     {
         $hits = [];
+        $last = [];
         $protected = [];
         $scanned = 0;
 
@@ -131,10 +147,11 @@ final class ThreatFeed
 
             if (self::isHostile($row['path'], $row['status'])) {
                 $hits[$row['ip']] = ($hits[$row['ip']] ?? 0) + 1;
+                $last[$row['ip']] = max($last[$row['ip']] ?? 0, $row['at']->getTimestamp());
             }
         }
 
-        return ['hits' => $hits, 'protected' => $protected, 'scanned' => $scanned];
+        return ['hits' => $hits, 'last' => $last, 'protected' => $protected, 'scanned' => $scanned];
     }
 
     /**
@@ -149,18 +166,7 @@ final class ThreatFeed
         $out = [];
 
         foreach ($tally['hits'] as $ip => $hits) {
-            if ($hits < $minHits || isset($tally['protected'][$ip])) {
-                continue;
-            }
-
-            // Never emit anything non-routable: private, loopback, link-local and
-            // reserved space. On this deployment the reverse proxy and the health
-            // checks live there, and blocking them takes the site down.
-            if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-                continue;
-            }
-
-            if (self::allowlisted($ip, $allowlist)) {
+            if ($hits < $minHits || ! self::eligible((string) $ip, $tally, $allowlist)) {
                 continue;
             }
 
@@ -170,6 +176,86 @@ final class ThreatFeed
         arsort($out);
 
         return array_slice($out, 0, max(0, $maxEntries), true);
+    }
+
+    /**
+     * Merge this rebuild's selection with the addresses remembered from earlier ones.
+     *
+     * A remembered address stays listed until $holdDays after its last hostile request,
+     * even when the log no longer holds a single line from it. Everything that keeps an
+     * address OFF the list still applies to remembered ones: a playlist pull in the
+     * current logs, the allowlist, non-routable space and the threshold (an operator
+     * who raises it expects the list to shrink).
+     *
+     * @param  array<string, int>  $selected  select()'s result for this rebuild
+     * @param  array{hits: array<string, int>, last?: array<string, int>, protected: array<string, true>, scanned: int}  $tally
+     * @param  array<string, mixed>  $state  as read from statePath()
+     * @param  list<string>  $allowlist
+     * @return array{ips: array<string, int>, state: array<string, array{hits: int, last: int}>, held: int}
+     */
+    public static function remember(array $selected, array $tally, array $state, DateTimeInterface $now, int $holdDays, int $minHits, int $maxEntries, array $allowlist = []): array
+    {
+        $cutoff = $now->getTimestamp() - max(1, $holdDays) * 86400;
+        $merged = [];
+
+        foreach ($selected as $ip => $hits) {
+            $ip = (string) $ip;
+            $prev = is_array($state[$ip] ?? null) ? $state[$ip] : [];
+
+            $merged[$ip] = [
+                'hits' => max($hits, (int) ($prev['hits'] ?? 0)),
+                'last' => max((int) ($tally['last'][$ip] ?? $now->getTimestamp()), (int) ($prev['last'] ?? 0)),
+            ];
+        }
+
+        foreach ($state as $ip => $prev) {
+            $ip = (string) $ip;
+
+            if (isset($merged[$ip]) || ! is_array($prev)) {
+                continue;
+            }
+
+            $hits = max((int) ($prev['hits'] ?? 0), (int) ($tally['hits'][$ip] ?? 0));
+            $last = max((int) ($prev['last'] ?? 0), (int) ($tally['last'][$ip] ?? 0));
+
+            if ($last < $cutoff || $hits < $minHits || filter_var($ip, FILTER_VALIDATE_IP) === false
+                || ! self::eligible($ip, $tally, $allowlist)) {
+                continue;
+            }
+
+            $merged[$ip] = ['hits' => $hits, 'last' => $last];
+        }
+
+        uasort($merged, static fn (array $a, array $b) => $b['hits'] <=> $a['hits']);
+        $merged = array_slice($merged, 0, max(0, $maxEntries), true);
+
+        return [
+            'ips' => array_map(static fn (array $e) => $e['hits'], $merged),
+            'state' => $merged,
+            'held' => count(array_diff_key($merged, $selected)),
+        ];
+    }
+
+    /**
+     * May $ip be listed at all? Not if it pulled a playlist in the current logs, is
+     * allowlisted, or is non-routable: private, loopback, link-local and reserved
+     * space. On this deployment the reverse proxy and the health checks live there,
+     * and blocking them takes the site down.
+     *
+     * @param  array{protected: array<string, true>}  $tally
+     * @param  list<string>  $allowlist
+     */
+    private static function eligible(string $ip, array $tally, array $allowlist): bool
+    {
+        if (isset($tally['protected'][$ip])) {
+            return false;
+        }
+
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+            return false;
+        }
+
+        return ! self::allowlisted($ip, $allowlist);
     }
 
     /**
@@ -263,27 +349,56 @@ final class ThreatFeed
     /**
      * Parse the logs and write the feed file.
      *
-     * @return array{listed: int, scanned: int, protected: int}
+     * @return array{listed: int, held: int, scanned: int, protected: int}
      */
     public static function rebuild(): array
     {
         $cfg = config('guidearr.threat_feed');
         $windowDays = max(1, (int) $cfg['window_days']);
+        $maxEntries = max(0, (int) $cfg['max_entries']);
         $minHits = Settings::threatFeedMinHits();
 
-        $since = (new DateTimeImmutable)->modify("-{$windowDays} days");
-        $tally = self::collect(self::logLines(), $since);
-        $ips = self::select($tally, $minHits, max(0, (int) $cfg['max_entries']), $cfg['allowlist']);
+        $now = now()->toDateTimeImmutable();
+        $tally = self::collect(self::logLines(), $now->modify("-{$windowDays} days"));
+        $selected = self::select($tally, $minHits, $maxEntries, $cfg['allowlist']);
+        $result = self::remember($selected, $tally, self::readState(), $now, $windowDays, $minHits, $maxEntries, $cfg['allowlist']);
 
         $path = self::path();
         @mkdir(dirname($path), 0775, true);
-        file_put_contents($path, self::render($ips));
+        self::writeAtomically(self::statePath(), (string) json_encode($result['state']));
+        self::writeAtomically($path, self::render($result['ips']));
 
         return [
-            'listed' => count($ips),
+            'listed' => count($result['ips']),
+            'held' => $result['held'],
             'scanned' => $tally['scanned'],
             'protected' => count($tally['protected']),
         ];
+    }
+
+    /**
+     * The remembered addresses. A missing or unreadable file is an empty memory: the
+     * feed then falls back to what the logs alone show, which is how it always worked.
+     *
+     * @return array<string, mixed>
+     */
+    private static function readState(): array
+    {
+        $raw = @file_get_contents(self::statePath());
+        $state = is_string($raw) ? json_decode($raw, true) : null;
+
+        return is_array($state) ? $state : [];
+    }
+
+    /** Write via a temp file and rename, so a reader never sees half a file. */
+    private static function writeAtomically(string $path, string $contents): void
+    {
+        $tmp = $path.'.'.bin2hex(random_bytes(4)).'.tmp';
+
+        if (@file_put_contents($tmp, $contents) === false || ! @rename($tmp, $path)) {
+            @unlink($tmp);
+            file_put_contents($path, $contents);
+        }
     }
 
     /**

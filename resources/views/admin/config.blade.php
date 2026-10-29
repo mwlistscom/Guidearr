@@ -53,7 +53,7 @@
 
     <div class="card">
         <h2>Threat feed</h2>
-        <p class="muted">Publishes a plain-text list of IP addresses caught probing this install &mdash; scanners asking for <code>/.env</code>, <code>/wp-login.php</code> and the like &mdash; for a firewall to block at the edge. Point <strong>pfBlockerNG</strong> (or any tool that reads a URL list) at the address below as a custom IPv4 source. Hosts that have successfully pulled a playlist are never listed, and neither is private or reserved address space.</p>
+        <p class="muted">Publishes a plain-text list of IP addresses caught probing this install &mdash; scanners asking for <code>/.env</code>, <code>/wp-login.php</code> and the like &mdash; for a firewall to block at the edge. Point <strong>pfBlockerNG</strong> (or any tool that reads a URL list) at the address below as a custom IPv4 source. Hosts that have successfully pulled a playlist are never listed, and neither is private or reserved address space. A listed address stays listed for {{ (int) config('guidearr.threat_feed.window_days') }} days after its last attack, so blocking it does not take it off the list.</p>
 
         <label class="check">
             <input type="checkbox" name="threat_feed_enabled" value="1" @checked(old('threat_feed_enabled', $threatFeedEnabled))>
