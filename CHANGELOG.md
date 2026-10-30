@@ -7,6 +7,27 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **Path-traversal probes now count toward the threat feed when a reverse proxy rewrites them.**
+  nginx rejects a path containing a `..` segment (`/x/../../.env`, `..%2F.env`, `/.%2e/`) with a
+  `400` while it is still reading the request line, before it has read `X-Forwarded-For`. The
+  access log therefore recorded the proxy as the client, and the feed rightly never lists a
+  private address. On one install that was about 3,300 probes per log that no scanner was
+  charged for. nginx now answers the marker path `/__traversal__` itself with a `404`, and the
+  feed counts it as hostile. **Optional, and only does anything with a matching proxy rule.**
+  The proxy must rewrite such requests to that path before they reach nginx. For HAProxy:
+  ```
+  acl traversal path -m reg -i (^|/|%2f)(\.|%2e){2}(/|%2f|\z)
+  http-request set-header X-Original-URI %[url] if traversal
+  http-request set-path /__traversal__ if traversal
+  ```
+  Without the rule nothing changes, and an install that exposes nginx directly keeps the
+  existing `400` classification, where the real client is already logged.
+
+---
+
 ## v1.23.28 — A blocked scanner stays blocked · 2026-10-29
 
 **Fixed**

@@ -55,12 +55,15 @@ class ThreatFeedTest extends TestCase
         // Denied dotfile probe.
         $this->assertTrue(ThreatFeed::isHostile('/.env', 403));
         $this->assertTrue(ThreatFeed::isHostile('/wp-login.php', 404));
+        $this->assertTrue(ThreatFeed::isHostile('/__traversal__', 404));
+        $this->assertTrue(ThreatFeed::isHostile('/__traversal__?x=1', 404));
         $this->assertTrue(ThreatFeed::isHostile('/index.php?option=com_rsfiles&task=rsfiles.upload', 405));
 
         // Same paths with a status the app would never pair them with are NOT hostile —
         // this is what stops a future legitimate route from being classified as an attack.
         $this->assertFalse(ThreatFeed::isHostile('/.env', 200));
         $this->assertFalse(ThreatFeed::isHostile('/wp-login.php', 200));
+        $this->assertFalse(ThreatFeed::isHostile('/__traversal__', 200));
 
         // Ordinary misses stay off the list.
         $this->assertFalse(ThreatFeed::isHostile('/favicon.ico', 404));

@@ -64,9 +64,14 @@ final class ThreatFeed
         403 => '#/\.(env|git|ssh|aws|npmrc|docker|config|gitlab|github|hg|svn|bash|htpasswd)#i',
         // Exploit POSTs against CMSes we do not run.
         405 => '#(option=com_|rest_route|auto_prepend_file|wp-json|/wp-admin|allow_url_include)#i',
-        // Classic scanner paths.
-        404 => '#(wp-login|wp-admin|wp-content|wp-includes|xmlrpc|phpmyadmin|/administrator|actuator|eval-stdin|cgi-bin|/solr|/druid|/boaform|EWS/Exchange|autodiscover|/telescope|_ignition|\.(php|asp|aspx|jsp|cgi)(\?|$))#i',
-        // Encoded traversal that nginx rejects before routing.
+        // Classic scanner paths. `/__traversal__` is where the reverse proxy (HAProxy on pfSense)
+        // rewrites any request whose path contains a `..` segment, encoded or not. Left alone,
+        // nginx rejects those with a 400 while still parsing the request line, before it has read
+        // X-Forwarded-For, so the access log attributes them to the proxy and the feed never sees
+        // the scanner. The original URI arrives in X-Original-URI.
+        404 => '#(wp-login|wp-admin|wp-content|wp-includes|xmlrpc|phpmyadmin|/administrator|actuator|eval-stdin|cgi-bin|/solr|/druid|/boaform|EWS/Exchange|autodiscover|/telescope|_ignition|__traversal__|\.(php|asp|aspx|jsp|cgi)(\?|$))#i',
+        // Encoded traversal that nginx rejects before routing. Only attributable when nginx is
+        // reached directly; behind a proxy without the rewrite above the logged IP is the proxy's.
         400 => '#(\.\./|%2e%2e|\.%2e|/bin/sh)#i',
     ];
 
