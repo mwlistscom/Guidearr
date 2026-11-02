@@ -1,41 +1,39 @@
-# v1.23.29 — Path-traversal probes count toward the threat feed
+# v1.23.30 — PHP no longer prints warnings into responses or announces its version
 
-> **Only does anything if you use the threat feed AND add one rule to your reverse proxy.**
-> Without that rule, nothing changes. Upgrading is `git pull` plus a restart of the `web`
-> container; no rebuild.
+> **⚠️ This release needs a rebuild AND a restart of the `web` container.** `git pull` alone
+> changes nothing that is running. See **Upgrading** below; it's three commands.
+>
+> Every install is affected. No configuration change is needed and nothing is removed.
 
 ---
 
 ## Fixed
 
-### Path-traversal probes were charged to your proxy instead of the scanner
+### PHP was running on its development defaults
 
-Scanners send paths such as `/x/../../.env`, `/..%2F..%2F.env` or `/.%2e/.%2e/proc/self/environ`.
-nginx refuses these with `400 Bad Request` while it is still reading the first line of the
-request. That is before it reads `X-Forwarded-For`, so behind a reverse proxy the access log
-records **the proxy** as the client, with no user agent. The threat feed never lists a private
-address, so these probes were never charged to anyone. On the install where this was found that
-was about 3,300 probes per log.
+The official `php:*-fpm` image ships no `php.ini`, and Guidearr's own `docker/php.ini` only set
+the upload and memory limits. Everything else ran on PHP's compiled-in defaults, which are meant
+for development: `display_errors=On`, `display_startup_errors=On`, `log_errors=Off` and
+`expose_php=On`. Two visible effects:
 
-Guidearr now recognises a marker path, `/__traversal__`:
+- **PHP warnings were sent to the client.** A warning raised by PHP itself before Guidearr ran,
+  for example a `multipart/form-data` POST with no boundary, or a request body larger than
+  `post_max_size`, was printed into the response body. Because output had already started, the
+  proper `405` or `413` could no longer be sent, and the client received a **`200`** containing
+  the warning text. Scanners send exactly these requests.
+- **Every response carried `X-Powered-By: PHP/8.4.x`**, telling anyone who asked which PHP
+  version answered.
 
-- nginx answers it directly with a `404`, so no Laravel page is rendered for each probe;
-- the threat feed counts it as an attack, like `/wp-login.php`.
+Nothing was exploitable through this, and the warnings seen in the wild contained no file paths,
+but neither belongs on a public site.
 
-**Your proxy has to send traversal requests to that path.** nginx then sees a normal request and
-logs the real client. For HAProxy (pfSense or standalone), add to the frontend:
+`docker/php.ini` now sets `display_errors = Off`, `display_startup_errors = Off`,
+`log_errors = On` and `expose_php = Off`. PHP's warnings go to the container's log instead
+(`docker compose logs app`). nginx also strips `X-Powered-By` from PHP responses, so the header
+is gone even on an install that has pulled this change but not yet rebuilt.
 
-```
-acl traversal path -m reg -i (^|/|%2f)(\.|%2e){2}(/|%2f|\z)
-http-request set-header X-Original-URI %[url] if traversal
-http-request set-path /__traversal__ if traversal
-```
-
-The original path is kept in `X-Original-URI`. A path like `/static../.env` is not a traversal
-and is left alone.
-
-If your proxy can't do this, or you expose nginx directly, nothing changes. With nginx exposed
-directly, the real client is already logged on the `400` and those probes already count.
+The same malformed requests now get the answers they should: `405` for a POST to a page that
+takes none, `413` for a body nginx refuses.
 
 ---
 
@@ -44,12 +42,18 @@ directly, the real client is already logged on the `400` and those probes alread
 ```bash
 cd Guidearr
 git pull
+docker compose up -d --build
 docker compose up -d --force-recreate --no-deps web
 ```
 
-**Recreating `web` is what loads the new nginx rule.** The nginx config is mounted into the
-container as a file, and after `git pull` the running container keeps reading the version it
-started with. If you skip it, the marker still counts toward the feed, but each probe is
-answered by Laravel instead of nginx.
+**Both steps are required:**
 
-No rebuild, migration or `.env` change is needed.
+- **`--build`** installs the new `php.ini`. It lives in the image, so without it PHP keeps
+  printing warnings into responses.
+- **Recreating `web`** loads the nginx line that strips `X-Powered-By`. The nginx config is
+  mounted into the container as a file, and after `git pull` the running container keeps
+  reading the version it started with. Recreating `web` after `app` also makes nginx pick up
+  the rebuilt app container's new address, which avoids a burst of `502 Bad Gateway` errors.
+
+No migration and no `.env` change is needed. To check it took:
+`docker compose exec app php-fpm -i | grep -E '^(display_errors|expose_php)'` should show `Off`.
