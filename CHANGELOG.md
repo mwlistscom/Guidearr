@@ -7,6 +7,23 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **PHP no longer prints its own warnings into responses, and no longer announces its
+  version.** The image ships no `php.ini`, and `docker/php.ini` only set the upload and memory
+  keys, so PHP ran on its compiled-in development defaults: `display_errors=On`,
+  `log_errors=Off`, `expose_php=On`. A warning raised before Laravel ran (a `multipart/form-data`
+  POST with no boundary, or a body over `post_max_size`) was printed into the response body, and
+  the proper `405`/`413` could not be sent after it ("headers already sent"), so the client got a
+  `200` carrying the warning text. Every response also carried `X-Powered-By: PHP/8.4.x`.
+  `docker/php.ini` now sets `display_errors=Off`, `display_startup_errors=Off`, `log_errors=On`
+  (warnings go to `docker compose logs app`) and `expose_php=Off`; nginx also strips
+  `X-Powered-By` from PHP responses. **Needs `--build`** for the PHP side and a `web` recreate
+  for the nginx side.
+
+---
+
 ## v1.23.29 — Path-traversal probes count toward the threat feed · 2026-10-30
 
 **Fixed**
