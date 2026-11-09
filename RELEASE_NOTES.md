@@ -1,39 +1,38 @@
-# v1.23.30 — PHP no longer prints warnings into responses or announces its version
+# v1.23.31 — Old Joomla URLs are answered 410 Gone and count toward the threat feed
 
-> **⚠️ This release needs a rebuild AND a restart of the `web` container.** `git pull` alone
-> changes nothing that is running. See **Upgrading** below; it's three commands.
+> **This release needs a restart of the `web` container.** `git pull` alone changes nothing that
+> is running. See **Upgrading** below; it's two commands. No image rebuild.
 >
-> Every install is affected. No configuration change is needed and nothing is removed.
+> Every install is affected, but only if bots are replaying Joomla URLs at it. No configuration
+> change is needed and nothing is removed.
 
 ---
 
-## Fixed
+## Changed
 
-### PHP was running on its development defaults
+### Stale Joomla URLs no longer reach PHP
 
-The official `php:*-fpm` image ships no `php.ini`, and Guidearr's own `docker/php.ini` only set
-the upload and memory limits. Everything else ran on PHP's compiled-in defaults, which are meant
-for development: `display_errors=On`, `display_startup_errors=On`, `log_errors=Off` and
-`expose_php=On`. Two visible effects:
+Many Guidearr installs sit on a domain that used to run something else. Bots, and search
+engines that never forgot, still replay those old URLs. On one install that was
+`/index.php?option=com_virtuemart&…` and `/?Itemid=…&option=com_content`: about **2,000
+requests in five days from 170 addresses**, most carrying a forged `X-Forwarded-For`, paced
+just under the per-IP PHP rate limit.
 
-- **PHP warnings were sent to the client.** A warning raised by PHP itself before Guidearr ran,
-  for example a `multipart/form-data` POST with no boundary, or a request body larger than
-  `post_max_size`, was printed into the response body. Because output had already started, the
-  proper `405` or `413` could no longer be sent, and the client received a **`200`** containing
-  the warning text. Scanners send exactly these requests.
-- **Every response carried `X-Powered-By: PHP/8.4.x`**, telling anyone who asked which PHP
-  version answered.
+Guidearr has no such route and answered every one with the home page. That is a `200` that costs
+a full PHP render, and because nothing about it looks hostile to the threat feed, none of those
+addresses were ever listed.
 
-Nothing was exploitable through this, and the warnings seen in the wild contained no file paths,
-but neither belongs on a public site.
+nginx now answers any `/` or `/index.php` request that carries an `option=com_…` query parameter
+with **`410 Gone`** before PHP is reached. Guidearr never generates such a URL, so nothing
+legitimate is affected; `?page=2`, playlist URLs and anything else pass through untouched. A
+`410` also tells search engines to drop the link. The threat feed counts `option=com_` at `410`,
+so hosts that keep replaying are listed once they pass your threshold. Exploit POSTs to those
+URLs, which used to be `405`, are `410` now and still count.
 
-`docker/php.ini` now sets `display_errors = Off`, `display_startup_errors = Off`,
-`log_errors = On` and `expose_php = Off`. PHP's warnings go to the container's log instead
-(`docker compose logs app`). nginx also strips `X-Powered-By` from PHP responses, so the header
-is gone even on an install that has pulled this change but not yet rebuilt.
-
-The same malformed requests now get the answers they should: `405` for a POST to a page that
-takes none, `413` for a body nginx refuses.
+One thing to know: a search engine following stale links gets `410`s too and is counted. With
+the default threshold of 20 attacks and a feed window of 14 days that has not been close on the
+install this was written for (the busiest crawler address had 11), and `410` is exactly what
+makes a crawler stop asking. Glance at **Admin → Config → Threat feed** a week after upgrading.
 
 ---
 
@@ -42,18 +41,14 @@ takes none, `413` for a body nginx refuses.
 ```bash
 cd Guidearr
 git pull
-docker compose up -d --build
 docker compose up -d --force-recreate --no-deps web
 ```
 
-**Both steps are required:**
+The rule lives in `docker/nginx.conf`, which is mounted into the `web` container as a file.
+After `git pull` the running container keeps reading the version it started with, so it has to
+be recreated; a reload alone is not enough. `--no-deps` keeps the database and app containers
+out of it.
 
-- **`--build`** installs the new `php.ini`. It lives in the image, so without it PHP keeps
-  printing warnings into responses.
-- **Recreating `web`** loads the nginx line that strips `X-Powered-By`. The nginx config is
-  mounted into the container as a file, and after `git pull` the running container keeps
-  reading the version it started with. Recreating `web` after `app` also makes nginx pick up
-  the rebuilt app container's new address, which avoids a burst of `502 Bad Gateway` errors.
-
-No migration and no `.env` change is needed. To check it took:
-`docker compose exec app php-fpm -i | grep -E '^(display_errors|expose_php)'` should show `Off`.
+No rebuild, no migration and no `.env` change is needed. To check it took:
+`curl -s -o /dev/null -w '%{http_code}\n' 'http://localhost:8181/index.php?option=com_content'`
+should print `410`.
