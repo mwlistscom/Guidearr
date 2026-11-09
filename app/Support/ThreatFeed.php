@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Cache;
  *
  * Only requests that are unambiguously hostile count — a scanner asking for
  * /.env, POSTing to a Joomla upload task that does not exist here, or probing
- * /wp-login.php. Those all end in 403/404/405, so a hit here means "this IP
+ * /wp-login.php. Those all end in 403/404/405/410, so a hit here means "this IP
  * tried something that has no legitimate interpretation", never "this IP made
  * a mistake". An IP that has ever successfully pulled a playlist is protected
  * outright, whatever else it did.
@@ -64,6 +64,10 @@ final class ThreatFeed
         403 => '#/\.(env|git|ssh|aws|npmrc|docker|config|gitlab|github|hg|svn|bash|htpasswd)#i',
         // Exploit POSTs against CMSes we do not run.
         405 => '#(option=com_|rest_route|auto_prepend_file|wp-json|/wp-admin|allow_url_include)#i',
+        // Replays of the Joomla site that used to live on this domain. docker/nginx.conf answers
+        // `/index.php?option=com_…` with 410 Gone before PHP is reached; Guidearr never issues
+        // such a URL, so the status alone separates them from anything the app serves.
+        410 => '#option=com_#i',
         // Classic scanner paths. `/__traversal__` is where the reverse proxy (HAProxy on pfSense)
         // rewrites any request whose path contains a `..` segment, encoded or not. Left alone,
         // nginx rejects those with a 400 while still parsing the request line, before it has read

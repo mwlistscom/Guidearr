@@ -58,12 +58,15 @@ class ThreatFeedTest extends TestCase
         $this->assertTrue(ThreatFeed::isHostile('/__traversal__', 404));
         $this->assertTrue(ThreatFeed::isHostile('/__traversal__?x=1', 404));
         $this->assertTrue(ThreatFeed::isHostile('/index.php?option=com_rsfiles&task=rsfiles.upload', 405));
+        $this->assertTrue(ThreatFeed::isHostile('/index.php?option=com_virtuemart&view=category', 410));
+        $this->assertTrue(ThreatFeed::isHostile('/?Itemid=157&id=13&option=com_content', 410));
 
         // Same paths with a status the app would never pair them with are NOT hostile —
         // this is what stops a future legitimate route from being classified as an attack.
         $this->assertFalse(ThreatFeed::isHostile('/.env', 200));
         $this->assertFalse(ThreatFeed::isHostile('/wp-login.php', 200));
         $this->assertFalse(ThreatFeed::isHostile('/__traversal__', 200));
+        $this->assertFalse(ThreatFeed::isHostile('/index.php?option=com_content&view=featured', 200));
 
         // Ordinary misses stay off the list.
         $this->assertFalse(ThreatFeed::isHostile('/favicon.ico', 404));
