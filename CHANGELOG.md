@@ -7,6 +7,24 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Changed**
+- **URLs from the Joomla site that used to live on this domain are answered `410 Gone` by nginx.**
+  Bots still replay `/index.php?option=com_virtuemart&…` and `/?Itemid=…&option=com_content` by
+  the thousand; on one install about 2,000 in five days from 170 addresses, most with a forged
+  `X-Forwarded-For` and paced just under the PHP rate limit. Laravel has no such route and
+  answered each with the home page, a `200` that cost a full PHP render and that the threat feed
+  could not count. nginx now answers any `/` or `/index.php` request carrying an `option=com_…`
+  query parameter with `410` before PHP is reached (Guidearr never generates such a URL), search
+  engines drop the stale links, and the threat feed counts `option=com_` at `410`, so the
+  replaying hosts are listed once they pass the threshold. Exploit POSTs to those URLs, which
+  used to be `405`, are `410` now and still count. **Upgrade note:** the rule lives in
+  `docker/nginx.conf`, so after `git pull` run `docker compose up -d --force-recreate --no-deps web`
+  (the file is bind-mounted by inode; a reload alone keeps serving the old copy).
+
+---
+
 ## v1.23.30 — PHP no longer prints warnings into responses or announces its version · 2026-11-02
 
 **Fixed**
