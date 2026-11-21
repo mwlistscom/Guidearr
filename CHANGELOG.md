@@ -7,6 +7,19 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **MySQL is pinned to `mysql:8.4.13`** instead of the floating `mysql:8.4`. Like the nginx tag
+  fixed in v1.23.32, a floating `image:` tag is never re-pulled by an upgrade, so an install kept
+  whichever 8.4 patch it first downloaded and Oracle's security releases never arrived. The pinned
+  tag is pulled by `docker compose up -d`, and the changed image recreates `db` (MySQL upgrades its
+  own data dictionary on start, about 40 seconds of database downtime). `MysqlImageTest` refuses a
+  floating tag, anything outside 8.4, or anything below 8.4.13. **Upgrade note:** back up the
+  database before upgrading if you have not recently; the first `up -d` after this restarts it.
+
+---
+
 ## v1.23.32 — nginx 1.30.7 (NGINX2Root), PHP 8.4.28 and dependency security updates · 2026-11-21
 
 **Fixed**
