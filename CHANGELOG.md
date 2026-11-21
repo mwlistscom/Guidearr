@@ -7,6 +7,15 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Changed**
+- **CI actions updated** (#128, Dependabot): `shivammathur/setup-php` to the 2.40.0 commit of `v2`
+  and `actions/setup-node` v7.0.0 → v7.1.0, both still pinned by commit hash. Each hash was
+  checked against the upstream tag before merging. CI only; nothing in an install changes.
+
+---
+
 ## v1.23.33 — MySQL is pinned to 8.4.13, so its security releases reach every install · 2026-11-21
 
 **Fixed**
