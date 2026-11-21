@@ -16,7 +16,7 @@ services:
       db:
         condition: service_healthy
   web:
-    image: nginx:1.30-alpine
+    image: nginx:1.30.7-alpine
     restart: unless-stopped
     ports:
       # Host side only. nginx listens on 7979 and 8080 *inside* the container; changing

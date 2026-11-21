@@ -12,12 +12,15 @@ use Tests\TestCase;
  * the host already had cached — a PHP security release never arrived. A pinned tag the host
  * does not have is always fetched, which makes the PHP version part of what a pull delivers.
  *
- * The floor is the php2shell fix (CVE-2026-109618 / CVE-2026-109619): unauthenticated RCE
- * through a crafted multipart body, parsed before any application code runs.
+ * The floor is the last PHP security release this install must have. Raise it with each one:
+ * - 8.4.27: php2shell (CVE-2026-109618 / CVE-2026-109619), unauthenticated RCE through a
+ *   crafted multipart body, parsed before any application code runs.
+ * - 8.4.28: CVE-2026-129289 (PHP-FPM request smuggling), CVE-2026-115560 (session
+ *   serializer), CVE-2026-129496 (timezone cache use-after-free).
  */
 class PhpBaseImageTest extends TestCase
 {
-    private const MINIMUM = '8.4.27';
+    private const MINIMUM = '8.4.28';
 
     private function baseTag(): string
     {
@@ -34,7 +37,7 @@ class PhpBaseImageTest extends TestCase
         $this->assertMatchesRegularExpression(
             '/^\d+\.\d+\.\d+-fpm-alpine/',
             $this->baseTag(),
-            'pin the PHP base to an exact patch (e.g. 8.4.27-fpm-alpine): a floating tag is not re-fetched by --build',
+            'pin the PHP base to an exact patch (e.g. 8.4.28-fpm-alpine): a floating tag is not re-fetched by --build',
         );
     }
 
@@ -44,7 +47,7 @@ class PhpBaseImageTest extends TestCase
 
         $this->assertTrue(
             version_compare($m[1] ?? '0', self::MINIMUM, '>='),
-            "PHP base {$m[1]} is older than ".self::MINIMUM.' (php2shell fix)',
+            "PHP base {$m[1]} is older than ".self::MINIMUM.' (last PHP security release)',
         );
     }
 }

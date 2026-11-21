@@ -7,6 +7,32 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **nginx 1.30.5 → 1.30.7, and now pinned to the exact patch.** 1.30.7 fixes "NGINX2Root",
+  CVE-2026-123007 (HTTP/2 flow control, unauthenticated remote code execution, public proof of
+  concept), plus CVE-2026-123633 (HTTP/2 use-after-free) and the resolver, HTTP/3 and TLS 1.3
+  fixes in the same release. `http2 on` is set at server level in `docker/nginx.conf`, so
+  HTTP/2 was reachable on the plain-HTTP proxy port (h2c with prior knowledge) as well as on
+  7979. The compose file used the floating `nginx:1.30-alpine` tag, which an upgrade never
+  re-pulls: `--build` only rebuilds `build:` services, so a host kept whichever 1.30 patch it
+  first cached. `image: nginx:1.30.7-alpine` is pulled by `up -d`, and the changed image
+  recreates `web` (which also picks up the current `docker/nginx.conf`). `NginxImageTest`
+  refuses a floating tag or anything below 1.30.7.
+- **PHP 8.4.27 → 8.4.28** (base image `php:8.4.28-fpm-alpine`). The release fixes
+  CVE-2026-129289 (PHP-FPM request smuggling; not reachable with this nginx config, which does
+  not keep FastCGI connections open), CVE-2026-115560 (session serializer) and CVE-2026-129496
+  (timezone cache use-after-free), among others. `PhpBaseImageTest`'s floor is raised to match.
+- **Composer security updates**: `symfony/*` 8.1.x patches (http-foundation, http-kernel,
+  routing, mime, serializer, yaml; 11 advisories), `laravel/framework` v13.39.0 → v13.43.0
+  (CVE-2026-128083, low), `phpseclib/phpseclib` 3.0.57 → 3.0.59 (PBKDF DoS), with their direct
+  dependencies (`-w`). `composer audit` is clean. None of the advisories was found reachable
+  here: the serializer is unused, trusted proxies honour only `X-Forwarded-Proto`, and links are
+  pinned to `APP_URL`. **Upgrade note:** needs `docker compose up -d --build`.
+
+---
+
 ## v1.23.31 — Old Joomla URLs are answered 410 Gone and count toward the threat feed · 2026-11-09
 
 **Changed**
