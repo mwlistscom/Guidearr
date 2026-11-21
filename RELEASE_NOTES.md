@@ -1,38 +1,61 @@
-# v1.23.31 — Old Joomla URLs are answered 410 Gone and count toward the threat feed
+# v1.23.32 — nginx 1.30.7 (NGINX2Root), PHP 8.4.28 and dependency security updates
 
-> **This release needs a restart of the `web` container.** `git pull` alone changes nothing that
-> is running. See **Upgrading** below; it's two commands. No image rebuild.
+> 🛑 **Security release. Upgrade promptly, and this one needs `--build`.** `git pull` alone
+> changes nothing that is running. See **Upgrading** below; it's two commands.
 >
-> Every install is affected, but only if bots are replaying Joomla URLs at it. No configuration
-> change is needed and nothing is removed.
+> Every install is affected. nginx 1.30.6 and older carry CVE-2026-123007 ("NGINX2Root"), an
+> HTTP/2 bug that allows unauthenticated remote code execution, with a public proof of concept.
+> No configuration change is needed and nothing is removed.
 
 ---
 
-## Changed
+## Fixed
 
-### Stale Joomla URLs no longer reach PHP
+### nginx 1.30.7, and the proxy image is now pinned
 
-Many Guidearr installs sit on a domain that used to run something else. Bots, and search
-engines that never forgot, still replay those old URLs. On one install that was
-`/index.php?option=com_virtuemart&…` and `/?Itemid=…&option=com_content`: about **2,000
-requests in five days from 170 addresses**, most carrying a forged `X-Forwarded-For`, paced
-just under the per-IP PHP rate limit.
+The `web` container moves to **nginx 1.30.7**, the stable release of 18 November 2026. It fixes:
 
-Guidearr has no such route and answered every one with the home page. That is a `200` that costs
-a full PHP render, and because nothing about it looks hostile to the threat feed, none of those
-addresses were ever listed.
+- **CVE-2026-123007** ("NGINX2Root"): HTTP/2 flow control, unauthenticated remote code execution.
+  A public proof of concept exists.
+- **CVE-2026-123633**: HTTP/2 use-after-free.
+- The resolver, HTTP/3 and TLS 1.3 fixes from the same release.
 
-nginx now answers any `/` or `/index.php` request that carries an `option=com_…` query parameter
-with **`410 Gone`** before PHP is reached. Guidearr never generates such a URL, so nothing
-legitimate is affected; `?page=2`, playlist URLs and anything else pass through untouched. A
-`410` also tells search engines to drop the link. The threat feed counts `option=com_` at `410`,
-so hosts that keep replaying are listed once they pass your threshold. Exploit POSTs to those
-URLs, which used to be `405`, are `410` now and still count.
+**Guidearr is exposed to the HTTP/2 bugs on both ports.** `http2 on` is set for the whole server
+in `docker/nginx.conf`, so nginx accepts HTTP/2 on the TLS port (7979) **and** on the plain-HTTP
+port meant for your reverse proxy (cleartext HTTP/2 with prior knowledge). Whether the internet
+can send HTTP/2 straight through depends on your proxy, but anything that can reach either port
+directly can.
 
-One thing to know: a search engine following stale links gets `410`s too and is counted. With
-the default threshold of 20 attacks and a feed window of 14 days that has not been close on the
-install this was written for (the busiest crawler address had 11), and `410` is exactly what
-makes a crawler stop asking. Glance at **Admin → Config → Threat feed** a week after upgrading.
+The compose file also used the floating tag `nginx:1.30-alpine`. Docker never re-pulls a tag it
+already has, and `--build` only rebuilds the services Guidearr builds itself, so an install kept
+whichever 1.30 patch it happened to download first. The tag is now **`nginx:1.30.7-alpine`**.
+Docker pulls it because it is new, and the changed image recreates `web`. That makes the nginx
+version part of what an upgrade delivers, the same way the PHP image has been pinned since
+v1.23.22.
+
+### PHP 8.4.28
+
+The app image moves from PHP 8.4.27 to **8.4.28**, the security release of 19 November 2026,
+which includes:
+
+- **CVE-2026-129289**: PHP-FPM request smuggling. This one is **not reachable** with Guidearr's
+  nginx config, which does not keep FastCGI connections open between requests.
+- **CVE-2026-115560**: session serializer.
+- **CVE-2026-129496**: timezone cache use-after-free.
+
+### Dependency security updates
+
+`composer audit` reported 13 advisories. It reports none now. The updated packages:
+
+- **Symfony** 8.1.x patches for `http-foundation`, `http-kernel`, `routing`, `mime`,
+  `serializer` and `yaml` (11 advisories).
+- **`laravel/framework`** v13.39.0 → v13.43.0 (CVE-2026-128083, low).
+- **`phpseclib/phpseclib`** 3.0.57 → 3.0.59 (a denial of service through PBKDF iteration counts).
+
+Their direct dependencies were updated too: patch and minor releases of guzzle, commonmark,
+monolog and others. None of the advisories was found reachable in Guidearr: the serializer is
+unused, trusted proxies only supply the scheme, and links are built from `APP_URL`. They are
+updated anyway.
 
 ---
 
@@ -41,14 +64,23 @@ makes a crawler stop asking. Glance at **Admin → Config → Threat feed** a we
 ```bash
 cd Guidearr
 git pull
-docker compose up -d --force-recreate --no-deps web
+docker compose up -d --build
 ```
 
-The rule lives in `docker/nginx.conf`, which is mounted into the `web` container as a file.
-After `git pull` the running container keeps reading the version it started with, so it has to
-be recreated; a reload alone is not enough. `--no-deps` keeps the database and app containers
-out of it.
+That one `up` command does all of it. It rebuilds the app image on PHP 8.4.28 with the updated
+packages, pulls `nginx:1.30.7-alpine`, and recreates every container whose image changed. Expect
+a few seconds of downtime while the containers swap.
 
-No rebuild, no migration and no `.env` change is needed. To check it took:
-`curl -s -o /dev/null -w '%{http_code}\n' 'http://localhost:8181/index.php?option=com_content'`
-should print `410`.
+**Without `--build`** you keep the old PHP and the old packages. The app container logs a warning
+that its installed `composer.lock` does not match the tree. nginx is still upgraded, because
+the new tag is pulled either way.
+
+No migration and no `.env` change is needed. To check it took:
+
+```bash
+docker compose exec web nginx -v     # nginx version: nginx/1.30.7
+docker compose exec app php -v       # PHP 8.4.28 (cli) ...
+```
+
+If you cannot upgrade right away, removing the `http2 on;` line from `docker/nginx.conf` and
+recreating `web` closes the two HTTP/2 bugs, but not the other nginx fixes. Upgrading is the real fix.

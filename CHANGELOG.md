@@ -2,8 +2,34 @@
 
 All notable changes to **Guidearr** since v1.18. Newest first.
 
-> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10, v1.23.11, v1.23.12, v1.23.13, v1.23.14, v1.23.15, v1.23.16, v1.23.17, v1.23.18, v1.23.19, v1.23.20, v1.23.21, v1.23.22, v1.23.23, v1.23.24, v1.23.25, v1.23.26, v1.23.27, v1.23.28, v1.23.29, v1.23.30 and v1.23.31.
+> **Tagged public releases:** v1.20.0, v1.22.3, v1.22.5, v1.22.6, v1.22.7, v1.22.8, v1.22.9, v1.22.10, v1.22.11, v1.22.12, v1.22.13, v1.22.14, v1.23.0, v1.23.1, v1.23.2, v1.23.3, v1.23.4, v1.23.5, v1.23.6, v1.23.7, v1.23.8, v1.23.9, v1.23.10, v1.23.11, v1.23.12, v1.23.13, v1.23.14, v1.23.15, v1.23.16, v1.23.17, v1.23.18, v1.23.19, v1.23.20, v1.23.21, v1.23.22, v1.23.23, v1.23.24, v1.23.25, v1.23.26, v1.23.27, v1.23.28, v1.23.29, v1.23.30, v1.23.31 and v1.23.32.
 > Intermediate entries (1.21.0–1.22.2, 1.22.4) were development iterations rolled into the next tagged release.
+
+---
+
+## v1.23.32 — nginx 1.30.7 (NGINX2Root), PHP 8.4.28 and dependency security updates · 2026-11-21
+
+**Fixed**
+- **nginx 1.30.5 → 1.30.7, and now pinned to the exact patch.** 1.30.7 fixes "NGINX2Root",
+  CVE-2026-123007 (HTTP/2 flow control, unauthenticated remote code execution, public proof of
+  concept), plus CVE-2026-123633 (HTTP/2 use-after-free) and the resolver, HTTP/3 and TLS 1.3
+  fixes in the same release. `http2 on` is set at server level in `docker/nginx.conf`, so
+  HTTP/2 was reachable on the plain-HTTP proxy port (h2c with prior knowledge) as well as on
+  7979. The compose file used the floating `nginx:1.30-alpine` tag, which an upgrade never
+  re-pulls: `--build` only rebuilds `build:` services, so a host kept whichever 1.30 patch it
+  first cached. `image: nginx:1.30.7-alpine` is pulled by `up -d`, and the changed image
+  recreates `web` (which also picks up the current `docker/nginx.conf`). `NginxImageTest`
+  refuses a floating tag or anything below 1.30.7.
+- **PHP 8.4.27 → 8.4.28** (base image `php:8.4.28-fpm-alpine`). The release fixes
+  CVE-2026-129289 (PHP-FPM request smuggling; not reachable with this nginx config, which does
+  not keep FastCGI connections open), CVE-2026-115560 (session serializer) and CVE-2026-129496
+  (timezone cache use-after-free), among others. `PhpBaseImageTest`'s floor is raised to match.
+- **Composer security updates**: `symfony/*` 8.1.x patches (http-foundation, http-kernel,
+  routing, mime, serializer, yaml; 11 advisories), `laravel/framework` v13.39.0 → v13.43.0
+  (CVE-2026-128083, low), `phpseclib/phpseclib` 3.0.57 → 3.0.59 (PBKDF DoS), with their direct
+  dependencies (`-w`). `composer audit` is clean. None of the advisories was found reachable
+  here: the serializer is unused, trusted proxies honour only `X-Forwarded-Proto`, and links are
+  pinned to `APP_URL`. **Upgrade note:** needs `docker compose up -d --build`.
 
 ---
 

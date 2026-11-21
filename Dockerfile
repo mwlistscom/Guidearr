@@ -43,7 +43,7 @@ RUN npm run build
 # the old base cached rebuilt on it and kept a vulnerable PHP. A pinned tag the host does not
 # have yet is always fetched. 8.4.27 is the php2shell fix (CVE-2026-109618 / -109619).
 # Bump it for each PHP security release; PhpBaseImageTest refuses anything older.
-FROM php:8.4.27-fpm-alpine
+FROM php:8.4.28-fpm-alpine
 ENV COMPOSER_ALLOW_SUPERUSER=1
 # gd (with png/jpeg/webp) is used to downscale uploaded branding images — an operator's
 # 4000px logo would otherwise be served at full size to every visitor. No freetype: nothing
