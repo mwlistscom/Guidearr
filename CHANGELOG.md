@@ -7,6 +7,19 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **The legacy-Joomla rule also catches the apostrophe variant of the replay.** SQL-injection scanners
+  append a quote to the path (`/index.php%27?option=com_content&…`, `/%27?option=…`, raw `'` too),
+  which missed the path pin and reached Laravel for a 404 render the feed could not attribute. The nginx
+  rule and the ThreatFeed match now allow one trailing apostrophe, raw or `%27`, after `/` or
+  `/index.php`; nothing else about the pin changes (`/providers%27?option=…` and `/index.php%27?view=…`
+  still pass through). `LegacyJoomlaUrlsTest` carries both shapes.
+  Other installs: `docker compose up -d --force-recreate --no-deps web` after `git pull`.
+
+---
+
 ## v1.23.36 — Legacy Joomla replays now count against the per-IP rate limit · 2026-11-26
 
 **Fixed**

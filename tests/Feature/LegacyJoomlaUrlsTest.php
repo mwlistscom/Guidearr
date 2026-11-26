@@ -87,6 +87,11 @@ class LegacyJoomlaUrlsTest extends TestCase
             'boolean sqli, root path' => ['/?option=%27%29%20AND%20%28%27ajyaoi%27%3D%27ajyaoi%27%27&view=category&id=13&Itemid=157'],
             'ssti in option, not first' => ['/index.php?Itemid=162&catid=13&option=%24%7B%40var_dump%28md5%28400989603%29%29%7D%3B&view=article'],
             'empty option' => ['/index.php?option=&view=article'],
+            // The SQLi variant appends an apostrophe to the path itself (seen live from 62.83.47.218).
+            'encoded apostrophe after index.php' => ['/index.php%27?option=com_content&view=category&id=2&Itemid=140'],
+            'encoded apostrophe after root' => ['/%27?option=com_content&view=category&id=13&Itemid=157'],
+            'raw apostrophe after index.php' => ["/index.php'?option=com_content&view=category&id=2&Itemid=140"],
+            'raw apostrophe after root' => ["/'?option=com_content&view=category&id=13&Itemid=157"],
         ];
     }
 
@@ -105,6 +110,9 @@ class LegacyJoomlaUrlsTest extends TestCase
             'option on a guidearr route' => ['/playlists/9?option=list'],
             'option as a value fragment on the root' => ['/?page=2&sort=caption'],
             'option as a suffix of another name' => ['/index.php?suboption=1'],
+            'apostrophe on another path' => ['/providers%27?option=com_x'],
+            'apostrophe without option' => ['/index.php%27?view=article'],
+            'two apostrophes' => ['/index.php%27%27?option=com_x'],
         ];
     }
 
