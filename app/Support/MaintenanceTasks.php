@@ -43,6 +43,11 @@ class MaintenanceTasks
                 'desc' => 'SQLite VACUUM of provider stores to reclaim free-page bloat. Can take a while.',
                 'command' => 'feed:vacuum',
             ],
+            'cache-prune' => [
+                'label' => 'Prune expired cache rows', 'schedule' => 'daily', 'manual' => true,
+                'desc' => 'Delete expired rows from the database cache (rate-limiter buckets, login throttles). The database driver never cleans these up itself.',
+                'command' => 'cache:prune-expired',
+            ],
             'reap' => [
                 'label' => 'Reap cold providers', 'schedule' => 'daily', 'manual' => true,
                 'desc' => 'Disable (never delete) enabled providers untouched for 14 days. Auto-revive on access.',
@@ -53,12 +58,6 @@ class MaintenanceTasks
                 'destructive' => true, 'dryRun' => true,
                 'desc' => 'Deletes non-admin accounts that never verified their email within 14 days.',
                 'command' => 'users:prune-unverified',
-            ],
-            'prune-missing' => [
-                'label' => 'Prune missing channels', 'schedule' => 'on refresh', 'manual' => true,
-                'destructive' => true, 'dryRun' => true,
-                'desc' => 'Removes "(missing channel)" pointers from playlists after a provider drops/rotates channels.',
-                'command' => 'playlists:prune-missing',
             ],
             'prune-idle' => [
                 'label' => 'Prune idle accounts', 'schedule' => 'manual only', 'manual' => true,
