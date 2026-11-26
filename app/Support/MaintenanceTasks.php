@@ -54,12 +54,6 @@ class MaintenanceTasks
                 'desc' => 'Deletes non-admin accounts that never verified their email within 14 days.',
                 'command' => 'users:prune-unverified',
             ],
-            'prune-missing' => [
-                'label' => 'Prune missing channels', 'schedule' => 'on refresh', 'manual' => true,
-                'destructive' => true, 'dryRun' => true,
-                'desc' => 'Removes "(missing channel)" pointers from playlists after a provider drops/rotates channels.',
-                'command' => 'playlists:prune-missing',
-            ],
             'prune-idle' => [
                 'label' => 'Prune idle accounts', 'schedule' => 'manual only', 'manual' => true,
                 'destructive' => true, 'dryRun' => true,
