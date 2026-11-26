@@ -66,10 +66,11 @@ final class ThreatFeed
         405 => '#(option=com_|rest_route|auto_prepend_file|wp-json|/wp-admin|allow_url_include)#i',
         // Replays of the Joomla site that used to live on this domain. docker/nginx.conf answers
         // any `option=` query on `/` or `/index.php` with 410 Gone before PHP is reached (any
-        // value, not just com_: injection probes carry the payload in option= itself). The same
-        // path pin is mirrored here so a Guidearr route that answers 410 for its own reasons,
+        // value, not just com_: injection probes carry the payload in option= itself, and the
+        // path may carry a trailing apostrophe, raw or %27, from the SQLi variant). The same path
+        // pin is mirrored here so a Guidearr route that answers 410 for its own reasons,
         // `option` parameter or not, never lists whoever asked for it.
-        410 => '#^/(index\.php)?\?([^\#]*&)?option=#i',
+        410 => '#^/(index\.php)?(%27|\')?\?([^\#]*&)?option=#i',
         // Classic scanner paths. `/__traversal__` is where the reverse proxy (HAProxy on pfSense)
         // rewrites any request whose path contains a `..` segment, encoded or not. Left alone,
         // nginx rejects those with a 400 while still parsing the request line, before it has read
