@@ -66,8 +66,9 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   signatures trivially forgeable under exponent-1 keys, oversized-key CPU exhaustion, Ed25519 key
   recovery), `spomky-labs/cbor-php` 3.2.3 → 3.4.2 and `spomky-labs/pki-framework` 1.4.2 → 1.6.3
   (certificate path validation and ASN.1/DER parsing: 30 advisories between them). Symfony 8.1.12
-  (2026-11-25): CVE-2026-133751/-133755 mailer STARTTLS man-in-the-middle — the one of these this
-  app reaches, since password-reset and sign-up mail relays through SMTP — plus
+  (2026-11-25): CVE-2026-133751/-133755 mailer STARTTLS man-in-the-middle — reachable only on an
+  install that relays password-reset and sign-up mail over port 587 with STARTTLS; implicit TLS on
+  465 (the reference install) is not affected — plus
   CVE-2026-133746/-133754 (routing host placeholders), CVE-2026-133743 (http-kernel fragments) and
   CVE-2026-133752/-133761 (serializer), none of which Guidearr uses. `brick/math` 0.17 → 1.0 rode
   along as a required dependency. **Second pass, from the packages' own GitHub Security tabs —
@@ -78,7 +79,7 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   here), `livewire/livewire` 4.4.8 → 4.4.10 (GHSA-vw9g-2c4c-g767 host-change middleware bypass on
   domain routes, none here, plus undisclosed fixes in 4.4.10), `league/commonmark` 2.10.7 → 2.10.10
   (three regex-DoS advisories; only admin-authored legal text is rendered). `laravel/passkeys`
-  0.2.1 → 0.3.0 and `guzzle` 7.17.0 rode along. Full suite green. **Needs
+  0.2.1 → 0.3.0 and `guzzle` 7.17.0 rode along. Full suite green (577). **Needs
   `docker compose up -d --build`** — the image installs the lock, a plain `git pull` leaves the old
   packages in place.
 - **MySQL 8.4.13 → 8.4.13.1** (`mysql:8.4.13.1`). Oracle's out-of-band *Critical Security Patch
