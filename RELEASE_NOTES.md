@@ -1,31 +1,33 @@
-# v1.23.36 — Legacy Joomla replays now count against the per-IP rate limit
+# v1.23.37 — Legacy Joomla rule also catches the apostrophe variant
 
-> **nginx config only, follow-up to v1.23.35.** No image rebuild and no database change. The
-> proxy config is bind-mounted, so after `git pull` the `web` container must be recreated for
-> the change to take effect. See **Upgrading** below.
+> **nginx config only, follow-up to v1.23.35 and v1.23.36.** No image rebuild and no database
+> change. The proxy config is bind-mounted, so after `git pull` the `web` container must be
+> recreated for the change to take effect. See **Upgrading** below.
 
 ---
 
 ## Fixed
 
-### Joomla replays were never throttled
+### Quote-appended Joomla replays were slipping past the rule
 
-Since v1.23.31 nginx answers the old Joomla site's URLs with 410 Gone before PHP is involved.
-That answer was a `return` inside a server-level `if`, and nginx runs those in its rewrite
-phase, before the per-IP rate limit (`limit_req`) ever sees the request. So one address could
-replay those URLs without limit. On the reference install a single scanner sent 2,392 of them
-in two minutes and received no 429 at all. Cheap for nginx, but the budget that applies to
-every other probe did not apply to these.
+SQL-injection scanners replay the old Joomla URLs with a quote appended to the **path**:
+`/index.php%27?option=com_content&view=category&id=2&Itemid=140`, `/%27?option=…`, and the raw
+`'` forms. The rule pins the path to `/` or `/index.php`, so these missed it and reached Laravel
+for a 404 render that the threat feed could not attribute to the sender.
 
-The `if` now rewrites such requests into an internal location that applies the same per-IP
-limit as PHP requests (5 r/s, burst 30, shared bucket) and answers 410 through `try_files`,
-which runs after the limit check. Over the budget they get 429 like any other probe. The
-access log still records the original URL and status, so the threat feed's match is unchanged.
+The rule's path part now accepts one trailing apostrophe, raw or `%27`. The threat feed's match
+mirrors it. Nothing else about the pin changes: an apostrophe on any other path, a doubled quote,
+or a quoted path without `option=` still pass through to the application as before.
 
-Verified in a throwaway nginx: 60 rapid probes from one public address produced 32 × 410 and
-then 28 × 429; private and loopback clients remain exempt, as they are for PHP.
-`LegacyJoomlaUrlsTest` pins the shape, including that no `return 410` remains anywhere in the
-config.
+`LegacyJoomlaUrlsTest` carries both the caught and the pass-through shapes. Verified against the
+real nginx binary before release.
+
+## Also in this release
+
+- The v1.23.34 changelog entry is corrected: the Symfony mailer STARTTLS advisories
+  (CVE-2026-133751 / CVE-2026-133755) apply to installs relaying mail over port 587 with
+  STARTTLS. Implicit TLS on port 465 was never affected. The packages were updated either way.
+- A timing flake in the registration test suite is fixed (test only; nothing in an install changes).
 
 ## Upgrading
 
@@ -42,5 +44,5 @@ database restart described in v1.23.34.
 To check it took:
 
 ```bash
-docker compose exec web grep -c '__joomla__' /etc/nginx/conf.d/default.conf   # 3
+curl -s -o /dev/null -w '%{http_code}\n' 'http://localhost:8181/index.php%27?option=x&view=a'   # 410
 ```
