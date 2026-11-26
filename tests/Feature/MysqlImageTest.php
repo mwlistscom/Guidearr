@@ -18,7 +18,7 @@ use Tests\TestCase;
  */
 class MysqlImageTest extends TestCase
 {
-    private const MINIMUM = '8.4.13';
+    private const MINIMUM = '8.4.13.1';
 
     private function dbImage(): string
     {
@@ -33,15 +33,15 @@ class MysqlImageTest extends TestCase
     public function test_the_database_image_is_pinned_to_a_patch_release(): void
     {
         $this->assertMatchesRegularExpression(
-            '/^8\.4\.\d+$/',
+            '/^8\.4\.\d+(?:\.\d+)?$/',
             $this->dbImage(),
-            'pin MySQL to an exact 8.4 patch (e.g. 8.4.13): a floating tag is never re-pulled by an upgrade',
+            'pin MySQL to an exact 8.4 patch (e.g. 8.4.13.1 — Oracle\'s out-of-band patches add a fourth part): a floating tag is never re-pulled by an upgrade',
         );
     }
 
     public function test_the_pinned_mysql_is_not_older_than_the_last_security_fix(): void
     {
-        preg_match('/^(\d+\.\d+\.\d+)/', $this->dbImage(), $m);
+        preg_match('/^(\d+(?:\.\d+)+)/', $this->dbImage(), $m);
 
         $this->assertTrue(
             version_compare($m[1] ?? '0', self::MINIMUM, '>='),
