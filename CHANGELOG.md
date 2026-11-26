@@ -10,6 +10,11 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 ## Unreleased
 
 **Changed**
+- **"Prune missing channels" removed from the Maintenance tab.** Every provider refresh already
+  removes "(missing channel)" pointers (`FeedWork::syncPlaylists`, since v1.22.14), so the task
+  only ever existed to clear the backlog left by the additive-only sync before that release and
+  has reported 0 ever since. The `playlists:prune-missing` artisan command stays for on-demand
+  repair; only the tab entry goes.
 - **CI actions updated** (#128, Dependabot): `shivammathur/setup-php` to the 2.40.0 commit of `v2`
   and `actions/setup-node` v7.0.0 → v7.1.0, both still pinned by commit hash. Each hash was
   checked against the upstream tag before merging. CI only; nothing in an install changes.
