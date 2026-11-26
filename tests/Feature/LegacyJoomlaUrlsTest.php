@@ -20,17 +20,56 @@ use Tests\TestCase;
  */
 class LegacyJoomlaUrlsTest extends TestCase
 {
+    private function nginx(): string
+    {
+        return (string) file_get_contents(base_path('docker/nginx.conf'));
+    }
+
+    /** The `if ($request_uri ~* "…") { rewrite ^ <target> last; }` rule: [regex, target]. */
+    private function rule(): array
+    {
+        preg_match('/if \(\$request_uri ~\* "([^"]+)"\)\s*\{\s*rewrite \^ (\S+) last;\s*\}/', $this->nginx(), $m);
+
+        $this->assertNotEmpty($m, 'docker/nginx.conf has no `if ($request_uri ~* "…") { rewrite ^ /… last; }` rule');
+
+        return [$m[1], $m[2]];
+    }
+
     /** The regex nginx applies to $request_uri, lifted from docker/nginx.conf. */
     private function nginxRule(): string
     {
-        $conf = (string) file_get_contents(base_path('docker/nginx.conf'));
-
-        preg_match('/if \(\$request_uri ~\* "([^"]+)"\)\s*\{\s*return 410;\s*\}/', $conf, $m);
-
-        $this->assertNotEmpty($m, 'docker/nginx.conf has no `if ($request_uri ~* "…") { return 410; }` rule');
-
         // nginx's ~* is a case-insensitive PCRE match; the same engine PHP uses.
-        return '#'.str_replace('#', '\#', $m[1]).'#i';
+        return '#'.str_replace('#', '\#', $this->rule()[0]).'#i';
+    }
+
+    /** The body of the `location = <target> {` block the rule rewrites to. */
+    private function targetLocation(): string
+    {
+        [, $target] = $this->rule();
+        preg_match('/location = '.preg_quote($target, '/').' \{(.*?)\n    \}/s', $this->nginx(), $m);
+
+        $this->assertNotEmpty($m, "docker/nginx.conf has no `location = {$target}` block for the rule to land in");
+
+        return $m[1];
+    }
+
+    public function test_the_410_is_answered_from_a_rate_limited_location_not_a_return(): void
+    {
+        // A `return 410` runs in the rewrite phase, before limit_req (preaccess) sees the
+        // request, so a scanner could replay Joomla URLs without limit: 2,392 in two minutes from
+        // one address, not one 429. The rewrite lands in a location that applies the same per-IP
+        // budget as PHP and answers through try_files, which runs after limit_req.
+        $loc = $this->targetLocation();
+        $php = (string) preg_replace('/^.*?location ~ \\\.php\$ \{(.*?)\n    \}.*$/s', '$1', $this->nginx());
+
+        preg_match('/^\s*limit_req zone=php\b[^;]*;/m', $php, $phpLimit);
+        $this->assertNotEmpty($phpLimit, 'the PHP location has no limit_req zone=php line to mirror');
+        $this->assertStringContainsString(trim($phpLimit[0]), $loc, 'the Joomla location must apply exactly the PHP location\'s limit_req');
+        $this->assertMatchesRegularExpression('/^\s*limit_req_status 429;/m', $loc);
+        $this->assertMatchesRegularExpression('/^\s*try_files \S+ =410;/m', $loc, 'answer via try_files (runs after limit_req), not return');
+        $this->assertDoesNotMatchRegularExpression('/^\s*return\b/m', $loc, 'a `return` in the location skips limit_req just like one in the if');
+        $this->assertMatchesRegularExpression('/^\s*internal;/m', $loc, 'only the rewrite may reach it');
+        $this->assertDoesNotMatchRegularExpression('/return 410/', $this->nginx(), 'no `return 410` anywhere: it would be a limit_req bypass');
     }
 
     /** @return array<string, array{string}> */

@@ -7,6 +7,20 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **Legacy-Joomla replays now count against the per-IP rate limit.** The 410 was a `return` inside a
+  server-level `if`, which nginx runs in its rewrite phase, before `limit_req` sees the request — so
+  one address could replay Joomla URLs without limit (2,392 in two minutes on the reference install,
+  not one 429). The `if` now rewrites to an internal `location = /__joomla__` that applies the same
+  `zone=php burst=30` budget as PHP requests and answers 410 through `try_files`, which runs after
+  `limit_req`. Over the budget they get 429 like any other PHP probe. Logged URLs and the threat-feed
+  match are unchanged. `LegacyJoomlaUrlsTest` pins the shape, including that no `return 410` remains.
+  Other installs: `docker compose up -d --force-recreate --no-deps web` after `git pull`.
+
+---
+
 ## v1.23.35 — Legacy Joomla rule catches injection probes with the payload in option= · 2026-11-26
 
 **Fixed**
