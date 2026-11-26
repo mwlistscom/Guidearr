@@ -1,36 +1,31 @@
-# v1.23.35 — Legacy Joomla rule catches injection probes with the payload in option=
+# v1.23.36 — Legacy Joomla replays now count against the per-IP rate limit
 
-> **Small follow-up to v1.23.34, nginx config only.** No image rebuild and no database change.
-> The proxy config is bind-mounted, so after `git pull` the `web` container must be recreated
-> for the new rule to take effect. See **Upgrading** below.
+> **nginx config only, follow-up to v1.23.35.** No image rebuild and no database change. The
+> proxy config is bind-mounted, so after `git pull` the `web` container must be recreated for
+> the change to take effect. See **Upgrading** below.
 
 ---
 
 ## Fixed
 
-### Injection probes aimed at the old Joomla URLs were reaching PHP
+### Joomla replays were never throttled
 
-v1.23.31 taught nginx to answer the old Joomla site's URLs (`/index.php?option=com_…`) with
-410 Gone before PHP is involved, and the threat feed to count them. That rule matched only when
-the `option=` value began with `com_`. Scanners that put a SQL or template-injection payload
-straight into `option=`, alongside Joomla's `view=` and `Itemid=`, walked past it to Laravel,
-which rendered the normal home page:
+Since v1.23.31 nginx answers the old Joomla site's URLs with 410 Gone before PHP is involved.
+That answer was a `return` inside a server-level `if`, and nginx runs those in its rewrite
+phase, before the per-IP rate limit (`limit_req`) ever sees the request. So one address could
+replay those URLs without limit. On the reference install a single scanner sent 2,392 of them
+in two minutes and received no 429 at all. Cheap for nginx, but the budget that applies to
+every other probe did not apply to these.
 
-```
-GET /index.php?option=1' AND 1=1 UNION SELECT NULL-- -&view=article&id=1&Itemid=140   → 200
-GET /index.php?Itemid=162&option=${@var_dump(md5(1))};&view=article                    → 200
-```
+The `if` now rewrites such requests into an internal location that applies the same per-IP
+limit as PHP requests (5 r/s, burst 30, shared bucket) and answers 410 through `try_files`,
+which runs after the limit check. Over the budget they get 429 like any other probe. The
+access log still records the original URL and status, so the threat feed's match is unchanged.
 
-Nothing was evaluated (every response was the unchanged home page), but each one cost a full
-PHP render and the threat feed could not count the sender. On the reference install 53 such
-requests from 5 addresses got through in the rule's first two weeks.
-
-nginx now answers **any** `option=` query on `/` or `/index.php` with 410. The threat feed counts
-exactly the same shape at 410, path pin included, so a Guidearr route that happens to answer 410
-with its own `option` parameter is never listed. Replayed against the reference install's log,
-the new rule catches all 531 historic `option=` requests that had reached PHP and leaves every
-existing 410 and every legitimate URL unchanged. `LegacyJoomlaUrlsTest` carries the live payload
-shapes.
+Verified in a throwaway nginx: 60 rapid probes from one public address produced 32 × 410 and
+then 28 × 429; private and loopback clients remain exempt, as they are for PHP.
+`LegacyJoomlaUrlsTest` pins the shape, including that no `return 410` remains anywhere in the
+config.
 
 ## Upgrading
 
@@ -40,12 +35,12 @@ git pull
 docker compose up -d --force-recreate --no-deps web
 ```
 
-`--no-deps` matters: without it compose also recreates the database container. If you skipped
-v1.23.34, use `docker compose up -d --build` instead and expect the database restart described in
-that release.
+`--no-deps` matters: without it compose also recreates the database container. If you are
+coming from v1.23.33 or earlier, use `docker compose up -d --build` instead and expect the
+database restart described in v1.23.34.
 
 To check it took:
 
 ```bash
-curl -s -o /dev/null -w '%{http_code}\n' 'http://localhost:8181/index.php?option=x&view=article'   # 410
+docker compose exec web grep -c '__joomla__' /etc/nginx/conf.d/default.conf   # 3
 ```
