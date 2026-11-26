@@ -10,6 +10,19 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 ## Unreleased
 
 **Changed**
+- **Dependency security updates — `composer audit` 47 advisories → 0.** Passkey stack:
+  `web-auth/webauthn-lib` 5.3.5 → 5.3.17 (six advisories of 2026-11-17: forged packed/TPM
+  attestations from PEM certificates, metadata trust-chain and REVOKED checks skipped, username
+  enumeration via decoy credentials, CBOR length DoS), `web-auth/cose-lib` 4.5.2 → 4.8.2 (RSA
+  signatures trivially forgeable under exponent-1 keys, oversized-key CPU exhaustion, Ed25519 key
+  recovery), `spomky-labs/cbor-php` 3.2.3 → 3.4.2 and `spomky-labs/pki-framework` 1.4.2 → 1.6.3
+  (certificate path validation and ASN.1/DER parsing: 30 advisories between them). Symfony 8.1.12
+  (2026-11-25): CVE-2026-133751/-133755 mailer STARTTLS man-in-the-middle — the one of these this
+  app reaches, since password-reset and sign-up mail relays through SMTP — plus
+  CVE-2026-133746/-133754 (routing host placeholders), CVE-2026-133743 (http-kernel fragments) and
+  CVE-2026-133752/-133761 (serializer), none of which Guidearr uses. `brick/math` 0.17 → 1.0 rode
+  along as a required dependency. Full suite green (572). **Needs `docker compose up -d --build`**
+  — the image installs the lock, a plain `git pull` leaves the old packages in place.
 - **CI actions updated** (#128, Dependabot): `shivammathur/setup-php` to the 2.40.0 commit of `v2`
   and `actions/setup-node` v7.0.0 → v7.1.0, both still pinned by commit hash. Each hash was
   checked against the upstream tag before merging. CI only; nothing in an install changes.
