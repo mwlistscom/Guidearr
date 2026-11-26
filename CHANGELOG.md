@@ -7,6 +7,20 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ---
 
+## Unreleased
+
+**Fixed**
+- **The legacy-Joomla 410 rule now catches injection probes too.** It matched only `option=com_…`,
+  so a request that put a SQL or template-injection payload straight into `option=` (next to
+  Joomla's `view=`/`Itemid=`) reached Laravel and got the normal 200 home page: 53 such requests from
+  5 addresses in the rule's first two weeks, each a full PHP render the threat feed could not count.
+  nginx now answers any `option=` query on `/` or `/index.php` with 410, and `ThreatFeed` counts
+  exactly that shape at 410 (path pin included, so a Guidearr route with its own `option`
+  parameter is never listed). `LegacyJoomlaUrlsTest` carries the live payload shapes. Other installs:
+  `docker compose up -d --force-recreate --no-deps web` after `git pull` (bind-mounted config).
+
+---
+
 ## v1.23.34 — Security: Fortify login-timing leak, passkey and Symfony libraries, MySQL 8.4.13.1, libxml2 · 2026-11-26
 
 **Added**

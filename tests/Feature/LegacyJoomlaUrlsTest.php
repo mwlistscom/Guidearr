@@ -11,7 +11,12 @@ use Tests\TestCase;
  * (/index.php?option=com_virtuemart&…). Laravel has no such route and answered
  * every one with the home page, a 200 that cost a PHP render and that the threat
  * feed could not count. nginx now answers them 410 Gone before PHP, and the feed
- * counts `option=com_` at 410. Both halves are pinned here, against the same URLs.
+ * counts the same shape at 410. Both halves are pinned here, against the same URLs.
+ *
+ * The match is any `option=` on `/` or `/index.php`, not only `option=com_`: the
+ * first version pinned the value, and SQL/template-injection probes that put the
+ * payload straight into option= (alongside Joomla's view=/Itemid=) walked past it
+ * to a 200 from Laravel, 53 of them in the rule's first two weeks.
  */
 class LegacyJoomlaUrlsTest extends TestCase
 {
@@ -38,6 +43,11 @@ class LegacyJoomlaUrlsTest extends TestCase
             'users' => ['/index.php?option=com_users&view=registration'],
             'bare root path' => ['/?Itemid=157&id=13&option=com_content&view=article'],
             'mixed case' => ['/INDEX.PHP?OPTION=COM_CONTENT'],
+            // Seen live 2026-11-11..25: the payload is the option= value itself.
+            'sqli in option' => ['/index.php?option=1%27%20AND%201=1%20UNION%20SELECT%20NULL--%20-&view=article&id=1%3Aprivacy-policy&catid=2&Itemid=140'],
+            'boolean sqli, root path' => ['/?option=%27%29%20AND%20%28%27ajyaoi%27%3D%27ajyaoi%27%27&view=category&id=13&Itemid=157'],
+            'ssti in option, not first' => ['/index.php?Itemid=162&catid=13&option=%24%7B%40var_dump%28md5%28400989603%29%29%7D%3B&view=article'],
+            'empty option' => ['/index.php?option=&view=article'],
         ];
     }
 
@@ -53,6 +63,9 @@ class LegacyJoomlaUrlsTest extends TestCase
             'paginated grid' => ['/?page=2'],
             'option in a value, not a name' => ['/m3u?key=abc&list=option=com_x'],
             'option on another path' => ['/providers?option=com_x'],
+            'option on a guidearr route' => ['/playlists/9?option=list'],
+            'option as a value fragment on the root' => ['/?page=2&sort=caption'],
+            'option as a suffix of another name' => ['/index.php?suboption=1'],
         ];
     }
 
@@ -78,9 +91,10 @@ class LegacyJoomlaUrlsTest extends TestCase
         $this->assertFalse(ThreatFeed::isHostile('/?Itemid=157&option=com_content', 200));
         $this->assertFalse(ThreatFeed::isHostile('/?Itemid=157&option=com_content', 404));
 
-        // And only Joomla component names: a future route that answers 410 for its own reasons
-        // must not list whoever asked for it.
+        // And only on the two Joomla paths: a future Guidearr route that answers 410 for its own
+        // reasons must not list whoever asked for it, even with an `option` parameter of its own.
         $this->assertFalse(ThreatFeed::isHostile('/playlists/9?option=list', 410));
+        $this->assertFalse(ThreatFeed::isHostile('/providers?option=com_x', 410));
         $this->assertFalse(ThreatFeed::isHostile('/retired-route', 410));
     }
 }
