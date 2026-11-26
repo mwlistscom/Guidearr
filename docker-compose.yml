@@ -16,7 +16,7 @@ services:
       db:
         condition: service_healthy
   web:
-    image: nginx:1.30.7-alpine
+    image: nginx:1.30.8-alpine
     restart: unless-stopped
     ports:
       # Host side only. nginx listens on 7979 and 8080 *inside* the container; changing
@@ -39,7 +39,7 @@ services:
     # as mysql:8.4 is never re-pulled by an upgrade, so MySQL security releases never arrived.
     # Only ever move this forward within 8.4 — an install may already be running the pinned
     # version, and a downgrade after the data dictionary has been upgraded is not safe.
-    image: mysql:8.4.13
+    image: mysql:8.4.13.1
     # Every service needs this, the database most of all: without it MySQL stays down after a
     # host reboot (or a Docker restart) while the rest of the stack comes back, and every page
     # and every playlist fetch fails until someone starts it by hand.

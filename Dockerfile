@@ -48,7 +48,11 @@ ENV COMPOSER_ALLOW_SUPERUSER=1
 # gd (with png/jpeg/webp) is used to downscale uploaded branding images — an operator's
 # 4000px logo would otherwise be served at full size to every visitor. No freetype: nothing
 # renders text into an image.
-RUN apk add --no-cache git unzip libzip-dev icu-dev oniguruma-dev linux-headers \
+# `apk upgrade` first: the official image is rebuilt only now and then, so its Alpine layer lags
+# the distro's own security fixes (2026-11-26: libxml2 three releases behind, one rated high, and
+# PHP parses provider-supplied XMLTV with it). Pulling the base again would not help; this does.
+RUN apk upgrade --no-cache \
+ && apk add --no-cache git unzip libzip-dev icu-dev oniguruma-dev linux-headers \
       libpng-dev libjpeg-turbo-dev libwebp-dev $PHPIZE_DEPS \
  && docker-php-ext-configure gd --with-jpeg --with-webp \
  && docker-php-ext-install pdo_mysql mbstring bcmath zip intl opcache pcntl gd \

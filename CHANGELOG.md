@@ -29,8 +29,33 @@ All notable changes to **Guidearr** since v1.18. Newest first.
   app reaches, since password-reset and sign-up mail relays through SMTP — plus
   CVE-2026-133746/-133754 (routing host placeholders), CVE-2026-133743 (http-kernel fragments) and
   CVE-2026-133752/-133761 (serializer), none of which Guidearr uses. `brick/math` 0.17 → 1.0 rode
-  along as a required dependency. Full suite green (572). **Needs `docker compose up -d --build`**
-  — the image installs the lock, a plain `git pull` leaves the old packages in place.
+  along as a required dependency. **Second pass, from the packages' own GitHub Security tabs —
+  advisories `composer audit` cannot see yet:** `laravel/fortify` 1.37.2 → 1.44.0
+  (GHSA-72pr-vgpx-x986, 2026-11-25: login timing reveals which emails are registered, named for the
+  custom `Fortify::authenticateUsing()` callback this app uses), `laravel/framework` 13.43.0 → 13.44.1
+  (GHSA-c25c-x5r7-2v5m numeric-validation DoS; `multiple_of`/field-relative `gt|lt` are not used
+  here), `livewire/livewire` 4.4.8 → 4.4.10 (GHSA-vw9g-2c4c-g767 host-change middleware bypass on
+  domain routes, none here, plus undisclosed fixes in 4.4.10), `league/commonmark` 2.10.7 → 2.10.10
+  (three regex-DoS advisories; only admin-authored legal text is rendered). `laravel/passkeys`
+  0.2.1 → 0.3.0 and `guzzle` 7.17.0 rode along. Full suite green. **Needs
+  `docker compose up -d --build`** — the image installs the lock, a plain `git pull` leaves the old
+  packages in place.
+- **MySQL 8.4.13 → 8.4.13.1** (`mysql:8.4.13.1`). Oracle's out-of-band *Critical Security Patch
+  Update, November 2026* (2026-11-24): eight server CVEs list 8.4.0–8.4.13 as affected, led by
+  CVE-2026-114952 (client programs, 9.1) and CVE-2026-92392 (bundled curl HTTP/2, 8.1); the rest
+  need an authenticated database account. ⚠️ Docker Hub re-pointed the `8.4.13` tag at the same
+  build, so a host that already had `8.4.13` cached kept the old one — which is exactly why the tag
+  is pinned and moved by hand. `MysqlImageTest` now accepts Oracle's four-part versions; floor 8.4.13.1.
+  **`up -d` recreates `db`: about 50 seconds of database downtime.**
+- **nginx 1.30.7 → 1.30.8** (`nginx:1.30.8-alpine`, 2026-11-23). The one advisory, CVE-2026-132779
+  (TLS 1.3 early-data CPU exhaustion), needs `ssl_early_data on`, which this config never sets; taken
+  for the image's bundled OpenSSL 3.5.9-r1 (five Low CVEs of 2026-11-10). `NginxImageTest` floor 1.30.8.
+- **The PHP image now runs `apk upgrade` before installing extensions.** The official
+  `php:8.4.28-fpm-alpine` was last rebuilt 2026-11-20 and ships `libxml2 2.13.9-r2`; Alpine 3.24 is
+  at r5, with CVE-2026-86140 (stack overflow in element validation, 8.0) and four 6.9 heap overflows in
+  core parsing between them. PHP parses provider-supplied XMLTV guides with libxml2, and a provider URL
+  is attacker-controlled. Re-pulling the base would not have helped; the upgrade step makes every
+  `--build` pick up the distro's current fixes.
 - **"Prune missing channels" removed from the Maintenance tab.** Every provider refresh already
   removes "(missing channel)" pointers (`FeedWork::syncPlaylists`, since v1.22.14), so the task
   only ever existed to clear the backlog left by the additive-only sync before that release and

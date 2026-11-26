@@ -21,7 +21,7 @@ use Tests\TestCase;
  */
 class NginxImageTest extends TestCase
 {
-    private const MINIMUM = '1.30.7';
+    private const MINIMUM = '1.30.8';
 
     private function webImage(): string
     {
