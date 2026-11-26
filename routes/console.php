@@ -24,6 +24,10 @@ Schedule::command('maintenance:run vacuum')->weekly()->withoutOverlapping();
 // Clean up data left by deleted accounts (per-provider SQLite stores). Infrequent.
 Schedule::command('maintenance:run purge')->hourly();
 
+// Daily maintenance: drop expired rows from the database cache. The driver only removes an
+// expired row when that key is read again, and rate-limiter buckets written by scanners never are.
+Schedule::command('maintenance:run cache-prune')->daily();
+
 // Daily maintenance: stop refreshing feeds nobody views. Disables (keeps data for) providers with
 // no playlist access or dashboard activity for 14 days; a later access auto-re-enables them.
 Schedule::command('maintenance:run reap')->daily();

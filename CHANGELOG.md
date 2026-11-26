@@ -9,6 +9,14 @@ All notable changes to **Guidearr** since v1.18. Newest first.
 
 ## Unreleased
 
+**Added**
+- **"Prune expired cache rows" maintenance task** (`cache:prune-expired`, daily, also on the
+  Maintenance tab). Laravel's database cache driver never garbage-collects: an expired row goes
+  only when that exact key is read again, and the per-IP rate-limiter buckets scanners leave behind
+  never are. On the reference install 2,015 of 2,016 cache rows were expired, the oldest by eleven
+  weeks, and the login-throttle keys among them carry the email address that was tried. The task
+  deletes only rows whose expiration has passed and does nothing on a non-database cache store.
+
 **Changed**
 - **CI actions updated** (#128, Dependabot): `shivammathur/setup-php` to the 2.40.0 commit of `v2`
   and `actions/setup-node` v7.0.0 → v7.1.0, both still pinned by commit hash. Each hash was
