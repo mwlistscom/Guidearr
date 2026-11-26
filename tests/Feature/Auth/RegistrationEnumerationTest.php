@@ -140,6 +140,10 @@ class RegistrationEnumerationTest extends TestCase
         };
 
         // Two browsers on two addresses, so the per-IP route throttle can't tell them apart.
+        // The clock is frozen before EACH sign-up: the script's travelBack() unfreezes it, and a
+        // real user's retry_after is "resend-available-at minus now", so an unfrozen second run
+        // reports 299 instead of 300 whenever a second boundary falls between its sign-up and
+        // its resend (seen once in CI, never locally).
         $this->freshBrowser();
         $this->freezeSecond();
         $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.1']);
@@ -147,6 +151,7 @@ class RegistrationEnumerationTest extends TestCase
         $new = $script();
 
         $this->freshBrowser();
+        $this->freezeSecond();
         $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.2']);
         $this->signUp('taken@example.com')->assertCreated();
         $taken = $script();
